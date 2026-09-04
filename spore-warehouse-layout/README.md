@@ -33,7 +33,7 @@ Outputs are written to `./output/`:
 | `units`          | Distance units (`cm`)                                    |
 | `node_spacing`   | Grid spacing between nodes along a path (`200` cm)       |
 | `dimensions`     | Bounding box of the floor plan                            |
-| `regions`        | The 14 functional zones, each with `id`, `name`, `density` |
+| `regions`        | The 7 functional zones, each with `id`, `name`, `density`  |
 | `nodes`          | Graph nodes with `id`, `name`, `region_id`, `node_type`, `position` |
 | `edges`          | Axis-aligned connections between node ids, each `200` cm long |
 
@@ -51,19 +51,17 @@ Outputs are written to `./output/`:
 
 ## Regions
 
-| id | name                 | density | description                                        |
-| -- | -------------------- | ------- | -------------------------------------------------- |
-| 1  | ring_highway         | medium  | Perimeter highway loop; every zone hangs off it.   |
-| 2  | grid_field           | dense   | Lattice of travel lanes around 21 solid storage blocks. |
-| 3  | inbound_dock         | sparse  | 3 receiving doors on the west wall.                |
-| 4  | receiving_inspection | sparse  | Unload, verify and inspect goods.                  |
-| 5  | inbound_buffer       | sparse  | Put-away buffer for inspected goods.               |
-| 6  | bulk_storage         | sparse  | Oversize/bulk stock on wide lanes.                 |
-| 7  | stow                 | sparse  | Stow stations feeding the field.                   |
-| 8  | pick                 | sparse  | Pick stations on the east face of the field.       |
-| 9  | pack_vas             | sparse  | Pack and value-added services.                     |
-| 10 | sort_staging         | sparse  | Sort and stage orders by outbound route.           |
-| 11 | outbound_dock        | sparse  | 5 shipping doors on the east wall.                 |
-| 12 | crossdock            | medium  | Express inbound-to-outbound lane.                  |
-| 13 | charging             | sparse  | Charger bank along the south edge.                 |
-| 14 | parking              | sparse  | Idle-robot bays along the north strip.             |
+Regions are grouped by function, not by construction step — e.g. the ring highway
+(the perimeter loop every zone hangs off) has no nodes of its own: its south half
+folds into `charging` and its north half into `parking`, since those zones already
+run the full width of the building.
+
+| id | name                        | density | description                                                                    |
+| -- | --------------------------- | ------- | ------------------------------------------------------------------------------ |
+| 1  | receiving_and_buffer        | sparse  | Inbound doors, receiving & inspection, put-away buffer and stow stations.      |
+| 2  | parking                     | sparse  | Idle-robot bays, the cross-dock express lane, and the north half of the ring highway. |
+| 3  | charging                    | sparse  | Charger bays along the south edge and the south half of the ring highway.      |
+| 4  | pick_pack_sort               | sparse  | Pick, pack/VAS and sort/staging columns, plus the outbound shipping doors.     |
+| 5  | bulk_and_storage_cols_1_2   | dense   | Bulk/oversize storage plus storage columns 1–2 (nearest stow).                 |
+| 6  | storage_cols_3_4_5          | dense   | The middle three storage columns.                                              |
+| 7  | storage_cols_6_7            | dense   | The last two storage columns (nearest pick).                                   |
