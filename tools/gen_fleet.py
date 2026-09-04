@@ -11,7 +11,7 @@ from typing import List, Tuple
 
 import yaml
 
-from tools.manifest import TrackConfig, deep_merge
+from tools.manifest import MarkerConfig, TrackConfig, deep_merge
 
 # Identity orientation looks along +x with +z up. This rotation maps x -> -z and
 # z -> +y, so the camera looks straight down with world +y up in the image,
@@ -61,6 +61,91 @@ def robot_configs(manifest: dict) -> List[dict]:
         configs.append(merged)
 
     return configs
+
+
+# Markers sit a hair above the ground plane. Coplanar faces z-fight and the
+# texture flickers between the two, which the colour sensor reads as noise.
+MARKER_LIFT = 0.001
+
+
+def marker_source(manifest: dict) -> str:
+    """Solids for every floor marker, each carrying its own texture.
+
+    A marker is a separate small plane rather than pixels in the track texture:
+    at the track's 512 px/m a QR module would be one texel wide, and Webots
+    would mipmap the finder patterns away. Its own tile decouples marker
+    resolution from track resolution.
+    """
+    track = TrackConfig.from_dict(manifest["track"])
+    markers = MarkerConfig.from_dict(manifest.get("markers"))
+    if not markers.nodes:
+        return ""
+
+    centerline = track.build_centerline()
+    side = markers.spec.tile_mm / 1000.0
+
+    blocks = []
+    for node in markers.nodes:
+        x, y, heading = node.world_pose(centerline)
+        blocks.append('''DEF MARKER_{node_id} Solid {{
+  translation {x:.4f} {y:.4f} {lift}
+  rotation 0 0 1 {heading:.4f}
+  children [
+    Shape {{
+      appearance PBRAppearance {{
+        baseColor 1 1 1
+        roughness 1
+        metalness 0
+        baseColorMap ImageTexture {{
+          url [
+            "../textures/markers/node_{node_id:03d}.png"
+          ]
+        }}
+      }}
+      geometry Plane {{
+        size {side} {side}
+      }}
+    }}
+  ]
+  name "marker_{node_id:03d}"
+}}
+'''.format(node_id=node.node_id, x=x, y=y, lift=MARKER_LIFT, heading=heading, side=side))
+
+    return "".join(blocks)
+
+
+def obstacle_source(manifest: dict) -> str:
+    """Boxes on the floor for the obstacle reflex to find.
+
+    Unlike marker tiles these carry a `boundingObject`: a lidar ray has to hit
+    something, and a marker deliberately has nothing to hit so the IR array
+    can see the lane texture through it.
+    """
+    blocks = []
+    for index, entry in enumerate(manifest.get("obstacles") or []):
+        size = entry.get("size") or [0.12, 0.12, 0.12]
+        blocks.append('''DEF OBSTACLE_{index} Solid {{
+  translation {x} {y} {z}
+  children [
+    Shape {{
+      appearance PBRAppearance {{
+        baseColor 0.85 0.15 0.1
+        roughness 0.6
+        metalness 0
+      }}
+      geometry Box {{
+        size {sx} {sy} {sz}
+      }}
+    }}
+  ]
+  name "obstacle_{index}"
+  boundingObject Box {{
+    size {sx} {sy} {sz}
+  }}
+}}
+'''.format(index=index, x=entry["x"], y=entry["y"], z=size[2] / 2.0,
+           sx=size[0], sy=size[1], sz=size[2]))
+    return "".join(blocks)
 
 
 def world_source(manifest: dict) -> str:
@@ -126,10 +211,10 @@ DEF GROUND Solid {{
            orientation=TOP_DOWN_ORIENTATION,
            height=round(viewpoint_height(track.plane_size), 3))
 
-    body = []
+    body = [marker_source(manifest), obstacle_source(manifest)]
     for config in robot_configs(manifest):
         pose = config["pose"]
-        body.append('''LineBot {{
+        body.append('''DEF {def_name} LineBot {{
   translation {x} {y} 0.02
   rotation 0 0 1 {theta}
   name "{name}"
@@ -139,6 +224,7 @@ DEF GROUND Solid {{
   sensorHeight {height}
 }}
 '''.format(
+            def_name=config["name"].upper(),
             x=pose.get("x", 0.0),
             y=pose.get("y", 0.0),
             theta=pose.get("theta", 0.0),
@@ -148,7 +234,56 @@ DEF GROUND Solid {{
             height=robot_block.get("sensor_height", 0.015),
         ))
 
+    body.append("""DEF SUPERVISOR Robot {
+  name "supervisor"
+  controller "<extern>"
+  supervisor TRUE
+  synchronization FALSE
+}
+""")
+
     return header + "".join(body)
+
+
+# Mirrors the defaults in LineBot.proto. The firmware cannot ask Webots where
+# its own sensors are mounted -- on hardware it could not either -- so the
+# geometry is written into each config from the same manifest that builds the
+# world, and the two cannot drift apart.
+PROTO_OPTICS = {
+    "color_sensor_x": 0.125,
+    "camera_x": 0.095,
+    "camera_mast": 0.060,
+    "camera_fov": 1.05,
+    "camera_resolution": 256,
+}
+WHEEL_RADIUS = 0.02
+
+# Calibrated against ground truth, not read off the model: see
+# robot.config.OdometryConfig for the measurement.
+ODOMETRY = {"wheel_radius": 0.02, "track_width": 0.0994}
+
+
+def optics_config(manifest: dict) -> dict:
+    """Optics geometry for the firmware, derived once from the manifest."""
+    robot_block = manifest.get("robot") or {}
+    overrides = robot_block.get("optics") or {}
+    geometry = deep_merge(PROTO_OPTICS, overrides)
+    markers = MarkerConfig.from_dict(manifest.get("markers"))
+
+    height = geometry["camera_mast"] + WHEEL_RADIUS
+    footprint = 2 * height * math.tan(geometry["camera_fov"] / 2)
+
+    return {
+        "enabled": bool(markers.nodes),
+        "color_sensor_x": geometry["color_sensor_x"],
+        "ir_array_x": 0.07,
+        "camera_x": geometry["camera_x"],
+        "camera_footprint": round(footprint, 5),
+        "tile_length": markers.spec.tile_mm / 1000.0,
+        "code_size": markers.spec.qr_mm / 1000.0,
+        "border_rgb": list(markers.spec.border_rgb),
+        "border_tolerance": 0.30,
+    }
 
 
 def compose_source(manifest: dict) -> dict:
@@ -175,15 +310,43 @@ def compose_source(manifest: dict) -> dict:
             "cpus": resources.get("cpus", "0.5"),
         }
 
+    services["supervisor"] = {
+        "image": CONTROLLER_IMAGE,
+        "depends_on": ["sim"],
+        "volumes": ["./:/project"],
+        "working_dir": "/project",
+        "user": "${DOCKER_USER:-1000:1000}",
+        "init": True,
+        "environment": {
+            "ROBOT_NAME": "supervisor",
+            "ROLE": "supervisor",
+            "SIM_HOST": "sim",
+            "MISSION_DURATION": "${MISSION_DURATION:-120}",
+        },
+        "mem_limit": "256m",
+        "cpus": "0.25",
+    }
+
     return {"services": services}
 
 
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--manifest", type=pathlib.Path, default=pathlib.Path("fleet.yaml"))
+    parser.add_argument("--skip-markers", action="store_true",
+                        help="do not re-render marker textures")
     args = parser.parse_args(argv)
 
     manifest = yaml.safe_load(args.manifest.read_text())
+
+    # Markers are generated here rather than as a separate step: a world that
+    # references a texture nobody rendered is a world that loads with white
+    # squares where its codes should be, and nothing says so until a robot
+    # drives over one and reads nothing.
+    if not args.skip_markers:
+        from tools.make_markers import main as make_markers
+
+        make_markers(["--manifest", str(args.manifest)])
 
     pathlib.Path("worlds").mkdir(exist_ok=True)
     pathlib.Path("worlds/track.wbt").write_text(world_source(manifest))
@@ -196,12 +359,16 @@ def main(argv=None) -> int:
 
     config_dir = pathlib.Path("config")
     config_dir.mkdir(exist_ok=True)
+    optics = optics_config(manifest)
     for config in robot_configs(manifest):
         document = {
             "name": config["name"],
             "sensors": {k: (list(v) if isinstance(v, tuple) else v)
                         for k, v in config["sensors"].items()},
             "control": config.get("control") or {},
+            "optics": deep_merge(optics, config.get("optics") or {}),
+            "odometry": config.get("odometry") or dict(ODOMETRY),
+            "lidar": config.get("lidar") or {"enabled": True},
         }
         (config_dir / "{}.yaml".format(config["name"])).write_text(
             "# Generated by tools/gen_fleet.py -- edit fleet.yaml, not this file.\n"

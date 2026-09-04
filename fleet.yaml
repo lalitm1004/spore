@@ -13,6 +13,27 @@ robot:
   sensor_spacing: 0.02
   sensor_height: 0.015
 
+# Floor markers. Each is its own textured plane, not pixels in the track
+# texture: at 512 px/m a QR module would be a single texel and Webots would
+# mipmap the finder patterns away.
+#
+# `at` is normalised arclength along the centerline, so markers sit on the
+# line and move with the track. The QR payload carries absolute position, so
+# the fleet's graph is emergent -- no robot is ever handed a map.
+markers:
+  spec:
+    tile_mm: 100.0        # 92.7 mm of this is inside the camera's footprint
+    qr_mm: 60.0           # 33 modules -> 5.0 camera px per module
+    margin_mm: 5.0
+    pixels_per_mm: 5.12
+    border_rgb: [255, 122, 0]
+  nodes:
+    - {id: 10, kind: PT, at: 0.00, out_edges: [{bearing: 0,   to: 20}]}
+    - {id: 20, kind: TR, at: 0.20, out_edges: [{bearing: 90,  to: 30}]}
+    - {id: 30, kind: YI, at: 0.40, out_edges: [{bearing: 180, to: 40}]}
+    - {id: 40, kind: CH, at: 0.60, out_edges: [{bearing: 180, to: 50}]}
+    - {id: 50, kind: PK, at: 0.80, out_edges: [{bearing: 270, to: 10}]}
+
 defaults:
   sensors:
     # In ADC counts: the firmware sees 10-bit counts, not raw simulator units.
@@ -36,3 +57,12 @@ defaults:
 robots:
   - name: bot_01
     pose: {x: 0.0, y: -1.0, theta: 0.0}
+
+# Obstacles for the forward-lidar reflex. Unlike marker tiles these carry a
+# boundingObject, so a ray has something to hit.
+#
+# Placed 1.24 m into the lap -- far enough that the robot is tracking the line
+# properly before it meets one. At spawn it would trip on the first tick, which
+# is correct behaviour and a useless demonstration of it.
+obstacles:
+  - {x: 0.740, y: -0.971, size: [0.10, 0.16, 0.12]}

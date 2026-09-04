@@ -7,3 +7,5 @@ centralWidgetVisible: 1
 orthographicViewHeight: 1
 textFiles: -1
 consoles: Console:All:All
+renderingDevicePerspectives: bot_01:color;1;32;0;0
+renderingDevicePerspectives: bot_01:qr;1;1;0;0

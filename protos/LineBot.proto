@@ -17,6 +17,19 @@ PROTO LineBot [
   field SFFloat    sensorHeight     0.015     # sensor height above the floor
   field SFFloat    sensorAperture   0.5       # cone angle; sets the footprint
   field SFInt32    sensorRays       5         # >1 gives an analog reading
+  field SFBool     hasOptics        TRUE      # colour trigger + QR camera
+  field SFFloat    colorSensorX     0.125     # on the forward boom, clear of the chassis
+  field SFFloat    colorSensorFov   0.5
+  field SFFloat    cameraX          0.095     # must clear the chassis; see the occlusion note
+  field SFFloat    cameraMast       0.06      # camera height above robot origin
+  field SFFloat    cameraFov        1.05
+  field SFInt32    cameraResolution 256
+  field SFBool     hasLidar         TRUE      # forward obstacle reflex only
+  field SFFloat    lidarX           0.062
+  field SFFloat    lidarZ           0.012     # above the deck, below the boom
+  field SFFloat    lidarFov         1.5
+  field SFFloat    lidarRange       1.0
+  field SFInt32    lidarPoints      32
 ]
 {
   %<
@@ -33,6 +46,28 @@ PROTO LineBot [
     // both for the sensor to discriminate.
     const nearDistance = height;
     const farDistance = height * 5;
+
+    // Optics. Webots has no colour-sensor device, so a 1x1 Camera stands in
+    // for one -- it reports a single RGB triple, which is what a TCS34725 on
+    // the real board gives you over I2C.
+    //
+    // Both sit on a forward boom rather than over the chassis. Looking
+    // straight down from x=60mm -- the chassis front edge -- the camera saw
+    // its own body fill the rear half of every frame, leaving 46 mm of floor
+    // for a 60 mm code. The chassis spans x in [-60, +60], so the camera has
+    // to be far enough forward that its footprint clears it:
+    //     cameraX - footprint/2 > 60mm  =>  cameraX > 106mm at this FOV,
+    // relaxed to 95 mm because the code only needs its own 60 mm unoccluded.
+    //
+    // The colour sensor still leads the camera, so the trigger always fires
+    // before the code is in view.
+    const colorZ = height - WHEEL_RADIUS;
+    const cameraZ = fields.cameraMast.value;
+
+    // Ground footprint: 2 * h * tan(fov / 2), with h measured from the floor.
+    const cameraFloorHeight = cameraZ + WHEEL_RADIUS;
+    const footprint = 2 * cameraFloorHeight * Math.tan(fields.cameraFov.value / 2);
+    const mmPerPixel = footprint * 1000 / fields.cameraResolution.value;
   >%
   Robot {
     translation IS translation
@@ -171,6 +206,101 @@ PROTO LineBot [
           %<= nearDistance >% 1000 0.001
           %<= farDistance >% 200 0.002
         ]
+      }
+      %< } >%
+      %< if (fields.hasLidar.value) { >%
+      # Forward lidar. A reflex sensor, never a planning input: it can stop the
+      # robot and reverse it, and nothing it returns reaches the router. That
+      # keeps the fleet's collision argument -- that conflicts are resolved by
+      # announced intent, not by sensing -- true even with a range finder
+      # aboard. This covers the one case the protocol cannot: something on the
+      # floor that never announced itself because it is not a robot.
+      #
+      # Mounted at %<= ((fields.lidarZ.value + WHEEL_RADIUS) * 1000).toFixed(0) >% mm, so the beam
+      # passes over the marker tiles and under the camera boom.
+      Lidar {
+        translation %<= fields.lidarX.value >% 0 %<= fields.lidarZ.value >%
+        name "lidar"
+        horizontalResolution %<= fields.lidarPoints.value >%
+        fieldOfView %<= fields.lidarFov.value >%
+        verticalFieldOfView 0.05
+        numberOfLayers 1
+        near 0.02
+        minRange 0.03
+        maxRange %<= fields.lidarRange.value >%
+        type "fixed"
+      }
+      %< } >%
+      %< if (fields.hasOptics.value) { >%
+      # Status beacon. The firmware colours it by the kind of node it last
+      # read, so the 3D view shows what each robot knows without any overlay:
+      # amber searching, then green pass-through, blue transfer, cyan charge,
+      # violet park, red yield. Scene geometry, so it survives w3d streaming.
+      LED {
+        translation -0.02 0 0.026
+        children [
+          Shape {
+            appearance PBRAppearance {
+              baseColor 0.5 0.5 0.5
+              roughness 0.2
+              metalness 0
+              emissiveColor 0.2 0.2 0.2
+            }
+            geometry Sphere {
+              radius 0.011
+              subdivision 3
+            }
+          }
+        ]
+        name "status"
+        color [
+          1 0.65 0
+          0.1 0.9 0.2
+          0.15 0.5 1
+          0.1 0.9 0.9
+          0.7 0.3 1
+          1 0.15 0.1
+        ]
+      }
+      # Colour trigger. 1x1 pixel: a spot reading, not an image. Its job is
+      # only to answer "is there a coloured border under me", so that the QR
+      # camera stays dark until a read is worth paying for.
+      # Spot diameter %<= (2 * height * Math.tan(fields.colorSensorFov.value / 2) * 1000).toFixed(1) >% mm.
+      Camera {
+        translation %<= fields.colorSensorX.value >% 0 %<= colorZ >%
+        rotation 0 1 0 1.5707963
+        name "color"
+        width 1
+        height 1
+        fieldOfView %<= fields.colorSensorFov.value >%
+        near 0.005
+      }
+      # QR camera, on a short mast. Looking down from
+      # %<= (cameraFloorHeight * 1000).toFixed(0) >% mm it sees a
+      # %<= (footprint * 1000).toFixed(0) >% mm square at
+      # %<= mmPerPixel.toFixed(3) >% mm/pixel, so a 50 mm code (29 modules
+      # including its quiet zone) lands at ~%<= (50 / 29 / mmPerPixel).toFixed(1) >% px per module.
+      # Four is the usual floor for a reliable decode.
+      Camera {
+        translation %<= fields.cameraX.value >% 0 %<= cameraZ >%
+        rotation 0 1 0 1.5707963
+        children [
+          Shape {
+            appearance PBRAppearance {
+              baseColor 0.25 0.25 0.28
+              roughness 0.4
+              metalness 0
+            }
+            geometry Box {
+              size 0.012 0.012 0.008
+            }
+          }
+        ]
+        name "qr"
+        width %<= fields.cameraResolution.value >%
+        height %<= fields.cameraResolution.value >%
+        fieldOfView %<= fields.cameraFov.value >%
+        near 0.01
       }
       %< } >%
     ]

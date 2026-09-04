@@ -54,7 +54,25 @@ def test_world_declares_every_robot_as_an_extern_controller():
 
     for name in ("bot_01", "bot_02"):
         assert 'name "{}"'.format(name) in world
-    assert world.count('controller "<extern>"') == 2
+    # Two robots plus the supervisor, which is also launched externally.
+    assert world.count('controller "<extern>"') == 3
+
+
+def test_world_gives_every_robot_a_def_the_supervisor_can_resolve():
+    """A supervisor's only handle on a PROTO instance is its DEF name."""
+    world = world_source(MANIFEST)
+
+    for name in ("bot_01", "bot_02"):
+        assert "DEF {} LineBot".format(name.upper()) in world
+
+
+def test_supervisor_is_unsynchronized():
+    """A synchronized supervisor would stall the world whenever its own
+    container is slow, which is the opposite of what a watcher should do."""
+    world = world_source(MANIFEST)
+
+    assert "supervisor TRUE" in world
+    assert "synchronization FALSE" in world
 
 
 def test_compose_targets_each_robot_by_name_with_its_own_limits():

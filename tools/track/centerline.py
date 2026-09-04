@@ -50,6 +50,31 @@ class Oval:
         theta = math.pi / 2 + travelled / radius
         return (-straight / 2 + radius * math.cos(theta), radius * math.sin(theta))
 
+    def heading_at(self, s: float) -> float:
+        """Tangent bearing at normalised arclength `s`, radians CCW from +x.
+
+        Markers are laid along the lane rather than axis-aligned, so a robot
+        driving the line meets each one square-on. Straights have a constant
+        heading; on the ends the tangent leads the radius by a quarter turn.
+        """
+        radius, straight = self.radius, self.straight
+        arc = math.pi * radius
+        travelled = (s % 1.0) * self.length
+
+        if travelled <= straight:  # bottom straight, heading +x
+            return 0.0
+
+        travelled -= straight
+        if travelled <= arc:  # right semicircle
+            return travelled / radius
+
+        travelled -= arc
+        if travelled <= straight:  # top straight, heading -x
+            return math.pi
+
+        travelled -= straight  # left semicircle
+        return math.pi + travelled / radius
+
     def signed_distance_to(self, x: float, y: float) -> float:
         """Cross-track error at (x, y): negative inside the loop, positive outside.
 

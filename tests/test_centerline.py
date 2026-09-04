@@ -61,3 +61,27 @@ def test_oval_rejects_a_height_greater_than_its_width():
     # The straight sections would have negative length.
     with pytest.raises(ValueError, match="width"):
         oval(width=2.0, height=3.0)
+
+
+def test_heading_is_tangent_to_the_track():
+    """Compare the analytic heading against a finite difference of point_at.
+
+    Markers are laid along the lane, so a wrong heading rotates every one of
+    them off the line the robot is following.
+    """
+    track = oval(width=3.0, height=2.0)
+    step = 1e-6
+
+    for s in (0.0, 0.1, 0.25, 0.4, 0.5, 0.6, 0.75, 0.9):
+        x0, y0 = track.point_at(s - step)
+        x1, y1 = track.point_at(s + step)
+        expected = math.atan2(y1 - y0, x1 - x0)
+        actual = track.heading_at(s)
+        difference = (actual - expected + math.pi) % (2 * math.pi) - math.pi
+        assert abs(difference) < 1e-3, "heading at s={} was {}, expected {}".format(
+            s, actual, expected)
+
+
+def test_heading_wraps_with_the_loop():
+    track = oval(width=3.0, height=2.0)
+    assert track.heading_at(1.25) == pytest.approx(track.heading_at(0.25))

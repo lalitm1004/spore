@@ -10,6 +10,18 @@ TELEMETRY="${TELEMETRY:-/project/out/${ROBOT_NAME}.csv}"
 SIM_HOST="${SIM_HOST:-sim}"
 MISSION_DURATION="${MISSION_DURATION:-120}"
 
+# The supervisor is a peer with no motion half: no serial link, no companion,
+# no line to follow. It only watches and draws.
+if [ "${ROLE:-robot}" = "supervisor" ]; then
+  exec /usr/local/webots/webots-controller \
+    --protocol=tcp \
+    --ip-address="${SIM_HOST}" \
+    --port=1234 \
+    --robot-name=supervisor \
+    /project/robot/supervisor.py \
+    --duration "${MISSION_DURATION}"
+fi
+
 FIRMWARE_TTY="/tmp/${ROBOT_NAME}-firmware"
 COMPANION_TTY="/tmp/${ROBOT_NAME}-companion"
 
