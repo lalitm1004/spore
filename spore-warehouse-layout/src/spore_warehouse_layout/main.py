@@ -12,12 +12,67 @@ actually converges — receiving/inspection and pick/pack/sort.
 Outputs warehouse.json and warehouse_map.svg. Standard library only.
 """
 
-import json
-from pathlib import Path
+from __future__ import annotations
 
-SPACING = 200
-WIDTH = 12000
-HEIGHT = 7000
+import json
+from collections.abc import Iterator
+from itertools import pairwise
+from pathlib import Path
+from typing import Literal, TypedDict
+
+Pos = tuple[int, int]
+NodeType = Literal["PT", "TR", "CH", "PK", "YI"]
+
+
+class Position(TypedDict):
+    x: float
+    y: float
+
+
+class Dimensions(TypedDict):
+    width: int
+    height: int
+
+
+class Region(TypedDict):
+    id: int
+    name: str
+    density: str
+    description: str
+
+
+class NodeMeta(TypedDict):
+    region_id: int
+    node_type: NodeType
+
+
+class Node(TypedDict):
+    id: int
+    name: str
+    region_id: int
+    node_type: NodeType
+    position: Position
+
+
+class Edge(TypedDict):
+    a: int
+    b: int
+    length: int
+
+
+class Doc(TypedDict):
+    schema_version: str
+    units: str
+    node_spacing: int
+    dimensions: Dimensions
+    regions: list[Region]
+    nodes: list[Node]
+    edges: list[Edge]
+
+
+SPACING: int = 200
+WIDTH: int = 12000
+HEIGHT: int = 7000
 
 # Storage field: travel lanes form a lattice, storage blocks between them are solid.
 FX0, FX1 = 3400, 9000
@@ -39,9 +94,9 @@ Y_CHARGE, Y_CHARGE_S, Y_CHARGE_N = 1000, 800, 1200
 Y_CROSSDOCK = 6000
 Y_PARK_N, Y_PARK_S = 6200, 5800
 
-BULK_X = (800, 2000, 3200)  # bulk storage: wider lane pitch than the field
-BULK_Y = (1400, 2400)
-BUF_Y = (2600, 3200)  # put-away buffer, directly under receiving
+BULK_X: tuple[int, int, int] = (800, 2000, 3200)  # bulk storage: wider lane pitch
+BULK_Y: tuple[int, int] = (1400, 2400)
+BUF_Y: tuple[int, int] = (2600, 3200)  # put-away buffer, directly under receiving
 
 (
     R_HIGHWAY,
@@ -60,7 +115,7 @@ BUF_Y = (2600, 3200)  # put-away buffer, directly under receiving
     R_PARKING,
 ) = range(1, 15)
 
-REGIONS = [
+REGIONS: list[Region] = [
     {
         "id": R_HIGHWAY,
         "name": "ring_highway",
@@ -151,22 +206,22 @@ REGIONS = [
 ]
 
 # When paths overlap, the most specific node type and the lowest region id win.
-TYPE_PRIORITY = {"PT": 0, "YI": 1, "PK": 2, "CH": 3, "TR": 4}
+TYPE_PRIORITY: dict[NodeType, int] = {"PT": 0, "YI": 1, "PK": 2, "CH": 3, "TR": 4}
 
-VLANES = list(range(FX0, FX1 + 1, VP))
-HLANES = list(range(FY0, FY1 + 1, HP))
+VLANES: list[int] = list(range(FX0, FX1 + 1, VP))
+HLANES: list[int] = list(range(FY0, FY1 + 1, HP))
 
-SPINE_TIES = (3800, 6200, 8600)  # offset from bay lanes so traffic misses the bays
-IN_DOORS = (4200, 4800, 5400)
-OUT_DOORS = (1400, 2400, 3400, 4400, 5400)
-RECEIVE_H = (3400, 4200, 5600)
-RECEIVE_V = (1200, 2000, 2800)
+SPINE_TIES: tuple[int, int, int] = (3800, 6200, 8600)  # offset from bay lanes
+IN_DOORS: tuple[int, int, int] = (4200, 4800, 5400)
+OUT_DOORS: tuple[int, int, int, int, int] = (1400, 2400, 3400, 4400, 5400)
+RECEIVE_H: tuple[int, int, int] = (3400, 4200, 5600)
+RECEIVE_V: tuple[int, int, int] = (1200, 2000, 2800)
 
-CHARGERS = [x for x in range(1200, 10801, 600) if x not in SPINE_TIES]
-PARK_BAYS = [x for x in range(1200, 10801, 400) if x not in SPINE_TIES]
+CHARGERS: list[int] = [x for x in range(1200, 10801, 600) if x not in SPINE_TIES]
+PARK_BAYS: list[int] = [x for x in range(1200, 10801, 400) if x not in SPINE_TIES]
 
 # Pull-over bays: (anchor node on the lane, bay node one cell to the side).
-YIELD_BAYS = (
+YIELD_BAYS: tuple[tuple[Pos, Pos], ...] = (
     # receiving & inspection — spurs off the horizontal lanes and the middle column
     ((1600, 3400), (1600, 3600)),
     ((2400, 3400), (2400, 3600)),
@@ -187,26 +242,29 @@ YIELD_BAYS = (
 )
 
 
-def hline(y, x0, x1):
+def hline(y: int, x0: int, x1: int) -> list[Pos]:
     return [(x, y) for x in range(x0, x1 + SPACING, SPACING)]
 
 
-def vline(x, y0, y1):
+def vline(x: int, y0: int, y1: int) -> list[Pos]:
     return [(x, y) for y in range(y0, y1 + SPACING, SPACING)]
 
 
 class MapBuilder:
-    def __init__(self):
-        self.nodes = {}
-        self.edges = set()
+    def __init__(self) -> None:
+        self.nodes: dict[Pos, NodeMeta] = {}
+        self.edges: set[tuple[Pos, Pos]] = set()
 
-    def path(self, points, region_id, node_type="PT"):
+    def path(
+        self, points: list[Pos], region_id: int, node_type: NodeType = "PT"
+    ) -> None:
         for p in points:
             self._add(p, region_id, node_type)
-        for a, b in zip(points, points[1:]):
-            self.edges.add(tuple(sorted((a, b))))
+        for a, b in pairwise(points):
+            lo, hi = sorted((a, b))
+            self.edges.add((lo, hi))
 
-    def _add(self, p, region_id, node_type):
+    def _add(self, p: Pos, region_id: int, node_type: NodeType) -> None:
         cur = self.nodes.get(p)
         if cur is None:
             self.nodes[p] = {"region_id": region_id, "node_type": node_type}
@@ -215,17 +273,17 @@ class MapBuilder:
         if TYPE_PRIORITY[node_type] > TYPE_PRIORITY[cur["node_type"]]:
             cur["node_type"] = node_type
 
-    def mark(self, points, node_type):
+    def mark(self, points: list[Pos], node_type: NodeType) -> None:
         for p in points:
             self._add(p, self.nodes[p]["region_id"], node_type)
 
-    def bay(self, anchor, tip, region_id, node_type):
+    def bay(self, anchor: Pos, tip: Pos, region_id: int, node_type: NodeType) -> None:
         """One-cell spur off a lane: somewhere to stand that is not on the path."""
         self.path([anchor, tip], region_id)
         self.mark([tip], node_type)
 
 
-def build():
+def build() -> MapBuilder:
     b = MapBuilder()
 
     # Ring highway.
@@ -309,12 +367,12 @@ def build():
     return b
 
 
-def serialize(b):
+def serialize(b: MapBuilder) -> tuple[Doc, dict[Pos, int]]:
     ordered = sorted(b.nodes.items(), key=lambda kv: (kv[0][1], kv[0][0]))
-    ids = {pos: i for i, (pos, _) in enumerate(ordered)}
-    region_name = {r["id"]: r["name"] for r in REGIONS}
-    seq = {}
-    nodes = []
+    ids: dict[Pos, int] = {pos: i for i, (pos, _) in enumerate(ordered)}
+    region_name: dict[int, str] = {r["id"]: r["name"] for r in REGIONS}
+    seq: dict[tuple[int, NodeType], int] = {}
+    nodes: list[Node] = []
     for pos, meta in ordered:
         key = (meta["region_id"], meta["node_type"])
         seq[key] = seq.get(key, 0) + 1
@@ -327,7 +385,7 @@ def serialize(b):
                 "position": {"x": float(pos[0]), "y": float(pos[1])},
             }
         )
-    edges = sorted(
+    edges: list[Edge] = sorted(
         ({"a": ids[a], "b": ids[b_], "length": SPACING} for a, b_ in b.edges),
         key=lambda e: (e["a"], e["b"]),
     )
@@ -342,14 +400,14 @@ def serialize(b):
     }, ids
 
 
-TYPE_COLORS = {
+TYPE_COLORS: dict[NodeType, str] = {
     "PT": "#9aa4ad",
     "TR": "#1857b8",
     "CH": "#0f9d58",
     "PK": "#9a6b00",
     "YI": "#d23f31",
 }
-REGION_BOXES = [
+REGION_BOXES: list[tuple[str, int, int, int, int, str]] = [
     ("#faf3e6", HW_W, RECEIVE_H[0], X_STOW, RECEIVE_H[-1], "RECEIVING & INSPECTION"),
     ("#fdf3e2", HW_W, BUF_Y[0], X_STOW, BUF_Y[1], "PUT-AWAY BUFFER"),
     ("#efe8f7", BULK_X[0], BULK_Y[0], BULK_X[-1], BULK_Y[1], "BULK / OVERSIZE STORAGE"),
@@ -360,7 +418,7 @@ REGION_BOXES = [
 ]
 
 
-def storage_blocks():
+def storage_blocks() -> Iterator[tuple[int, int, int, int]]:
     """Solid block between four lanes, inset half a cell so it never covers a lane."""
     half = SPACING // 2
     for x in VLANES[:-1]:
@@ -368,9 +426,9 @@ def storage_blocks():
             yield x + half, y + half, VP - SPACING, HP - SPACING
 
 
-def bulk_blocks():
+def bulk_blocks() -> Iterator[tuple[int, int, int, int]]:
     half = SPACING // 2
-    for x0, x1 in zip(BULK_X, BULK_X[1:]):
+    for x0, x1 in pairwise(BULK_X):
         yield (
             x0 + half,
             BULK_Y[0] + half,
@@ -379,15 +437,24 @@ def bulk_blocks():
         )
 
 
-def to_svg(doc, scale=0.11, pad=90):
+def to_svg(doc: Doc, scale: float = 0.11, pad: int = 90) -> str:
     w, h = WIDTH * scale + pad * 2, HEIGHT * scale + pad * 2
-    px = lambda x: pad + x * scale
-    py = lambda y: pad + (HEIGHT - y) * scale
-    pos = {n["id"]: (n["position"]["x"], n["position"]["y"]) for n in doc["nodes"]}
 
-    out = [
-        f'<svg xmlns="http://www.w3.org/2000/svg" width="{w:.0f}" height="{h:.0f}" '
-        f'viewBox="0 0 {w:.0f} {h:.0f}" font-family="monospace">',
+    def px(x: float) -> float:
+        return pad + x * scale
+
+    def py(y: float) -> float:
+        return pad + (HEIGHT - y) * scale
+
+    pos: dict[int, tuple[float, float]] = {
+        n["id"]: (n["position"]["x"], n["position"]["y"]) for n in doc["nodes"]
+    }
+
+    out: list[str] = [
+        (
+            f'<svg xmlns="http://www.w3.org/2000/svg" width="{w:.0f}" height="{h:.0f}" '
+            f'viewBox="0 0 {w:.0f} {h:.0f}" font-family="monospace">'
+        ),
         f'<rect width="{w:.0f}" height="{h:.0f}" fill="#ffffff"/>',
     ]
 
@@ -435,7 +502,7 @@ def to_svg(doc, scale=0.11, pad=90):
             f'<text x="{tx:.1f}" y="{ty:.1f}" font-size="11.5" fill="#2b3439">{esc}</text>'
         )
 
-    legend = [
+    legend: list[tuple[NodeType, str]] = [
         ("PT", "pass-through"),
         ("TR", "transfer"),
         ("CH", "charging"),
@@ -458,15 +525,16 @@ def to_svg(doc, scale=0.11, pad=90):
     return "\n".join(out)
 
 
-def to_ascii(doc, step=1):
-    glyph = {"PT": "·", "TR": "T", "CH": "C", "PK": "P", "YI": "+"}
+def to_ascii(doc: Doc, step: int = 1) -> str:
+    glyph: dict[NodeType, str] = {"PT": "·", "TR": "T", "CH": "C", "PK": "P", "YI": "+"}
     cell = SPACING * step
     cols, rows = WIDTH // cell + 1, HEIGHT // cell + 1
-    best = [[None] * cols for _ in range(rows)]
+    best: list[list[NodeType | None]] = [[None] * cols for _ in range(rows)]
     for n in doc["nodes"]:
         c, r = int(n["position"]["x"]) // cell, int(n["position"]["y"]) // cell
         t = n["node_type"]
-        if best[r][c] is None or TYPE_PRIORITY[t] > TYPE_PRIORITY[best[r][c]]:
+        cur = best[r][c]
+        if cur is None or TYPE_PRIORITY[t] > TYPE_PRIORITY[cur]:
             best[r][c] = t
     lines = ["+" + "-" * cols + "+"]
     for r in range(rows - 1, -1, -1):
@@ -477,7 +545,7 @@ def to_ascii(doc, step=1):
     return "\n".join(lines)
 
 
-def run():
+def run() -> None:
     out = Path.cwd() / "output"
     out.mkdir(parents=True, exist_ok=True)
     b = build()
@@ -486,7 +554,7 @@ def run():
     (out / "warehouse.json").write_text(json.dumps(doc, indent=2) + "\n")
     (out / "warehouse_map.svg").write_text(to_svg(doc) + "\n")
 
-    counts = {}
+    counts: dict[NodeType, int] = {}
     for n in doc["nodes"]:
         counts[n["node_type"]] = counts.get(n["node_type"], 0) + 1
     print(to_ascii(doc))
