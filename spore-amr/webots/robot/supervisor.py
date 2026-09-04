@@ -117,14 +117,14 @@ def main(argv=None):
                 colour = AMBER
             else:
                 kind = status.get("kind", "??")
-                edges = status.get("out_edges") or []
-                text = "{}  node {} {}  ({}, {}) mm{}".format(
+                text = "{}  node {} {} {}  ({}, {}) cm  region {}".format(
                     name,
                     status.get("node_id"),
                     KIND_NAMES.get(kind, kind),
-                    status.get("x_mm"),
-                    status.get("y_mm"),
-                    "  next {}".format(edges[0][1]) if edges else "",
+                    status.get("name", ""),
+                    status.get("x_cm"),
+                    status.get("y_cm"),
+                    status.get("region_id"),
                 )
                 colour = KIND_COLORS.get(kind, WHITE)
 
@@ -142,7 +142,10 @@ def main(argv=None):
                     believed_x = status.get("fix_x_mm")
                     believed_y = status.get("fix_y_mm")
                     if believed_x is None:
-                        believed_x, believed_y = status["x_mm"], status["y_mm"]
+                        # No lever-arm fix, so fall back to the marker's own
+                        # position -- cm in the shared schema, mm here.
+                        believed_x = status["x_cm"] * 10.0
+                        believed_y = status["y_cm"] * 10.0
                     fix_error[name] = math.hypot(true_x - believed_x,
                                                   true_y - believed_y)
 

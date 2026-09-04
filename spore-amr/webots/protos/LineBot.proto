@@ -25,7 +25,7 @@ PROTO LineBot [
   field SFFloat    cameraX          0.095     # must clear the chassis; see the occlusion note
   field SFFloat    cameraMast       0.06      # camera height above robot origin
   field SFFloat    cameraFov        1.05
-  field SFInt32    cameraResolution 256
+  field SFInt32    cameraResolution 512     # 57-module codes need this
   field SFBool     hasLidar         TRUE      # forward obstacle reflex only
   field SFFloat    lidarX           0.062
   field SFFloat    lidarZ           0.012     # above the deck, below the boom
@@ -298,9 +298,11 @@ PROTO LineBot [
       # QR camera, on a short mast. Looking down from
       # %<= (cameraFloorHeight * 1000).toFixed(0) >% mm it sees a
       # %<= (footprint * 1000).toFixed(0) >% mm square at
-      # %<= mmPerPixel.toFixed(3) >% mm/pixel, so a 50 mm code (29 modules
-      # including its quiet zone) lands at ~%<= (50 / 29 / mmPerPixel).toFixed(1) >% px per module.
-      # Four is the usual floor for a reliable decode.
+      # %<= mmPerPixel.toFixed(3) >% mm/pixel. The shared QR schema is JSON, so a
+      # node payload is 57 modules including its quiet zone, and a 60 mm code
+      # lands at ~%<= (60 / 57 / mmPerPixel).toFixed(1) >% px per module. Four is the usual floor
+      # for a reliable decode, and 256 px gave only 2.9 -- which is why this is
+      # 512 and not the resolution a compact payload would have needed.
       Camera {
         translation %<= fields.cameraX.value >% 0 %<= cameraZ >%
         rotation 0 1 0 1.5707963
