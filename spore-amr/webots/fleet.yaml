@@ -1,0 +1,71 @@
+# Single source of truth for the track and the robot fleet.
+# Regenerate with:  uv run python -m tools.make_track && uv run python -m tools.gen_fleet
+
+track:
+  plane_size: [4.0, 4.0]     # ground plane, metres (square keeps the texture power-of-two)
+  track_size: [3.0, 2.0]     # the oval itself
+  shape: oval
+  line_width: 0.02
+  pixels_per_metre: 512
+
+robot:
+  sensor_count: 3
+  sensor_spacing: 0.02
+  sensor_height: 0.015
+
+# Floor markers. Each is its own textured plane, not pixels in the track
+# texture: at 512 px/m a QR module would be a single texel and Webots would
+# mipmap the finder patterns away.
+#
+# `at` is normalised arclength along the centerline, so markers sit on the
+# line and move with the track. The QR payload carries absolute position, so
+# the fleet's graph is emergent -- no robot is ever handed a map.
+markers:
+  spec:
+    tile_mm: 100.0        # 92.7 mm of this is inside the camera's footprint
+    qr_mm: 60.0           # 33 modules -> 5.0 camera px per module
+    margin_mm: 5.0
+    pixels_per_mm: 5.12
+    border_rgb: [255, 122, 0]
+  nodes:
+    - {id: 10, kind: PT, at: 0.00, out_edges: [{bearing: 0,   to: 20}]}
+    - {id: 20, kind: TR, at: 0.20, out_edges: [{bearing: 90,  to: 30}]}
+    - {id: 30, kind: YI, at: 0.40, out_edges: [{bearing: 180, to: 40}]}
+    - {id: 40, kind: CH, at: 0.60, out_edges: [{bearing: 180, to: 50}]}
+    - {id: 50, kind: PK, at: 0.80, out_edges: [{bearing: 270, to: 10}]}
+
+defaults:
+  sensors:
+    # In ADC counts: the firmware sees 10-bit counts, not raw simulator units.
+    white_ref: 1023
+    black_ref: 205
+    min_confidence: 0.15
+    sample_period_s: 0.016
+    latency_s: 0.0
+    adc: {bits: 10, full_scale: 1000.0}
+  control:
+    base_speed: 6.0          # rad/s at the wheels (~0.12 m/s)
+    max_speed: 20.0
+    steering_limit: 8.0
+    lost_line_timeout_s: 2.0
+    # Error is in metres and steering is in rad/s, so kp is large by design.
+    pid: {kp: 150.0, ki: 0.0, kd: 4.0}
+  resources:
+    memory: 256m
+    cpus: "0.5"
+
+robots:
+  - name: bot_01
+    pose: {x: 0.0, y: -1.0, theta: 0.0}
+
+# Obstacles for the forward-lidar reflex. Unlike marker tiles these carry a
+# boundingObject, so a ray has something to hit.
+#
+# Placed 1.24 m into the lap -- far enough that the robot is tracking the line
+# properly before it meets one. At spawn it would trip on the first tick, which
+# is correct behaviour and a useless demonstration of it.
+obstacles:
+  # On the right arc, past marker 20. Deliberately on a curve: retreating round
+  # a bend is the case that needs the rear array, so it is the case worth
+  # testing.
+  - {x: 1.496, y: -0.086, size: [0.10, 0.16, 0.12]}

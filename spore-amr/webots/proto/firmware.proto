@@ -1,0 +1,86 @@
+// The link between a robot's two halves: the firmware that owns the sensors
+// and motors (the "ESP32") and the companion that decides (the "Pi").
+//
+// The firmware is the SERVER, so no client connected means no commands and the
+// control loop keeps going on its last setpoint. One bidirectional stream,
+// because at a junction the firmware asks and the companion answers -- a unary
+// service could not do that without the companion also becoming a server.
+//
+// Units are in the field names. A gain in this project was once wrong by 150x
+// because one side meant metres and the other rad/s.
+
+syntax = "proto3";
+
+package floorgraph.v1;
+
+enum NodeKind {
+  NODE_KIND_UNSPECIFIED = 0;
+  NODE_KIND_PASS_THROUGH = 1;
+  NODE_KIND_TRANSFER = 2;
+  NODE_KIND_CHARGING = 3;
+  NODE_KIND_PARKING = 4;
+  NODE_KIND_YIELD = 5;
+}
+
+message OutEdge {
+  uint32 bearing_deg = 1;  // 0-359, facility frame, 0 = +x
+  uint32 to_node = 2;
+}
+
+// A decoded marker. Whether it is a junction is len(out_edges) > 1, so node
+// type and node degree stay orthogonal.
+message Marker {
+  uint32 node = 1;
+  NodeKind kind = 2;
+  int32 x_mm = 3;
+  int32 y_mm = 4;
+  repeated OutEdge out_edges = 5;
+}
+
+// A junction: the firmware stops on the tile and waits for a Navigate carrying
+// this query_id. To hold a robot, answer late -- there is no WAIT, because a
+// delayed reply already means exactly that.
+message JunctionQuery {
+  uint64 query_id = 1;
+  Marker marker = 2;
+  double heading_rad = 3;  // heading as the robot arrived
+}
+
+// query_id comes back so a fresh answer is distinguishable from a late answer
+// to the previous question. Two junctions can share a to_node -- a reroute to
+// the same place -- and that is when confusing them would matter.
+message Navigate {
+  uint64 query_id = 1;
+  uint32 to_node = 2;
+  uint32 bearing_deg = 3;  // absolute; the firmware turns to this heading
+}
+
+message Status {
+  double cross_track_m = 1;
+}
+
+// `t` is simulation seconds, not wall time: a sweep runs at 100x realtime.
+message Command {
+  double t = 1;
+  oneof kind {
+    double set_speed_rad_s = 10;
+    bool running = 11;  // false stops, true resumes
+    Navigate navigate = 12;
+  }
+}
+
+message Event {
+  double t = 1;
+  oneof kind {
+    bool line_lost = 10;  // false means found again
+    Status status = 11;
+    Marker marker = 12;
+    JunctionQuery junction = 13;
+  }
+}
+
+// No sequence numbers: a gRPC stream is already ordered and reliable, so one
+// would only restate what the transport guarantees.
+service Firmware {
+  rpc Session(stream Command) returns (stream Event);
+}

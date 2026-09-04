@@ -1,0 +1,11 @@
+{
+  "name": "floorgraph-net",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "sim": "node src/entry/simulate.ts",
+    "check": "tsc --noEmit"
+  },
+  "dependencies": { "zod": "^4.1.13" },
+  "devDependencies": { "typescript": "^5.9.3", "@types/node": "^24.10.1" }
+}
