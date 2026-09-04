@@ -10,20 +10,27 @@ SHAPES = {"oval": oval}
 
 @dataclass(frozen=True)
 class TrackConfig:
-    size: Tuple[float, float]
+    """Ground plane and the track drawn on it.
+
+    The plane and the track are sized independently so the plane can stay square
+    (and therefore a power of two in pixels, which Webots does not rescale)
+    while the track itself is free to be a non-square oval.
+    """
+
+    plane_size: Tuple[float, float]
+    track_size: Tuple[float, float]
     shape: str = "oval"
-    margin: float = 0.5
     line_width: float = 0.02
     pixels_per_metre: int = 512
 
     @classmethod
     def from_dict(cls, data: dict) -> "TrackConfig":
         known = {f: data[f] for f in cls.__dataclass_fields__ if f in data}
-        known["size"] = tuple(float(v) for v in known["size"])
+        for key in ("plane_size", "track_size"):
+            known[key] = tuple(float(v) for v in known[key])
         return cls(**known)
 
     def build_centerline(self):
-        """The track shape, inset from the ground plane by `margin`."""
         if self.shape not in SHAPES:
             raise ValueError(
                 "unknown track shape {!r}; known shapes: {}".format(
@@ -31,16 +38,16 @@ class TrackConfig:
                 )
             )
 
-        width = self.size[0] - 2 * self.margin
-        height = self.size[1] - 2 * self.margin
-        if width <= 0 or height <= 0:
-            raise ValueError(
-                "margin {} leaves no room inside a {} x {} plane".format(
-                    self.margin, *self.size
+        for axis, (track, plane) in enumerate(zip(self.track_size, self.plane_size)):
+            if track + self.line_width > plane:
+                raise ValueError(
+                    "track {} does not fit on the plane along axis {}: "
+                    "{} plus a {} line exceeds {}".format(
+                        self.track_size, axis, track, self.line_width, plane
+                    )
                 )
-            )
 
-        return SHAPES[self.shape](width=width, height=height)
+        return SHAPES[self.shape](width=self.track_size[0], height=self.track_size[1])
 
 
 def deep_merge(base: dict, override: dict) -> dict:

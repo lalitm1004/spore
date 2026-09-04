@@ -22,7 +22,7 @@ def main(argv=None) -> int:
     config = TrackConfig.from_dict(manifest["track"])
 
     centerline = config.build_centerline()
-    spec = TrackImageSpec(size=config.size, pixels_per_metre=config.pixels_per_metre)
+    spec = TrackImageSpec(size=config.plane_size, pixels_per_metre=config.pixels_per_metre)
     image = render_track(centerline, spec, line_width=config.line_width)
 
     args.output.parent.mkdir(parents=True, exist_ok=True)
