@@ -20,3 +20,4 @@ services:
       WORLD: "${WORLD:-worlds/track.wbt}"
       MODE: "${MODE:-realtime}"
       RENDERING: "${RENDERING:-on}"
+      STREAM_MODE: "${STREAM_MODE:-w3d}"

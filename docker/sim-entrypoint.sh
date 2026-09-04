@@ -4,6 +4,9 @@ set -euo pipefail
 
 WORLD="${WORLD:-worlds/track.wbt}"
 MODE="${MODE:-realtime}"
+# w3d renders in the browser; mjpeg renders server-side and streams JPEG frames
+# (useful for weak clients, and the only mode that can be captured headlessly).
+STREAM_MODE="${STREAM_MODE:-w3d}"
 DISPLAY_NUM="${DISPLAY_NUM:-99}"
 
 # Start Xvfb directly rather than via xvfb-run. xvfb-run waits for Xvfb to
@@ -28,7 +31,7 @@ fi
 
 exec webots \
   "${RENDER_FLAG[@]}" \
-  --stream \
+  --stream="${STREAM_MODE:-w3d}" \
   --port=1234 \
   --batch \
   --stdout \

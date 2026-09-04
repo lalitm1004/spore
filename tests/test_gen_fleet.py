@@ -94,3 +94,23 @@ def test_world_and_compose_agree_on_the_robot_names():
         if name in ("sim", "supervisor"):
             continue
         assert 'name "{}"'.format(name) in world
+
+
+import math
+
+from tools.gen_fleet import TOP_DOWN_ORIENTATION, viewpoint_height
+
+
+def test_viewpoint_is_top_down_looking_along_negative_z():
+    world = world_source(MANIFEST)
+
+    assert TOP_DOWN_ORIENTATION in world
+
+
+def test_viewpoint_height_frames_the_whole_plane():
+    # Identity orientation looks along +x, so a top-down view needs the
+    # rotation above; the height must fit the plane in the field of view.
+    height = viewpoint_height(plane_size=(4.0, 4.0), field_of_view=math.pi / 4)
+
+    assert height >= 2.0 / math.tan(math.pi / 8)
+    assert "position 0 0 {}".format(round(height, 3)) in world_source(MANIFEST)

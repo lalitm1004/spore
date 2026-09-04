@@ -5,12 +5,20 @@ drift from the `--robot-name` its container connects with.
 """
 
 import argparse
+import math
 import pathlib
 from typing import List, Tuple
 
 import yaml
 
 from tools.manifest import TrackConfig, deep_merge
+
+# Identity orientation looks along +x with +z up. This rotation maps x -> -z and
+# z -> +y, so the camera looks straight down with world +y up in the image,
+# matching how the track texture is laid out.
+TOP_DOWN_ORIENTATION = "orientation -0.5774 0.5774 0.5774 2.0944"
+FIELD_OF_VIEW = math.pi / 4
+VIEW_MARGIN = 1.15
 
 CONTROLLER_IMAGE = "sih2026/controller:dev"
 SIM_IMAGE = "sih2026/sim:dev"
@@ -20,6 +28,12 @@ def sensor_offsets(count: int, spacing: float) -> Tuple[float, ...]:
     """Lateral sensor positions, left to right, in the robot frame (+y left)."""
     first = (count - 1) / 2 * spacing
     return tuple(first - i * spacing for i in range(count))
+
+
+def viewpoint_height(plane_size, field_of_view: float = FIELD_OF_VIEW) -> float:
+    """Camera height that fits the whole ground plane in view."""
+    half = max(plane_size) / 2
+    return half / math.tan(field_of_view / 2) * VIEW_MARGIN
 
 
 def robot_configs(manifest: dict) -> List[dict]:
@@ -73,8 +87,8 @@ WorldInfo {{
   ]
 }}
 Viewpoint {{
-  orientation 0 0 1 0
-  position 0 0 5
+  {orientation}
+  position 0 0 {height}
 }}
 Background {{
   skyColor [
@@ -108,7 +122,9 @@ DEF GROUND Solid {{
   boundingObject Plane {{
   }}
 }}
-'''.format(plane_x=plane_x, plane_y=plane_y)
+'''.format(plane_x=plane_x, plane_y=plane_y,
+           orientation=TOP_DOWN_ORIENTATION,
+           height=round(viewpoint_height(track.plane_size), 3))
 
     body = []
     for config in robot_configs(manifest):
