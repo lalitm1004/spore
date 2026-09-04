@@ -136,8 +136,12 @@ Differential drive, Z-up world (Webots ENU convention since R2022a).
 - Two `HingeJoint`s with `RotationalMotor`s named `left wheel motor` /
   `right wheel motor`, wheel radius 0.02 m, axle separation 0.09 m.
 - One passive caster sphere with low friction `contactMaterial`.
-- Five `DistanceSensor` nodes, `type "infra-red"`, named `ir0`..`ir4`, mounted at
-  the front, pointing along -Z, ~0.02 m above the floor, ~0.012 m apart laterally.
+- Three `DistanceSensor` nodes, `type "infra-red"`, named `ir0`..`ir2`, mounted at
+  the front, 0.015 m above the floor, 0.02 m apart laterally, pointing down via
+  `rotation 0 1 0 1.5707963` (the convention Webots' own e-puck ground sensors
+  use). Each casts 5 rays over a 0.5 rad aperture, giving a ~8 mm footprint, so
+  readings ramp smoothly as the line slides underneath rather than switching
+  between two levels.
 
 IR sensors are the correct choice here because Webots IR rays collide with `Solid`
 nodes themselves rather than bounding objects, and their response is
@@ -207,9 +211,11 @@ line_pos = sum(w_i * x_i) / sum(w_i)    # x_i = sensor lateral offset, metres
 `line_pos` is 0 when centred, negative when the line is left of centre. If
 `sum(w_i)` falls below `min_confidence`, the line is considered lost.
 
-`white_ref` and `black_ref` live in the per-robot config. `tools/calibrate.py`
-drives a robot across the line and prints measured values to paste back into
-`fleet.yaml`.
+`white_ref` and `black_ref` live in the per-robot config, defaulting to 1000 and
+200. Those follow from the PROTO's `lookupTable` and the documented reflection
+factor, and were confirmed by measurement: 996.5 / 199.7 / 995.2 across the array
+at the start pose. `tools/calibrate.py` re-measures them by driving a robot across
+the line, for use when the PROTO or track changes.
 
 ### 6.3 Control law
 
@@ -228,9 +234,21 @@ and gap handling are explicitly deferred.
 ### 6.4 Telemetry
 
 Each controller writes `out/<robot_name>.csv` (a mounted volume), one row per
-control step: `t, ir0..ir4, r0..r4, line_pos, error, p, i, d, u, v_left, v_right,
+control step: `t, ir0..ir2, r0..r2, line_pos, error, p, i, d, u, v_left, v_right,
 lost`. On exit it writes `out/<robot_name>.summary.json` with run duration, mean
 and max `|error|`, time spent lost, and control steps completed.
+
+### 6.5 Ground truth via a Supervisor
+
+Robots carry only the sensors a real robot would have. A separate `Supervisor`
+node reads every robot's true pose from the scene tree and writes
+`out/ground_truth.csv` (`t, robot, x, y, cross_track_error`), computing the error
+from the analytic centerline in `tools.track.centerline`.
+
+Centralising this keeps the benchmark honest: no control code can reach a
+privileged position sensor, because none exists on the robots. The Supervisor is
+also the natural home for lap counting and scoring later. It runs as its own
+small container, connecting as an extern controller like any robot.
 
 The summary file is what CI and tuning experiments assert on; the CSV is for
 plotting. Per-robot files rather than one shared file, so N containers never
@@ -286,6 +304,7 @@ SIH2026/
   worlds/textures/track.png   # generated
   config/<robot>.yaml         # generated
   robot/                      # control software (section 6)
+  supervisor/                 # ground-truth telemetry for the fleet
   tools/{make_track,gen_fleet,calibrate}.py
   tests/
   out/                        # telemetry, gitignored
