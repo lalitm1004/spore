@@ -6,6 +6,10 @@ from typing import List, Optional, Tuple
 from tools.track.centerline import oval
 from tools.track.marker import KINDS, MarkerSpec, encode_payload
 
+# Name prefixes follow warehouse.json's convention, e.g. "charging/PT/001".
+KIND_SLUGS = {"PT": "aisle", "TR": "transfer", "CH": "charging",
+              "PK": "parking", "YI": "yield"}
+
 SHAPES = {"oval": oval}
 
 
@@ -63,7 +67,8 @@ class MarkerNode:
     node_id: int
     kind: str
     at: float
-    out_edges: Tuple[Tuple[int, int], ...] = ()
+    name: str = ""
+    region_id: int = 0
 
     @classmethod
     def from_dict(cls, data: dict) -> "MarkerNode":
@@ -73,11 +78,18 @@ class MarkerNode:
                 "marker {} has unknown kind {!r}; known kinds: {}".format(
                     data.get("id"), kind, ", ".join(sorted(KINDS))))
 
-        edges = tuple(
-            (int(edge["bearing"]), int(edge["to"]))
-            for edge in (data.get("out_edges") or [])
+        node_id = int(data["id"])
+        return cls(
+            node_id=node_id,
+            kind=kind,
+            at=float(data["at"]),
+            # The schema requires a name. Follow warehouse.json's convention
+            # rather than inventing one, so a marker generated here is
+            # indistinguishable from one generated there.
+            name=data.get("name") or "{}/{}/{:03d}".format(
+                KIND_SLUGS.get(kind, "node"), kind, node_id),
+            region_id=int(data.get("region_id", 0)),
         )
-        return cls(node_id=int(data["id"]), kind=kind, at=float(data["at"]), out_edges=edges)
 
     def world_pose(self, centerline) -> Tuple[float, float, float]:
         """(x, y, heading) in metres and radians."""
@@ -85,23 +97,21 @@ class MarkerNode:
         return x, y, centerline.heading_at(self.at)
 
     def payload(self, centerline, origin_offset: Tuple[float, float]) -> str:
-        """The QR's contents.
+        """The QR's contents, per the shared schema.
 
-        Marker coordinates are absolute millimetres from a facility origin at
-        the plane's corner, so every payload is non-negative and the fleet's
-        graph stays emergent -- a robot reading these has observed the layout
-        without ever being handed a map.
+        Coordinates are centimetres from a facility origin at the plane's
+        corner, matching `warehouse.json`'s `units`. The payload carries no
+        bearing and no out-edges: both are derivable from the shared map, and
+        every character omitted is modules the camera does not have to resolve.
         """
-        import math
-
-        x, y, heading = self.world_pose(centerline)
+        x, y, _ = self.world_pose(centerline)
         return encode_payload(
             node_id=self.node_id,
             kind=self.kind,
-            x_mm=round((x + origin_offset[0]) * 1000),
-            y_mm=round((y + origin_offset[1]) * 1000),
-            bearing_deg=round(math.degrees(heading)) % 360,
-            out_edges=self.out_edges,
+            x_cm=round((x + origin_offset[0]) * 100, 1),
+            y_cm=round((y + origin_offset[1]) * 100, 1),
+            name=self.name,
+            region_id=self.region_id,
         )
 
 
@@ -132,13 +142,6 @@ class MarkerConfig:
             if node.node_id in seen:
                 raise ValueError("duplicate marker id {}".format(node.node_id))
             seen.add(node.node_id)
-
-        known = {node.node_id for node in nodes}
-        for node in nodes:
-            for _, neighbour in node.out_edges:
-                if neighbour not in known:
-                    raise ValueError(
-                        "marker {} points at unknown node {}".format(node.node_id, neighbour))
 
         return cls(spec=spec, nodes=tuple(nodes))
 

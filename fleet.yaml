@@ -25,14 +25,14 @@ markers:
     tile_mm: 100.0        # 92.7 mm of this is inside the camera's footprint
     qr_mm: 60.0           # 33 modules -> 5.0 camera px per module
     margin_mm: 5.0
-    pixels_per_mm: 5.12
+    pixels_per_mm: 10.0
     border_rgb: [255, 122, 0]
   nodes:
-    - {id: 10, kind: PT, at: 0.00, out_edges: [{bearing: 0,   to: 20}]}
-    - {id: 20, kind: TR, at: 0.20, out_edges: [{bearing: 90,  to: 30}]}
-    - {id: 30, kind: YI, at: 0.40, out_edges: [{bearing: 180, to: 40}]}
-    - {id: 40, kind: CH, at: 0.60, out_edges: [{bearing: 180, to: 50}]}
-    - {id: 50, kind: PK, at: 0.80, out_edges: [{bearing: 270, to: 10}]}
+    - {id: 10, kind: PT, at: 0.00, region_id: 1}
+    - {id: 20, kind: TR, at: 0.20, region_id: 2}
+    - {id: 30, kind: YI, at: 0.40, region_id: 3}
+    - {id: 40, kind: CH, at: 0.60, region_id: 3}
+    - {id: 50, kind: PK, at: 0.80, region_id: 4}
 
 defaults:
   sensors:

@@ -254,7 +254,7 @@ PROTO_OPTICS = {
     "camera_x": 0.095,
     "camera_mast": 0.060,
     "camera_fov": 1.05,
-    "camera_resolution": 256,
+    "camera_resolution": 512,
 }
 WHEEL_RADIUS = 0.02
 

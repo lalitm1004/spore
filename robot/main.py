@@ -44,6 +44,14 @@ def build_columns(sensor_count):
     ]
 
 
+# How far past a tile to hold course before admitting the line is genuinely
+# lost. One tile length plus margin: if the lane were there, it would have been
+# found by now.
+RECOVERY_BUDGET_M = 0.15
+
+# EWMA weight for the steering average held across a crossing.
+STEERING_AVERAGE_ALPHA = 0.04
+
 # Index into the LED's `color` list in LineBot.proto.
 LED_SEARCHING = 1
 LED_BY_KIND = {"PT": 2, "TR": 3, "CH": 4, "PK": 5, "YI": 6}
@@ -81,6 +89,7 @@ class Optics:
         self._camera_on = False
         self._reader = None
         self._reported_crossing = 0
+        self.previous_fix = None
         self.last_read = None
         self.reads = 0
 
@@ -103,25 +112,20 @@ class Optics:
         # BGRA, one pixel.
         return self.detector.sees_border((image[2], image[1], image[0]))
 
-    # The code's rotation in a frame when the robot is square to the tile.
-    # Measured, not derived: it is the camera's mounting convention, and a run
-    # of four markers put it within 0.08 rad of -pi/2 every time.
-    CAMERA_ROTATION_ZERO = -1.5957
-
-    def heading_from(self, read):
-        """Absolute heading from the marker, in radians.
-
-        The tile is laid along the lane, so its bearing plus the code's
-        rotation in the frame is a heading that owes nothing to the wheels.
-        On a straight this matches truth to a fraction of a degree; on a curve
-        it carries a bias of a few degrees, because the code is read about
-        60 mm before the tile's centre and the lane turns in between. That
-        bias is bounded, which unbounded odometry drift is not.
-        """
-        if read.bearing_deg is None:
-            return None
-        return _wrap(math.radians(read.bearing_deg)
-                     + (read.image_rotation - self.CAMERA_ROTATION_ZERO))
+    # Heading is not corrected from markers, deliberately.
+    #
+    # The shared QR schema carries no lane bearing, and the obvious substitute
+    # -- the chord between consecutive markers -- is only the lane's direction
+    # when the lane between them is straight. On this track's arc, nodes 20 and
+    # 30 give a chord of 85 degrees where the lane runs at 133, and feeding
+    # that back turned the robot around. In the real warehouse, edges are
+    # straight 2 m spans and the chord would be exact; the oval is the outlier,
+    # and a correction that is right only on some geometry is worse than none.
+    #
+    # It costs nothing now anyway: calibrating track_width to 0.0994 m brought
+    # wheel-only heading drift to about 0.1 degrees per marker segment, from
+    # the 8-10 it was. Odometry heading is good enough to rotate the lever arm
+    # with, and the marker still supplies an absolute position fix.
 
     def fix_from(self, read, distance, heading):
         """Where the read puts the robot's own origin, in facility mm."""
@@ -205,11 +209,13 @@ def write_status(path, name, t, distance, read, fix=None, theta=None,
         "robot": name,
         "t": round(t, 3),
         "distance": round(distance, 4),
+        "schema_version": read.schema_version,
         "node_id": read.node_id,
+        "name": read.name,
+        "region_id": read.region_id,
         "kind": read.kind,
-        "x_mm": read.x_mm,
-        "y_mm": read.y_mm,
-        "out_edges": [list(edge) for edge in read.out_edges],
+        "x_cm": read.x_cm,
+        "y_cm": read.y_cm,
         # Where the robot believes its own origin is, having removed the lever
         # arm between it and the marker. This is the number worth scoring
         # against ground truth; the marker's own position is not.
@@ -221,7 +227,6 @@ def write_status(path, name, t, distance, read, fix=None, theta=None,
         # track-width calibration; comparing `odo_theta` would not, because by
         # then it is the marker's answer, not the wheels'.
         "drifted_theta": round(drifted_theta, 5) if drifted_theta is not None else None,
-        "bearing_deg": read.bearing_deg,
         "image_rotation": round(read.image_rotation, 5),
     }
     try:
@@ -381,7 +386,9 @@ def main(argv=None):
     lost_since = None
     last_position = 0.0
     last_steering = 0.0
+    steering_average = 0.0
     border_now = False
+    recovery_from = None
     trip_distance = None
 
     while webots_robot.step(timestep) != -1:
@@ -437,15 +444,10 @@ def main(argv=None):
         rear_position = None
         marker_read = optics.update(distance) if optics is not None else None
         if marker_read is not None:
-            # An absolute fix in both position and heading. The tile is laid
-            # along the lane, so its bearing plus the code's rotation in the
-            # frame is a heading that owes nothing to the wheels -- which is
-            # what stops the lever-arm correction from inheriting their drift.
-            drifted_theta = odometry.pose.theta   # keep it: it is the only
-            # evidence of how far the wheels had wandered before this fix.
-            heading = optics.heading_from(marker_read)
-            if heading is None:
-                heading = drifted_theta
+            # An absolute position fix. Heading is left to the odometry: see
+            # the note on Optics above for why the marker does not supply one.
+            drifted_theta = odometry.pose.theta
+            heading = drifted_theta
             fix = optics.fix_from(marker_read, distance, heading)
             if fix is not None:
                 odometry.reset(Pose(x=fix[0] / 1000.0, y=fix[1] / 1000.0,
@@ -453,6 +455,7 @@ def main(argv=None):
                                     distance=odometry.pose.distance))
                 if guard is None or not guard.blocked:
                     trip_distance = None
+            optics.previous_fix = (marker_read.x_mm, marker_read.y_mm)
             print("{}: {}".format(config.name, marker_read.summary), flush=True)
             write_status(status_path, config.name, now, distance, marker_read,
                          fix=fix, theta=heading, drifted_theta=drifted_theta)
@@ -461,8 +464,9 @@ def main(argv=None):
                     "t": round(now, 4),
                     "node": marker_read.node_id,
                     "kind": marker_read.kind,
-                    "x": marker_read.x_mm,
-                    "y": marker_read.y_mm,
+                    "x_cm": marker_read.x_cm,
+                    "y_cm": marker_read.y_cm,
+                    "region": marker_read.region_id,
                 }))
 
         # A marker tile covers the line it was following, so for ~115 mm the
@@ -477,6 +481,24 @@ def main(argv=None):
         if optics is not None and optics.crossing.state is Crossing.RECOVERING \
                 and not reading.lost:
             optics.crossing.recovered()
+
+        # Coming off a tile the line should be just ahead, so hold course while
+        # reacquiring it rather than running the lost-line search. That search
+        # is a hard turn at the steering limit -- right when the robot has
+        # genuinely wandered off, and a way to spin 180 degrees on the spot
+        # when it has not. It turned the robot around after every marker on a
+        # curve.
+        #
+        # Bounded, though: holding indefinitely just drives a circle back onto
+        # the same tile, which is how this first presented -- the same marker
+        # read over and over.
+        if optics is not None and optics.crossing.state is Crossing.RECOVERING:
+            if recovery_from is None:
+                recovery_from = distance
+            if reading.lost and (distance - recovery_from) < RECOVERY_BUDGET_M:
+                crossing_blind = True
+        else:
+            recovery_from = None
 
         if guard is not None and guard.blocked:
             # The reflex owns the motors. Retreating to a node means driving
@@ -517,11 +539,25 @@ def main(argv=None):
             lost_since = None
             error = last_position
             output = pid.update(error=error, dt=dt)
-            steering = last_steering
+            # Hold the *average* turn rate, not the last instantaneous one.
+            # The PD output oscillates around what the curve needs, so a single
+            # sample can be near zero on a bend -- and going straight for the
+            # 250 mm of a crossing plus reacquisition deviates about 31 mm from
+            # a 1 m-radius arc, which is outside a 20 mm lane. The robot came
+            # off the tile with no line under it and stopped.
+            steering = steering_average
             base = config.optics.crossing_speed or base_speed
         elif reading.lost:
-            lost_since = now if lost_since is None else lost_since
-            if now - lost_since >= control.lost_line_timeout_s:
+            # The lost-line timeout is for a robot that has wandered off the
+            # track, not one part-way through a marker. A crossing plus
+            # reacquisition takes about 3 s at the speeds the companion
+            # settles on, which is longer than the 2 s timeout -- so leaving
+            # the timer running here stopped the robot on a working track.
+            if optics is not None and optics.crossing.state is not Crossing.CLEAR:
+                lost_since = None
+            else:
+                lost_since = now if lost_since is None else lost_since
+            if lost_since is not None and now - lost_since >= control.lost_line_timeout_s:
                 print("{}: line lost for {:.1f}s, stopping".format(
                     config.name, control.lost_line_timeout_s), flush=True)
                 break
@@ -536,6 +572,9 @@ def main(argv=None):
             output = pid.update(error=error, dt=dt)
             steering = output.u
             last_steering = steering
+            # ~0.4 s of history at 62.5 Hz: long enough to average out the PD's
+            # oscillation, short enough to still be the curve the robot is on.
+            steering_average += (steering - steering_average) * STEERING_AVERAGE_ALPHA
             base = base_speed
 
         left, right = differential_speeds(base, steering, control.max_speed)
@@ -543,7 +582,21 @@ def main(argv=None):
         motors["right"].setVelocity(right)
 
         if link is not None:
-            for event in detector.update(now, reading.lost, error, steering):
+            # The line is absent by design while crossing a marker tile and
+            # while the reflex owns the motors, so neither counts as losing it.
+            # Reporting them anyway made the companion read every marker as
+            # "going too fast" and throttle: 6.0 -> 3.6 -> 2.16 -> 1.5 rad/s
+            # over three tiles, until the robot was crawling.
+            # The whole crossing counts, not just the blind stretch: 86 of 90
+            # losses in a run were in RECOVERING -- past the tile, reacquiring
+            # the line -- and those were enough to throttle the robot to a
+            # crawl on their own.
+            expected_absence = (
+                (optics is not None and optics.crossing.state is not Crossing.CLEAR)
+                or (guard is not None and guard.blocked)
+            )
+            for event in detector.update(now, reading.lost and not expected_absence,
+                                         error, steering):
                 link.send(event)
 
         row = {"t": now, "line_pos": reading.position, "error": error,

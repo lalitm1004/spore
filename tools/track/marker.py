@@ -15,9 +15,10 @@ enough to survive sampling: at cruise (0.12 m/s) and a 16 ms control step, a
 Pure: renders images and encodes payloads, no I/O and no Webots.
 """
 
+import json
 import math
 from dataclasses import dataclass
-from typing import Dict, Sequence, Tuple
+from typing import Dict, Tuple
 
 # Node kinds. Two letters so the payload stays inside QR alphanumeric mode.
 KINDS = {
@@ -28,13 +29,11 @@ KINDS = {
     "YI": "yield — a spur off the lane so one robot can let another pass",
 }
 
-# QR alphanumeric mode covers 0-9 A-Z space and $%*+-./: only. Separators are
-# picked from that set so the code stays in alphanumeric rather than falling
-# back to byte mode, which would cost roughly 45% more modules for the same
-# payload -- and modules are pixels the camera has to resolve.
-FIELD_SEP = "."
-EDGE_SEP = "/"
-BEARING_SEP = ":"
+# The shared schema is JSON, so the code is in byte mode and runs to 57 modules
+# rather than the 33 a compact string managed. That is the cost of one contract
+# across the whole system instead of two, and it is paid in camera resolution:
+# 57 modules across a 60 mm code needs 512 px to keep 4 px per module.
+SCHEMA_VERSION = "v0.1.0"
 
 ORANGE = (255, 122, 0)
 WHITE = (255, 255, 255)
@@ -48,7 +47,9 @@ class MarkerSpec:
     tile_mm: float = 100.0
     qr_mm: float = 60.0
     margin_mm: float = 5.0      # white quiet space between border and code
-    pixels_per_mm: float = 5.12
+    # 10 px per module at 57 modules, so the texture is never the limit --
+    # the camera is.
+    pixels_per_mm: float = 10.0
     border_rgb: Tuple[int, int, int] = ORANGE
 
     @property
@@ -67,68 +68,95 @@ class MarkerSpec:
 def encode_payload(
     node_id: int,
     kind: str,
-    x_mm: int,
-    y_mm: int,
-    bearing_deg: int = 0,
-    out_edges: Sequence[Tuple[int, int]] = (),
+    x_cm: float,
+    y_cm: float,
+    name: str,
+    region_id: int = 0,
+    schema_version: str = SCHEMA_VERSION,
 ) -> str:
-    """Build the marker's payload string.
+    """Build the marker's payload: one Node, per the shared QR schema.
 
-    Carries absolute position, so the fleet's graph stays emergent: a robot
-    reading a stream of these has observed the topology without ever being
-    handed a map. `out_edges` is (bearing_deg, neighbour_id) pairs -- degree
-    decides behaviour, so one out-edge is a waypoint and three is a junction,
-    and no separate "junction" kind is needed.
+    The schema lives at spore-amr/shared/schemas/qr-code.schema.json and is the
+    contract with the network layer, so this follows it exactly rather than
+    carrying anything convenient.
+
+    Notably it carries no out-edges and no lane bearing, and it does not need
+    to: the warehouse map is a generated artifact every robot holds, so both
+    are derivable from the node id. The marker only has to answer "which node
+    am I on", and the smaller it can say that, the more reliably it decodes.
+
+    Coordinates are centimetres, matching `warehouse.json`'s `units`.
     """
     if kind not in KINDS:
         raise ValueError("unknown node kind {!r}; expected one of {}".format(
             kind, ", ".join(sorted(KINDS))))
-    if x_mm < 0 or y_mm < 0:
-        raise ValueError(
-            "marker coordinates must be non-negative ({}, {}); place the "
-            "facility origin at a corner so no payload needs a sign".format(x_mm, y_mm))
+    if not name:
+        raise ValueError("node name is required by the schema")
 
-    edges = EDGE_SEP.join(
-        "{}{}{}".format(int(bearing) % 360, BEARING_SEP, int(neighbour))
-        for bearing, neighbour in out_edges
-    )
-    # The tile's own bearing in the facility frame. The marker is laid along
-    # the lane, so a robot that can measure the code's rotation in its camera
-    # gets an absolute heading out of it -- which is what stops a lever-arm
-    # fix from inheriting the odometry's accumulated heading drift.
-    return FIELD_SEP.join([str(node_id), kind, str(int(x_mm)), str(int(y_mm)),
-                           str(int(bearing_deg) % 360), edges])
+    document = {
+        "schema_version": schema_version,
+        "data": {
+            "id": int(node_id),
+            "name": name,
+            "region_id": int(region_id),
+            "node_type": kind,
+            "position": {"x": float(x_cm), "y": float(y_cm)},
+        },
+    }
+    # Compact separators: every character costs modules, and modules are the
+    # camera pixels this has to survive being sampled into.
+    return json.dumps(document, separators=(",", ":"))
 
 
 def decode_payload(payload: str) -> Dict:
     """Inverse of `encode_payload`. Raises ValueError on anything malformed."""
-    parts = payload.split(FIELD_SEP)
-    if len(parts) != 6:
-        raise ValueError("expected 6 fields, got {}: {!r}".format(len(parts), payload))
+    try:
+        document = json.loads(payload)
+    except ValueError as error:
+        raise ValueError("payload is not JSON: {}".format(error))
 
-    node_id, kind, x_mm, y_mm, tile_bearing, edges = parts
+    if not isinstance(document, dict) or "data" not in document:
+        raise ValueError("payload has no `data` object: {!r}".format(payload[:60]))
+
+    data = document["data"]
+    missing = [key for key in ("id", "name", "region_id", "node_type", "position")
+               if key not in data]
+    if missing:
+        raise ValueError("node is missing {}".format(", ".join(missing)))
+
+    kind = data["node_type"]
     if kind not in KINDS:
         raise ValueError("unknown node kind {!r}".format(kind))
 
-    out_edges = []
-    if edges:
-        for token in edges.split(EDGE_SEP):
-            bearing, _, neighbour = token.partition(BEARING_SEP)
-            if not neighbour:
-                raise ValueError("malformed edge {!r} in {!r}".format(token, payload))
-            out_edges.append((int(bearing), int(neighbour)))
+    position = data["position"]
+    if "x" not in position or "y" not in position:
+        raise ValueError("position needs both x and y")
 
     return {
-        "node_id": int(node_id),
+        "schema_version": document.get("schema_version", ""),
+        "node_id": int(data["id"]),
+        "name": data["name"],
+        "region_id": int(data["region_id"]),
         "kind": kind,
-        "x_mm": int(x_mm),
-        "y_mm": int(y_mm),
-        "bearing_deg": int(tile_bearing) % 360,
-        "out_edges": out_edges,
+        "x_cm": float(position["x"]),
+        "y_cm": float(position["y"]),
     }
 
 
-def qr_matrix(payload: str, error: str = "M") -> Tuple[Tuple[int, ...], ...]:
+# Error correction L, not M. Two reasons, and both point the same way:
+#
+#   * L needs 49 modules for a node payload where M needs 57, and modules are
+#     camera pixels this has to survive being sampled into.
+#   * OpenCV's decoder is measurably less reliable on the larger code -- 4 of 5
+#     node payloads at M, 5 of 5 at L, on the same renders.
+#
+# The recovery L gives up is bought back in time instead: a marker is in view
+# for roughly 22 frames, so a frame that fails is simply not the frame that
+# gets used.
+ERROR_CORRECTION = "L"
+
+
+def qr_matrix(payload: str, error: str = ERROR_CORRECTION) -> Tuple[Tuple[int, ...], ...]:
     """QR modules including the mandatory 4-module quiet zone."""
     import segno
 

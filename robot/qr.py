@@ -18,19 +18,28 @@ class Read:
     """One successful decode."""
 
     node_id: int
+    name: str
+    region_id: int
     kind: str
-    x_mm: int
-    y_mm: int
-    bearing_deg: int
-    out_edges: tuple
+    x_cm: float
+    y_cm: float
+    schema_version: str = ""
     image_rotation: float = 0.0   # radians, code's rotation within the frame
 
     @property
+    def x_mm(self) -> float:
+        """Position in millimetres, which is what the control code works in."""
+        return self.x_cm * 10.0
+
+    @property
+    def y_mm(self) -> float:
+        return self.y_cm * 10.0
+
+    @property
     def summary(self) -> str:
-        edges = " ".join("{}deg>{}".format(b, n) for b, n in self.out_edges)
-        return "node {} {} at ({}, {}) mm{}".format(
-            self.node_id, self.kind, self.x_mm, self.y_mm,
-            "  ->  " + edges if edges else "")
+        return "node {} {} {} at ({}, {}) cm  region {}".format(
+            self.node_id, self.kind, self.name,
+            self.x_cm, self.y_cm, self.region_id)
 
 
 def to_gray(image: bytes, width: int, height: int):
@@ -102,10 +111,11 @@ class QrReader:
 
         return Read(
             node_id=fields["node_id"],
+            name=fields["name"],
+            region_id=fields["region_id"],
             kind=fields["kind"],
-            x_mm=fields["x_mm"],
-            y_mm=fields["y_mm"],
-            bearing_deg=fields["bearing_deg"],
-            out_edges=tuple(fields["out_edges"]),
+            x_cm=fields["x_cm"],
+            y_cm=fields["y_cm"],
+            schema_version=fields.get("schema_version", ""),
             image_rotation=_image_rotation(points),
         )
