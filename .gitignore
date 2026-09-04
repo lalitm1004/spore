@@ -17,3 +17,10 @@ wheels/
 # `uv run spore-warehouse-layout`) - a duplicate here drifts out of sync
 # silently since nothing regenerates it.
 spore-amr/shared/warehouse-layout.json
+
+# spore-warehouse-layout/output/ should only ever track the two generated
+# deliverables - anything else dropped there (logs, intermediate files from a
+# future debug run, etc.) stays untracked rather than committed by accident.
+spore-warehouse-layout/output/*
+!spore-warehouse-layout/output/warehouse.json
+!spore-warehouse-layout/output/warehouse_map.svg
