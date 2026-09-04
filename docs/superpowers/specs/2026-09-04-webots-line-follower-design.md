@@ -78,8 +78,12 @@ must be able to interact within it.
 This is a property of single-world simulation, not a limitation of this design.
 The consequence to plan around: **the sim container is the scaling wall, not the
 controllers.** Sim cost grows with robot count and with rays per robot
-(5 IR sensors x N robots). Measure it with `webots --log-performance` before
-assuming a fleet size is feasible.
+(3 IR sensors x 5 rays x N robots).
+
+Measured with one robot: the controller container holds 12.7 MiB against its
+256 MiB limit at ~2% CPU, while the sim holds 305 MiB. The headroom on the
+brains is enormous; the sim is where a fleet gets expensive, and `RENDERING=off`
+(section 8) is what buys most of that back.
 
 ## 3. Fleet Definition: Static Generation
 
@@ -254,6 +258,12 @@ The summary file is what CI and tuning experiments assert on; the CSV is for
 plotting. Per-robot files rather than one shared file, so N containers never
 contend for a single writer.
 
+Rows are written and flushed as they are recorded, not buffered until exit. A
+run in `realtime` mode has no fixed end, so buffering would produce no telemetry
+at all until the container was stopped, and would grow without bound against the
+very memory limit the container exists to enforce. The summary is accumulated
+incrementally for the same reason.
+
 ## 7. Images
 
 Two images, both in `docker/`:
@@ -286,10 +296,19 @@ saturation, config merge and validation, track geometry, and fleet generation
 `summary.json` that mean `|error|` is below threshold and time-lost is zero. This
 is the regression gate and is CI-runnable.
 
-Whether `--no-rendering` is compatible with `w3d` streaming is unverified. It
-should be, since w3d renders client-side, and it would save sim CPU. It will be
-tested during implementation; if it breaks the stream, it is used only for the
-headless smoke test and dropped from the interactive path.
+`--no-rendering` is compatible with `w3d` streaming, and it is the single most
+important setting in this project. Measured on a one-robot fleet:
+
+| | rendering on | rendering off |
+| --- | --- | --- |
+| sim container CPU | 907% | 5.65% |
+| viewer | HTTP 200, WS 101 | HTTP 200, WS 101 |
+| IR readings | 198-653 | 198-653 |
+| tracking | 1.7 mm mean, 0 lost | 0.6 mm mean, 0 lost |
+
+The browser renders the scene in w3d mode, so server-side rendering is pure
+waste under Xvfb software rasterisation. It is on by default (`RENDERING=on`)
+and turned off with `RENDERING=off`.
 
 ## 9. Repository Layout
 

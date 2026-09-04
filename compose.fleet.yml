@@ -9,11 +9,15 @@ services:
     - /project/robot/main.py
     - --config
     - /project/config/bot_01.yaml
+    - --telemetry
+    - /project/out/bot_01.csv
     cpus: '0.5'
     depends_on:
     - sim
     image: sih2026/controller:dev
+    init: true
     mem_limit: 256m
+    user: ${DOCKER_USER:-1000:1000}
     volumes:
     - ./:/project
     working_dir: /project

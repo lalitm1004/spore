@@ -66,6 +66,25 @@ def test_compose_targets_each_robot_by_name_with_its_own_limits():
     assert compose["services"]["bot_02"]["cpus"] == "0.5"
 
 
+def test_compose_services_run_as_the_host_user_so_telemetry_is_not_root_owned():
+    compose = compose_source(MANIFEST)
+
+    assert compose["services"]["bot_01"]["user"] == "${DOCKER_USER:-1000:1000}"
+
+
+def test_compose_services_run_under_an_init_so_signals_reach_the_controller():
+    compose = compose_source(MANIFEST)
+
+    assert compose["services"]["bot_01"]["init"] is True
+
+
+def test_compose_writes_telemetry_inside_the_mounted_project():
+    # Only the repo is mounted, so a path outside it is not writable.
+    command = compose_source(MANIFEST)["services"]["bot_01"]["command"]
+
+    assert "/project/out/bot_01.csv" in command
+
+
 def test_world_and_compose_agree_on_the_robot_names():
     # The whole reason for generating both from one manifest.
     compose = compose_source(MANIFEST)

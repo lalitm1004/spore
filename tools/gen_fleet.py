@@ -145,6 +145,8 @@ def compose_source(manifest: dict) -> dict:
             "depends_on": ["sim"],
             "volumes": ["./:/project"],
             "working_dir": "/project",
+            "user": "${DOCKER_USER:-1000:1000}",
+            "init": True,
             "command": [
                 "--protocol=tcp",
                 "--ip-address=sim",
@@ -153,6 +155,8 @@ def compose_source(manifest: dict) -> dict:
                 "/project/robot/main.py",
                 "--config",
                 "/project/config/{}.yaml".format(name),
+                "--telemetry",
+                "/project/out/{}.csv".format(name),
             ],
             "mem_limit": resources.get("memory", "256m"),
             "cpus": resources.get("cpus", "0.5"),

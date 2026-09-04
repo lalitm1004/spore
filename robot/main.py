@@ -70,7 +70,8 @@ def main(argv=None) -> int:
         output_limit=control.steering_limit,
     )
 
-    telemetry_path = args.telemetry or pathlib.Path("/out/{}.csv".format(config.name))
+    # Relative to the working directory, which is the mounted project root.
+    telemetry_path = args.telemetry or pathlib.Path("out/{}.csv".format(config.name))
     log = TelemetryLog(telemetry_path, build_columns(len(sensors)))
 
     started = None
