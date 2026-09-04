@@ -115,6 +115,8 @@ def main(argv=None):
 
     base_speed = control.base_speed
     running = True
+    finished = False
+    summary = None
     started = None
     lost_since = None
     last_position = 0.0
@@ -177,15 +179,25 @@ def main(argv=None):
         for index, (value, normalised) in enumerate(zip(counts, reading.normalised)):
             row["ir{}".format(index)] = value
             row["r{}".format(index)] = normalised
-        log.record(row)
+
+        if running:
+            log.record(row)
+        elif not finished:
+            # The run ended when the companion said stop. Keep stepping so the
+            # simulation does not stall on a synchronized robot, but stop
+            # recording -- stationary zeros would pollute the run's metrics.
+            finished = True
+            summary = log.close()
+            print("{}: {}".format(config.name, summary), flush=True)
 
     for motor in motors.values():
         motor.setVelocity(0.0)
     if link is not None:
         link.close()
 
-    summary = log.close()
-    print("{}: {}".format(config.name, summary), flush=True)
+    if not finished:
+        summary = log.close()
+        print("{}: {}".format(config.name, summary), flush=True)
     return 0
 
 

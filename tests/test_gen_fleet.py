@@ -86,6 +86,13 @@ def test_compose_writes_telemetry_inside_the_mounted_project():
     assert environment["CONFIG"] == "/project/config/bot_01.yaml"
 
 
+def test_mission_duration_can_be_overridden_per_run():
+    # CI smoke tests need a short run without regenerating the fleet.
+    environment = compose_source(MANIFEST)["services"]["bot_01"]["environment"]
+
+    assert environment["MISSION_DURATION"] == "${MISSION_DURATION:-120}"
+
+
 def test_world_and_compose_agree_on_the_robot_names():
     # The whole reason for generating both from one manifest.
     compose = compose_source(MANIFEST)

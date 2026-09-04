@@ -168,7 +168,8 @@ def compose_source(manifest: dict) -> dict:
                 "CONFIG": "/project/config/{}.yaml".format(name),
                 "TELEMETRY": "/project/out/{}.csv".format(name),
                 "SIM_HOST": "sim",
-                "MISSION_DURATION": str(config.get("mission_duration_s", 120)),
+                "MISSION_DURATION": "${{MISSION_DURATION:-{}}}".format(
+                    config.get("mission_duration_s", 120)),
             },
             "mem_limit": resources.get("memory", "256m"),
             "cpus": resources.get("cpus", "0.5"),

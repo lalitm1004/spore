@@ -6,7 +6,7 @@ services:
     - sim
     environment:
       CONFIG: /project/config/bot_01.yaml
-      MISSION_DURATION: '120'
+      MISSION_DURATION: ${MISSION_DURATION:-120}
       ROBOT_NAME: bot_01
       SIM_HOST: sim
       TELEMETRY: /project/out/bot_01.csv
