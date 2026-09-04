@@ -39,7 +39,7 @@ DEF GROUND Solid {
         metalness 0
         baseColorMap ImageTexture {
           url [
-            "textures/track.png"
+            "../textures/track.png"
           ]
         }
       }

@@ -9,7 +9,11 @@ from tools.manifest import TrackConfig
 from tools.track.raster import TrackImageSpec, render_track
 
 DEFAULT_MANIFEST = pathlib.Path("fleet.yaml")
-DEFAULT_OUTPUT = pathlib.Path("worlds/textures/track.png")
+# At the project root, not under worlds/: the streaming server serves files
+# from the project root, while Webots resolves the world's texture url
+# relative to the world file. "../textures/track.png" is the one spelling
+# that both resolve to the same file.
+DEFAULT_OUTPUT = pathlib.Path("textures/track.png")
 
 
 def main(argv=None) -> int:
