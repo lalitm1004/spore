@@ -30,6 +30,8 @@ PROTO LineBot [
   field SFFloat    lidarFov         1.5
   field SFFloat    lidarRange       1.0
   field SFInt32    lidarPoints      32
+  field SFFloat    casterX          0.045     # ball transfers, fore and aft
+  field SFFloat    casterRadius     0.010
 ]
 {
   %<
@@ -40,6 +42,9 @@ PROTO LineBot [
 
     // Floor is one wheel radius below the robot origin.
     const sensorZ = height - WHEEL_RADIUS;
+
+    // A ball transfer's centre sits one radius above the floor.
+    const casterZ = fields.casterRadius.value - WHEEL_RADIUS;
 
     // Over white the ray travels `height`; over black the reflection factor is
     // 0.2, so the effective distance is five times that. The table must span
@@ -92,27 +97,28 @@ PROTO LineBot [
           }
         ]
       }
-      DEF CASTER Solid {
-        translation -0.045 0 -0.01
+      %< for (const [tag, cx] of [["FRONT", fields.casterX.value], ["REAR", -fields.casterX.value]]) { >%
+      # Ball transfer, %<= tag.toLowerCase() >%. Visual only: the collision for
+      # these lives in the robot's own boundingObject below, because a Solid
+      # with a boundingObject and no Physics is silently ignored -- which is
+      # how this robot spent its early life balancing on two wheels.
+      DEF CASTER_%<= tag >% Pose {
+        translation %<= cx >% 0 %<= casterZ >%
         children [
           Shape {
             appearance PBRAppearance {
-              baseColor 0.2 0.2 0.2
-              roughness 0.3
-              metalness 0
+              baseColor 0.55 0.55 0.58
+              roughness 0.15
+              metalness 0.8
             }
             geometry Sphere {
-              radius 0.01
-              subdivision 2
+              radius %<= fields.casterRadius.value >%
+              subdivision 3
             }
           }
         ]
-        name "caster"
-        contactMaterial "slippery"
-        boundingObject Sphere {
-          radius 0.01
-        }
       }
+      %< } >%
       DEF LEFT_WHEEL HingeJoint {
         jointParameters HingeJointParameters {
           axis 0 1 0
@@ -304,7 +310,37 @@ PROTO LineBot [
       }
       %< } >%
     ]
-    boundingObject USE CHASSIS
+    # Chassis plus both ball transfers, so the robot rests on four points and
+    # cannot pitch. The camera boom overhangs the chassis by 65 mm, and on a
+    # trailing-caster tricycle that overhang pitches the optics every time the
+    # robot accelerates.
+    #
+    # `contactMaterial` is on the Robot, so it applies to this group only --
+    # the wheels are separate Solids and keep the default material, which is
+    # what they need in order to have any traction at all.
+    contactMaterial "slippery"
+    boundingObject Group {
+      children [
+        Pose {
+          translation 0 0 0.005
+          children [
+            Box {
+              size 0.12 0.09 0.03
+            }
+          ]
+        }
+        %< for (const cx of [fields.casterX.value, -fields.casterX.value]) { >%
+        Pose {
+          translation %<= cx >% 0 %<= casterZ >%
+          children [
+            Sphere {
+              radius %<= fields.casterRadius.value >%
+            }
+          ]
+        }
+        %< } >%
+      ]
+    }
     physics Physics {
       density -1
       mass 0.4

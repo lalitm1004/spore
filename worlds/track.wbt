@@ -163,7 +163,7 @@ DEF MARKER_50 Solid {
   name "marker_050"
 }
 DEF OBSTACLE_0 Solid {
-  translation 0.74 -0.971 0.06
+  translation 1.496 -0.086 0.06
   children [
     Shape {
       appearance PBRAppearance {

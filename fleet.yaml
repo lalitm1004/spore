@@ -65,4 +65,4 @@ robots:
 # properly before it meets one. At spawn it would trip on the first tick, which
 # is correct behaviour and a useless demonstration of it.
 obstacles:
-  - {x: 0.740, y: -0.971, size: [0.10, 0.16, 0.12]}
+  - {x: 1.496, y: -0.086, size: [0.10, 0.16, 0.12]}

@@ -78,7 +78,9 @@ class LidarConfig:
     enabled: bool = True
     stop_m: float = 0.18
     clear_m: float = 0.30
-    max_backoff_m: float = 0.15
+    arrive_m: float = 0.04
+    max_backoff_m: float = 2.0
+    departed_m: float = 0.15
     backoff_speed: float = 2.0
     max_range: float = 1.0
 

@@ -27,7 +27,7 @@ from robot.events import EventDetector  # noqa: E402
 from robot.hal import SampledSensors  # noqa: E402
 from robot.line_estimator import LineEstimator  # noqa: E402
 from robot.marker import BorderDetector, Crossing, CrossingConfig, MarkerCrossing  # noqa: E402
-from robot.obstacle import ObstacleConfig, ObstacleGuard, nearest  # noqa: E402
+from robot.obstacle import Obstacle, ObstacleConfig, ObstacleGuard, nearest  # noqa: E402
 from robot.odometry import Odometry, Pose  # noqa: E402
 from robot.pid import PID  # noqa: E402
 from robot.protocol import LineReader, Message, encode  # noqa: E402
@@ -312,7 +312,9 @@ def main(argv=None):
     guard = ObstacleGuard(ObstacleConfig(
         stop_m=config.lidar.stop_m,
         clear_m=config.lidar.clear_m,
+        arrive_m=config.lidar.arrive_m,
         max_backoff_m=config.lidar.max_backoff_m,
+        departed_m=config.lidar.departed_m,
         backoff_speed=config.lidar.backoff_speed,
     )) if lidar is not None else None
 
@@ -354,6 +356,8 @@ def main(argv=None):
     lost_since = None
     last_position = 0.0
     last_steering = 0.0
+    node_encoders = None
+    trip_distance = None
 
     while webots_robot.step(timestep) != -1:
         now = webots_robot.getTime()
@@ -384,8 +388,25 @@ def main(argv=None):
         if guard is not None:
             scan = lidar.getRangeImage() or []
             was_blocked = guard.blocked
+
+            # How much of the path back to the node is left, measured at the
+            # wheels: the mean of the two shafts' outstanding rotation, in
+            # metres of arc.
+            retreat_remaining = None
+            if node_encoders is not None:
+                left_left = encoders["left"].getValue() - node_encoders[0]
+                right_left = encoders["right"].getValue() - node_encoders[1]
+                retreat_remaining = (abs(left_left) + abs(right_left)) / 2.0 \
+                    * config.odometry.wheel_radius
+
+            if trip_distance is None and not guard.blocked:
+                trip_distance = distance
             guard.update(nearest(scan, config.lidar.max_range),
-                         odometry.pose.x, odometry.pose.y)
+                         distance - (trip_distance if trip_distance is not None
+                                     else distance),
+                         retreat_remaining)
+            if not guard.blocked:
+                trip_distance = distance
             if guard.blocked != was_blocked and link is not None:
                 link.send(Message(kind="EVT", name="OBSTACLE", fields={
                     "t": round(now, 4),
@@ -409,6 +430,13 @@ def main(argv=None):
                 odometry.reset(Pose(x=fix[0] / 1000.0, y=fix[1] / 1000.0,
                                     theta=heading,
                                     distance=odometry.pose.distance))
+                # Wheel positions at the node. A differential drive is
+                # path-reversible, so replaying both rotations backwards
+                # retraces the arc exactly -- which straight-line reversing
+                # does not, and the lane curves.
+                node_encoders = (encoders["left"].getValue(),
+                                 encoders["right"].getValue())
+                trip_distance = None
             print("{}: {}".format(config.name, marker_read.summary), flush=True)
             write_status(status_path, config.name, now, distance, marker_read,
                          fix=fix, theta=heading, drifted_theta=drifted_theta)
@@ -435,12 +463,27 @@ def main(argv=None):
             optics.crossing.recovered()
 
         if guard is not None and guard.blocked:
-            # Reflex owns the motors: hold the wheels straight and let it
-            # decide whether to stop dead or reverse.
+            # The reflex owns the motors. Retreating to a node means driving
+            # each wheel back toward the rotation it had there: a differential
+            # drive is path-reversible, so replaying both shafts retraces the
+            # arc exactly. Reversing in a straight line does not -- the lane
+            # curves, and the robot ends up beside the node rather than on it.
             error, steering = 0.0, 0.0
-            base = guard.speeds()
             output = pid.update(error=0.0, dt=dt)
             lost_since = None
+            base = guard.speeds()
+
+            if guard.state is Obstacle.BACKING and node_encoders is not None:
+                left_left = encoders["left"].getValue() - node_encoders[0]
+                right_left = encoders["right"].getValue() - node_encoders[1]
+                worst = max(abs(left_left), abs(right_left), 1e-6)
+                rate = abs(config.lidar.backoff_speed)
+                left_cmd = -rate * left_left / worst
+                right_cmd = -rate * right_left / worst
+                # Back to a (base, steering) pair, so the usual mixing and
+                # limiting below applies unchanged.
+                base = (left_cmd + right_cmd) / 2.0
+                steering = (right_cmd - left_cmd) / 2.0
         elif not running:
             error, steering, base = 0.0, 0.0, 0.0
             output = pid.update(error=0.0, dt=dt)

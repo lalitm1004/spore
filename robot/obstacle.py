@@ -17,21 +17,24 @@ Pure: no Webots, no I/O.
 
 from dataclasses import dataclass
 from enum import Enum
-from typing import Sequence
+from typing import Optional, Sequence
 
 
 class Obstacle(Enum):
     CLEAR = "CLEAR"      # nothing ahead; drive normally
-    BACKING = "BACKING"  # reversing away from what was seen
-    HOLDING = "HOLDING"  # backed off, waiting for it to go away
+    BACKING = "BACKING"  # reversing, back toward the last node
+    HOLDING = "HOLDING"  # parked at the node, waiting for it to go away
 
 
 @dataclass(frozen=True)
 class ObstacleConfig:
-    stop_m: float = 0.18     # closer than this and the reflex fires
-    clear_m: float = 0.30    # must be further than this to resume
-    max_backoff_m: float = 0.15  # give up reversing after this much travel
+    stop_m: float = 0.18      # closer than this and the reflex fires
+    clear_m: float = 0.30     # must be further than this to resume
+    arrive_m: float = 0.04    # close enough to count as back at the node
+    max_backoff_m: float = 2.0   # give up reversing after this much travel
     backoff_speed: float = 2.0   # wheel rad/s, gentle
+    departed_m: float = 0.15  # range must improve by this much, while parked,
+                              # before the obstacle counts as gone
 
     def __post_init__(self):
         if self.clear_m <= self.stop_m:
@@ -58,47 +61,71 @@ class ObstacleGuard:
         self.config = config
         self.state = Obstacle.CLEAR
         self.backing_from = None
+        self.retreating = False
+        self.parked_range: Optional[float] = None
         self.trips = 0
         self.last_range = float("inf")
 
-    def update(self, nearest_m: float, x: float, y: float) -> Obstacle:
-        """Advance the reflex. `x`, `y` are the odometry pose, in metres."""
+    def update(self, nearest_m: float, travelled: float,
+               retreat_remaining: Optional[float] = None) -> Obstacle:
+        """Advance the reflex.
+
+        `travelled` is how far the robot has moved since the reflex fired, in
+        metres, used only as a give-up bound. `retreat_remaining` is how much
+        of the path back to the last node is left, or None if no node has been
+        read yet.
+
+        The reflex retreats to a node rather than to some arbitrary clearance,
+        because a node is a position the router can act on -- stopping 80 mm
+        back leaves the robot mid-lane with nothing useful to say about where
+        it is. Straight-line distance will not do for that: the lane curves, so
+        reversing straight diverges from the node instead of returning to it.
+        The caller measures the remaining path from the wheels, which retrace
+        exactly.
+        """
         self.last_range = nearest_m
         config = self.config
 
         if self.state is Obstacle.CLEAR:
             if nearest_m < config.stop_m:
                 self.state = Obstacle.BACKING
-                self.backing_from = (x, y)
+                self.retreating = retreat_remaining is not None
                 self.trips += 1
             return self.state
 
         if self.state is Obstacle.BACKING:
-            # Reverse until there is actually clearance -- the goal is distance
-            # from the obstacle, so measure that rather than a proxy for it.
-            #
-            # An earlier version counted odometry path length instead, and path
-            # length is monotonic: slamming from +6 to -2 rad/s leaves the robot
-            # coasting forward for a few steps, and that overshoot counted as
-            # progress. The reflex finished having driven partly INTO the thing
-            # it was backing away from.
-            if nearest_m >= config.clear_m:
+            if self.retreating and retreat_remaining is not None:
+                if retreat_remaining <= config.arrive_m:
+                    self.state = Obstacle.HOLDING
+                    self.parked_range = None
+                    return self.state
+            elif nearest_m >= config.clear_m:
+                # No node read yet, so there is nowhere to retreat to; settle
+                # for clearance.
                 self.state = Obstacle.HOLDING
+                self.parked_range = None
                 return self.state
 
-            start = self.backing_from
-            if start is not None:
-                travelled = ((x - start[0]) ** 2 + (y - start[1]) ** 2) ** 0.5
-                if travelled >= config.max_backoff_m:
-                    # Reversing is not helping -- stop rather than keep going
-                    # blind, since there is no rear sensor.
-                    self.state = Obstacle.HOLDING
+            if travelled >= config.max_backoff_m:
+                # Reversing is not helping -- stop rather than keep going
+                # blind, since there is no rear sensor.
+                self.state = Obstacle.HOLDING
+                self.parked_range = None
             return self.state
 
-        # HOLDING: only a clear path well beyond the trip point resumes.
-        if nearest_m > config.clear_m:
+        # HOLDING. Resuming on `nearest_m > clear_m` alone livelocks: reversing
+        # is itself what produced the clearance, so the robot drives forward,
+        # trips on the same obstacle, reverses, and repeats for ever.
+        #
+        # The robot is stationary here, so a range that improves further can
+        # only mean the obstacle itself moved. That is the signal to trust.
+        if self.parked_range is None:
+            self.parked_range = nearest_m
+        elif nearest_m > self.parked_range + config.departed_m:
             self.state = Obstacle.CLEAR
             self.backing_from = None
+            self.retreating = False
+            self.parked_range = None
         return self.state
 
     @property
