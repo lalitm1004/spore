@@ -1,0 +1,22 @@
+# Single source of truth for the track and the robot fleet.
+# Regenerate artifacts with:  uv run python -m tools.make_track
+
+track:
+  size: [4.0, 3.0]          # ground plane, metres
+  shape: oval
+  margin: 0.5               # inset of the track from the plane edge
+  line_width: 0.02
+  pixels_per_metre: 512
+
+defaults:
+  controller:
+    base_speed: 4.0         # rad/s at the wheels
+    pid: {kp: 0.9, ki: 0.0, kd: 0.04}
+    lost_line_timeout_s: 2.0
+  resources:
+    memory: 256m
+    cpus: "0.5"
+
+robots:
+  - name: bot_01
+    pose: {x: 0.0, y: -1.5, theta: 0.0}

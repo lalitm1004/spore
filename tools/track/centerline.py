@@ -63,4 +63,9 @@ class Oval:
 
 
 def oval(width: float, height: float) -> Oval:
+    if height > width:
+        raise ValueError(
+            "oval width ({}) must be at least its height ({}); "
+            "swap them and rotate the track instead".format(width, height)
+        )
     return Oval(width=width, height=height)

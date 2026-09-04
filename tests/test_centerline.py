@@ -55,3 +55,9 @@ def test_signed_distance_is_negative_inside_the_loop_and_positive_outside():
 
     # Beyond the right arc, whose apex is at (2.0, 0.0).
     assert track.signed_distance_to(2.5, 0.0) == pytest.approx(0.5)
+
+
+def test_oval_rejects_a_height_greater_than_its_width():
+    # The straight sections would have negative length.
+    with pytest.raises(ValueError, match="width"):
+        oval(width=2.0, height=3.0)
