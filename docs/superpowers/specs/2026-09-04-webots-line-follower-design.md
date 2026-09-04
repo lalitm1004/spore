@@ -151,9 +151,23 @@ robots stay comparable.
 ## 5. Track Generation
 
 `tools/make_track.py` renders a track PNG (Pillow) from the `track` block of the
-manifest and writes `worlds/textures/track.png`. The world places it on a `Floor`
-with `tileSize` set equal to `size`, which maps the texture 1:1 across the floor
-with no repetition (`Floor` computes `textureScale = size / tileSize`).
+manifest and writes `worlds/textures/track.png`.
+
+**The ground must be a `Plane`, not the stock `Floor` PROTO.** Webots' IR
+line-following support is documented as requiring the ground texture to be placed
+in a `Plane`; the `Floor` PROTO builds its surface from an `IndexedFaceSet`. The
+world therefore uses a plain `Solid` with `Plane` geometry and a `PBRAppearance`
+whose `baseColorMap` is the generated PNG. A `Plane` maps its texture 1:1 across
+`size` when viewed from above, so no `TextureTransform` is needed, and its normal
+is the local z-axis, which matches the Z-up world. As a `boundingObject` a `Plane`
+is infinite, which is exactly right for a floor.
+
+Contrast is read on the **red channel**, not luminance: the IR reflection factor is
+`f = 0.2 + 0.8 * red_level * (1 - 0.5*roughness) * (1 - 0.5*occlusion)`, where
+`red_level` combines `baseColor`/`diffuseColor` with the texture's pixel value. A
+black line on a white floor spans the full range (`f` = 0.2 vs 1.0). Keep the
+appearance's `roughness` and `occlusion` maps unset so they do not modulate the
+reading.
 
 Generating rather than hand-drawing the track means track difficulty becomes a
 parameter, and later milestones can emit tracks with junctions and gaps without
