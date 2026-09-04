@@ -1,0 +1,127 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://spore.dev/schemas/amr/warehouse-map.schema.json",
+  "title": "AMR Warehouse Map",
+  "description": "Ground-truth interface for the static warehouse map: the navigable graph of QR-coded nodes and the edges between them. Node objects are identical to the Node in qr-code.schema.json, so any node here can be lifted straight into a QR code payload.",
+  "$ref": "#/$defs/WarehouseMap",
+  "$defs": {
+    "Id": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "NodeType": {
+      "type": "string",
+      "enum": ["PT", "TR", "CH", "PK", "YI"],
+      "description": "PT: pass-through (no-op to determine location); TR: transfer (pickup/dropoff cargo); CH: charging; PK: parking; YI: yield (temporary parking to yield paths)."
+    },
+    "Density": {
+      "type": "string",
+      "enum": ["dense", "medium", "sparse"],
+      "description": "How tightly travel lanes are packed in this region."
+    },
+    "Position": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["x", "y"],
+      "properties": {
+        "x": { "type": "number" },
+        "y": { "type": "number" }
+      }
+    },
+    "Node": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "name", "region_id", "node_type", "position"],
+      "properties": {
+        "id": { "$ref": "#/$defs/Id" },
+        "name": { "type": "string", "minLength": 1 },
+        "region_id": { "$ref": "#/$defs/Id" },
+        "node_type": { "$ref": "#/$defs/NodeType" },
+        "position": { "$ref": "#/$defs/Position" }
+      }
+    },
+    "Region": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "name", "density", "description"],
+      "properties": {
+        "id": { "$ref": "#/$defs/Id" },
+        "name": { "type": "string", "minLength": 1 },
+        "density": { "$ref": "#/$defs/Density" },
+        "description": { "type": "string", "minLength": 1 }
+      }
+    },
+    "Edge": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["a", "b", "length"],
+      "description": "Undirected connection between two nodes. Edges are always axis-aligned and exactly node_spacing long, which is what restricts robot movement to 90 degree turns.",
+      "properties": {
+        "a": { "$ref": "#/$defs/Id" },
+        "b": { "$ref": "#/$defs/Id" },
+        "length": {
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "description": "Centre-to-centre distance in cm. Equal to node_spacing for every edge."
+        }
+      }
+    },
+    "Dimensions": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["width", "height"],
+      "description": "Floor extent in cm. Every node position lies inside these bounds.",
+      "properties": {
+        "width": { "type": "integer", "exclusiveMinimum": 0 },
+        "height": { "type": "integer", "exclusiveMinimum": 0 }
+      }
+    },
+    "WarehouseMap": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "units",
+        "node_spacing",
+        "dimensions",
+        "regions",
+        "nodes",
+        "edges"
+      ],
+      "properties": {
+        "schema_version": {
+          "type": "string",
+          "default": "v0.1.0"
+        },
+        "units": {
+          "const": "cm",
+          "description": "All distances and positions in this document are centimetres."
+        },
+        "node_spacing": {
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "description": "Distance in cm between adjacent QR nodes on every path."
+        },
+        "dimensions": { "$ref": "#/$defs/Dimensions" },
+        "regions": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/Region" }
+        },
+        "nodes": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/Node" }
+        },
+        "edges": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/Edge" }
+        }
+      }
+    }
+  }
+}
