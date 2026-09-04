@@ -1,0 +1,183 @@
+#VRML_SIM R2025a utf8
+# template language: javascript
+# A differential-drive line-following robot with a downward-facing IR array.
+#
+# The robot origin sits at wheel-axle height, so `translation` z should equal
+# the wheel radius (0.02) to rest the wheels on the ground.
+
+PROTO LineBot [
+  field SFVec3f    translation      0 0 0.02
+  field SFRotation rotation         0 0 1 0
+  field SFString   name             "line_bot"
+  field SFString   controller       "<extern>"
+  field MFString   controllerArgs   []
+  field SFBool     synchronization  TRUE
+  field SFInt32    sensorCount      3
+  field SFFloat    sensorSpacing    0.02      # lateral gap between sensors
+  field SFFloat    sensorHeight     0.015     # sensor height above the floor
+  field SFFloat    sensorAperture   0.5       # cone angle; sets the footprint
+  field SFInt32    sensorRays       5         # >1 gives an analog reading
+]
+{
+  %<
+    const WHEEL_RADIUS = 0.02;
+    const count = fields.sensorCount.value;
+    const spacing = fields.sensorSpacing.value;
+    const height = fields.sensorHeight.value;
+
+    // Floor is one wheel radius below the robot origin.
+    const sensorZ = height - WHEEL_RADIUS;
+
+    // Over white the ray travels `height`; over black the reflection factor is
+    // 0.2, so the effective distance is five times that. The table must span
+    // both for the sensor to discriminate.
+    const nearDistance = height;
+    const farDistance = height * 5;
+  >%
+  Robot {
+    translation IS translation
+    rotation IS rotation
+    name IS name
+    controller IS controller
+    controllerArgs IS controllerArgs
+    synchronization IS synchronization
+    children [
+      DEF CHASSIS Pose {
+        translation 0 0 0.005
+        children [
+          Shape {
+            appearance PBRAppearance {
+              baseColor 0.15 0.35 0.75
+              roughness 0.5
+              metalness 0
+            }
+            geometry Box {
+              size 0.12 0.09 0.03
+            }
+          }
+        ]
+      }
+      DEF CASTER Solid {
+        translation -0.045 0 -0.01
+        children [
+          Shape {
+            appearance PBRAppearance {
+              baseColor 0.2 0.2 0.2
+              roughness 0.3
+              metalness 0
+            }
+            geometry Sphere {
+              radius 0.01
+              subdivision 2
+            }
+          }
+        ]
+        name "caster"
+        contactMaterial "slippery"
+        boundingObject Sphere {
+          radius 0.01
+        }
+      }
+      DEF LEFT_WHEEL HingeJoint {
+        jointParameters HingeJointParameters {
+          axis 0 1 0
+          anchor 0 0.045 0
+        }
+        device [
+          RotationalMotor {
+            name "left wheel motor"
+            maxVelocity 20
+          }
+          PositionSensor {
+            name "left wheel sensor"
+          }
+        ]
+        endPoint Solid {
+          translation 0 0.045 0
+          rotation 1 0 0 1.5707963
+          children [
+            DEF WHEEL Shape {
+              appearance PBRAppearance {
+                baseColor 0.1 0.1 0.1
+                roughness 0.8
+                metalness 0
+              }
+              geometry Cylinder {
+                radius 0.02
+                height 0.01
+                subdivision 24
+              }
+            }
+          ]
+          name "left wheel"
+          boundingObject USE WHEEL
+          physics Physics {
+            density -1
+            mass 0.05
+          }
+        }
+      }
+      DEF RIGHT_WHEEL HingeJoint {
+        jointParameters HingeJointParameters {
+          axis 0 1 0
+          anchor 0 -0.045 0
+        }
+        device [
+          RotationalMotor {
+            name "right wheel motor"
+            maxVelocity 20
+          }
+          PositionSensor {
+            name "right wheel sensor"
+          }
+        ]
+        endPoint Solid {
+          translation 0 -0.045 0
+          rotation 1 0 0 1.5707963
+          children [
+            USE WHEEL
+          ]
+          name "right wheel"
+          boundingObject USE WHEEL
+          physics Physics {
+            density -1
+            mass 0.05
+          }
+        }
+      }
+      %< for (let i = 0; i < count; i++) { >%
+      %<   const y = (count - 1) / 2 * spacing - i * spacing; >%
+      DistanceSensor {
+        translation 0.07 %<= y >% %<= sensorZ >%
+        rotation 0 1 0 1.5707963
+        children [
+          Shape {
+            appearance PBRAppearance {
+              baseColor 0.3 0.2 0.2
+              roughness 0.4
+              metalness 0
+            }
+            geometry Box {
+              size 0.004 0.004 0.002
+            }
+          }
+        ]
+        name "ir%<= i >%"
+        type "infra-red"
+        numberOfRays %<= fields.sensorRays.value >%
+        aperture %<= fields.sensorAperture.value >%
+        lookupTable [
+          0 1000 0
+          %<= nearDistance >% 1000 0.001
+          %<= farDistance >% 200 0.002
+        ]
+      }
+      %< } >%
+    ]
+    boundingObject USE CHASSIS
+    physics Physics {
+      density -1
+      mass 0.4
+    }
+  }
+}

@@ -19,4 +19,4 @@ defaults:
 
 robots:
   - name: bot_01
-    pose: {x: 0.0, y: -1.5, theta: 0.0}
+    pose: {x: 0.0, y: -1.0, theta: 0.0}

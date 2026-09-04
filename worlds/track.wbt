@@ -1,0 +1,60 @@
+#VRML_SIM R2025a utf8
+
+EXTERNPROTO "../protos/LineBot.proto"
+
+WorldInfo {
+  info [
+    "Line-following track. Ground is a Plane so IR sensors read its texture."
+  ]
+  basicTimeStep 16
+  contactProperties [
+    ContactProperties {
+      material1 "slippery"
+      coulombFriction [
+        0
+      ]
+    }
+  ]
+}
+Viewpoint {
+  orientation 0 0 1 0
+  position 0 0 5
+}
+Background {
+  skyColor [
+    0.6 0.7 0.85
+  ]
+}
+DirectionalLight {
+  direction 0.3 0.4 -1
+  intensity 2.5
+  castShadows FALSE
+}
+DEF GROUND Solid {
+  children [
+    Shape {
+      appearance PBRAppearance {
+        baseColor 1 1 1
+        roughness 0
+        metalness 0
+        baseColorMap ImageTexture {
+          url [
+            "textures/track.png"
+          ]
+        }
+      }
+      geometry Plane {
+        size 4 3
+      }
+    }
+  ]
+  name "ground"
+  boundingObject Plane {
+  }
+}
+LineBot {
+  translation 0 -1 0.02
+  rotation 0 0 1 0
+  name "bot_01"
+  controller "<extern>"
+}
