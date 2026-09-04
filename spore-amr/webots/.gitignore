@@ -4,3 +4,10 @@ __pycache__/
 .venv/
 node_modules/
 *.tmp
+
+# Machine-specific UID/GID for the container user. compose.yml already
+# defaults to 1000:1000, so this file only exists to override it locally.
+.env
+
+# Webots editor state -- window layout and view position, written by the GUI.
+*.wbproj
