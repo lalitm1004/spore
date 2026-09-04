@@ -1,0 +1,23 @@
+[project]
+name = "network-layer"
+version = "0.1.0"
+description = "AMR fleet network layer: gRPC leader election, rosters, migration and job dispatch"
+requires-python = ">=3.12"
+dependencies = [
+    "docker>=7.2.0",
+    "grpcio>=1.83.1",
+    "grpcio-tools>=1.83.1",
+    "protobuf>=7.36.1",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+]
+
+[tool.pytest.ini_options]
+markers = [
+    "docker: scenario tests on real containers and a real Docker network (skipped without a daemon)",
+]
+# Docker tests run last so the fast in-process tiers report first.
+addopts = "-p no:cacheprovider"
