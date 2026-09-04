@@ -1,0 +1,283 @@
+syntax = "proto3";
+package fleet;
+
+// --- Shared types ---
+
+message PeerRecord {
+  int32  bot_id         = 1;
+  string address        = 2;
+  int32  priority       = 3;
+  string state          = 4;
+  float  battery        = 5;
+  int32  latest_node_id = 6;
+  // Recent QR nodes, newest first (node_trail[0] == latest_node_id), at most
+  // NODE_TRAIL_LEN entries, consecutive duplicates collapsed. Two or more
+  // points give direction of travel, not just position.
+  repeated int32 node_trail = 7;
+  string job_id             = 8;
+  string cargo_state        = 9;
+  string mission            = 10;  // PARK | CHARGE | HOLD | IDLE | CARGO
+  string fault              = 11;  // e.g. "MOTOR_ERROR", "LOW_BATTERY:12", "" if healthy
+  // Right of way at yield nodes, computed by the leader from job state:
+  // 0 free, 1 heading to a pickup, 2 carrying cargo. Lower yields to higher.
+  int32  yield_priority     = 12;
+}
+
+// One bot's recent whereabouts — the compact form carried between leaders.
+message BotLocation {
+  int32 bot_id              = 1;
+  repeated int32 node_trail = 2;
+}
+
+message LeaderRecord {
+  int32  region_id      = 1;
+  int32  bot_id         = 2;
+  string address        = 3;
+}
+
+// --- RegionService: bot <-> own leader ---
+
+service RegionService {
+  rpc Heartbeat(HeartbeatRequest)          returns (HeartbeatAck);
+  rpc Departure(DepartureRequest)          returns (DepartureAck);
+  rpc MigrationRequest(MigrationReq)       returns (MigrationReqAck);
+}
+
+message HeartbeatRequest {
+  int32  bot_id              = 1;
+  int32  region_id           = 2;
+  int32  latest_node_id      = 3;
+  string state               = 4;
+  float  battery             = 5;
+  int32  priority            = 6;
+  string address             = 7;
+  string mission             = 8;
+  string fault               = 9;
+  int64  timestamp           = 10;
+  repeated int32 node_trail  = 11;  // see PeerRecord.node_trail
+  // The job this bot is executing, if any. Travels *with the bot* so that
+  // whichever leader it is heartbeating (it migrates as it drives) knows
+  // whose job it is and how far along.
+  string job_id              = 12;
+  string cargo_state         = 13;  // PICKUP | EN_ROUTE | DROPOFF | DELIVERED
+}
+
+message HeartbeatAck {
+  repeated PeerRecord   region_peers   = 1;
+  repeated LeaderRecord other_leaders  = 2;
+  // Non-empty when the receiver is NOT the leader: the address it believes
+  // the leader is at. The sender should switch its heartbeat target.
+  string                redirect_to    = 3;
+  // bot_id of the leader — the receiver itself when it is leader, or the
+  // leader it is redirecting to. Lets a bot discovering its leader by probing
+  // learn *who* leads, not just where.
+  int32                 leader_bot_id  = 4;
+  // The leader's job ledger, replicated to every follower so a successor
+  // inherits it — jobs must not die with a leader.
+  repeated Job          jobs           = 5;
+}
+
+// --- Jobs: cargo from one node to another ---
+
+message Job {
+  string job_id          = 1;   // == cargo_id (UUID from the order system) → idempotent
+  int32  pickup_node     = 2;
+  int32  dropoff_node    = 3;
+  int32  owner_region    = 4;   // region whose leader ASSIGNED it and will cross it off
+  string status          = 5;   // PENDING | ASSIGNED | PICKED_UP | DELIVERED | NEEDS_ATTENTION
+  // `optional` gives real presence: bot_id 0 is a valid bot, so "unset"
+  // must be distinguishable from "assigned to bot-0".
+  optional int32 assignee = 6;
+  int32  last_node       = 7;   // where the assignee was last seen (for failure reports)
+  string reason          = 8;   // why it failed / needs attention
+  int64  updated_at      = 9;
+}
+
+message JobAck {
+  bool   accepted        = 1;
+  optional int32 assignee = 2;   // present iff a bot took the job (may be bot-0)
+  int32  owner_region    = 3;
+  string note            = 4;
+}
+
+message ForwardJobReq {
+  Job   job                    = 1;
+  repeated int32 tried_regions = 2;
+  int32 hops                   = 3;
+}
+
+message JobEventAck {
+  // True iff the receiver owns the job and applied the event. An observer
+  // keeps re-sending to every leader it knows until one answers owned=true.
+  bool owned = 1;
+}
+
+// Accepts new jobs. Served by every bot; a non-leader or a leader of the
+// wrong region forwards to the pickup node's region leader.
+service JobService {
+  rpc SubmitJob(Job) returns (JobAck);
+}
+
+// Served by every bot: a leader hands a job to one of its followers.
+service BotService {
+  rpc AssignJob(Job) returns (JobAck);
+}
+
+// --- Admin: introspection and robot-state injection ---
+// For operators and the Docker test harness. Only served when ADMIN_ENABLED=1
+// (the virtual network refuses it otherwise). InjectRobotState feeds the
+// bot's RobotSource exactly as a real robot bridge would.
+
+service AdminService {
+  rpc GetState(Empty)                     returns (BotState);
+  rpc InjectRobotState(RobotStateMsg)     returns (Empty);
+}
+
+message Empty {}
+
+message RobotStateMsg {
+  int32  latest_node_id = 1;
+  int32  region_id      = 2;
+  float  battery        = 3;
+  string state          = 4;
+  string mission        = 5;
+  string fault          = 6;
+  string job_id         = 7;
+  string cargo_state    = 8;
+}
+
+message BotState {
+  int32  bot_id             = 1;
+  int32  region_id          = 2;
+  string role               = 3;   // "leader" | "follower"
+  int32  leader_bot_id      = 4;
+  string leader_address     = 5;
+  int32  priority           = 6;
+  string state              = 7;
+  string current_job_id     = 8;
+  string cargo_state        = 9;
+  repeated PeerRecord   roster        = 10;
+  repeated LeaderRecord other_leaders = 11;
+  repeated Job          jobs          = 12;
+  int32  desired_region_id  = 13;
+  bool   leader_settled     = 14;
+}
+
+message DepartureRequest {
+  int32 bot_id               = 1;
+  int64 timestamp            = 2;
+}
+
+message DepartureAck {}
+
+message MigrationReq {
+  int32 bot_id                   = 1;
+  int32 destination_region_id    = 2;
+  int64 timestamp                = 3;
+}
+
+message MigrationReqAck {
+  bool         approved          = 1;
+  LeaderRecord destination_leader = 2;
+}
+
+// --- LeaderExchangeService: leader <-> leader ---
+
+service LeaderExchangeService {
+  rpc LeaderHeartbeat(LeaderHBRequest)          returns (LeaderHBAck);
+  rpc MigrationHandoff(MigrationHandoffReq)     returns (MigrationHandoffAck);
+  // "Nobody here is free — can your region take this job?"
+  rpc ForwardJob(ForwardJobReq)                 returns (JobAck);
+  // A leader observed something about a job it does not own (the assignee
+  // migrated into its region and then delivered / failed / vanished).
+  rpc JobEvent(Job)                             returns (JobEventAck);
+}
+
+message LeaderHBRequest {
+  int32  region_id           = 1;
+  int32  leader_bot_id       = 2;
+  string address             = 3;
+  int32  bot_count           = 4;
+  float  avg_battery         = 5;
+  int32  active_jobs         = 6;
+  int64  timestamp           = 7;
+  int32  priority            = 8;
+  // Where every bot in the sender's region (leader included) has been
+  // lately. Gives each leader a fleet-wide picture of movement.
+  repeated BotLocation locations = 9;
+}
+
+message LeaderHBAck {
+  int32  region_id           = 1;
+  int32  leader_bot_id       = 2;
+  string address             = 3;
+  int32  bot_count           = 4;
+  float  avg_battery         = 5;
+  int32  active_jobs         = 6;
+  int64  timestamp           = 7;
+  int32  priority            = 8;
+  repeated BotLocation locations = 9;
+}
+
+message MigrationHandoffReq {
+  int32  bot_id              = 1;
+  int32  source_region_id    = 2;
+  int32  bot_priority        = 3;
+  string bot_address         = 4;
+}
+
+message MigrationHandoffAck {
+  bool accepted              = 1;
+}
+
+// --- ElectionService: bot <-> peer bot ---
+
+service ElectionService {
+  rpc Elect(ElectRequest)                  returns (ElectResponse);
+  rpc Coordinator(CoordinatorRequest)      returns (CoordinatorResponse);
+}
+
+message ElectRequest {
+  int32 bot_id               = 1;
+  int32 priority             = 2;
+  int64 timestamp            = 3;
+  // The challenger's dialable address. The receiver adds the challenger to
+  // its roster so that, if it wins, its Coordinator reaches the challenger
+  // even when the challenger was missing from its last ack.
+  string address             = 4;
+}
+
+message ElectResponse {
+  bool ack                   = 1;
+}
+
+message CoordinatorRequest {
+  int32  bot_id              = 1;
+  int32  priority            = 2;
+  string address             = 3;
+}
+
+message CoordinatorResponse {}
+
+// --- MigrationJoinService: bot -> destination leader ---
+
+service MigrationJoinService {
+  rpc MigrationJoin(MigrationJoinReq)      returns (MigrationJoinAck);
+}
+
+message MigrationJoinReq {
+  int32  bot_id              = 1;
+  int32  source_region_id    = 2;
+  int32  priority            = 3;
+  string address             = 4;
+  float  battery             = 5;
+  string state               = 6;
+  int32  latest_node_id      = 7;
+  repeated int32 node_trail  = 8;
+}
+
+message MigrationJoinAck {
+  bool                   accepted       = 1;
+  repeated PeerRecord    region_peers   = 2;
+  repeated LeaderRecord  other_leaders  = 3;
+}
