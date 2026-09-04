@@ -4,11 +4,13 @@
 FROM cyberbotics/webots:R2025a-ubuntu22.04
 
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends python3-yaml \
+    && apt-get install -y --no-install-recommends python3-yaml socat \
     && rm -rf /var/lib/apt/lists/*
 
 ENV WEBOTS_HOME=/usr/local/webots
 ENV HOME=/tmp
 WORKDIR /project
 
-ENTRYPOINT ["/usr/local/webots/webots-controller"]
+COPY docker/robot-entrypoint.sh /usr/local/bin/robot-entrypoint
+
+ENTRYPOINT ["/usr/local/bin/robot-entrypoint"]

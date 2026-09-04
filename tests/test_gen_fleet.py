@@ -60,7 +60,7 @@ def test_world_declares_every_robot_as_an_extern_controller():
 def test_compose_targets_each_robot_by_name_with_its_own_limits():
     compose = compose_source(MANIFEST)
 
-    assert "--robot-name=bot_01" in compose["services"]["bot_01"]["command"]
+    assert compose["services"]["bot_01"]["environment"]["ROBOT_NAME"] == "bot_01"
     assert compose["services"]["bot_01"]["mem_limit"] == "256m"
     assert compose["services"]["bot_02"]["mem_limit"] == "128m"
     assert compose["services"]["bot_02"]["cpus"] == "0.5"
@@ -80,9 +80,10 @@ def test_compose_services_run_under_an_init_so_signals_reach_the_controller():
 
 def test_compose_writes_telemetry_inside_the_mounted_project():
     # Only the repo is mounted, so a path outside it is not writable.
-    command = compose_source(MANIFEST)["services"]["bot_01"]["command"]
+    environment = compose_source(MANIFEST)["services"]["bot_01"]["environment"]
 
-    assert "/project/out/bot_01.csv" in command
+    assert environment["TELEMETRY"] == "/project/out/bot_01.csv"
+    assert environment["CONFIG"] == "/project/config/bot_01.yaml"
 
 
 def test_world_and_compose_agree_on_the_robot_names():

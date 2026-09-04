@@ -10,7 +10,15 @@ control:
   steering_limit: 8.0
 name: bot_01
 sensors:
+  adc:
+    bits: 10
+    full_scale: 1000.0
+  black_ref: 205
+  latency_s: 0.0
+  min_confidence: 0.15
   offsets:
   - 0.02
   - 0.0
   - -0.02
+  sample_period_s: 0.016
+  white_ref: 1023
