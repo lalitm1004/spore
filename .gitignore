@@ -11,3 +11,8 @@ node_modules/
 
 # Webots editor state -- window layout and view position, written by the GUI.
 *.wbproj
+
+# TypeScript network-layer scaffold. No source under it, and the real network
+# layer lives elsewhere in the repo -- an empty second copy here would only
+# drift from it.
+net/
