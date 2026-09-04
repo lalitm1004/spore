@@ -1,0 +1,51 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://spore.dev/schemas/amr/qr-code.schema.json",
+  "title": "AMR QR Code Payload",
+  "description": "Ground-truth interface for QR code payloads scanned by warehouse robots (AMRs).",
+  "$ref": "#/$defs/QrCode",
+  "$defs": {
+    "Id": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "NodeType": {
+      "type": "string",
+      "enum": ["PT", "TR", "CH", "PK", "YI"],
+      "description": "PT: pass-through (no-op to determine location); TR: transfer (pickup/dropoff cargo); CH: charging; PK: parking; YI: yield (temporary parking to yield paths)."
+    },
+    "Position": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["x", "y"],
+      "properties": {
+        "x": { "type": "number" },
+        "y": { "type": "number" }
+      }
+    },
+    "Node": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "name", "region_id", "node_type", "position"],
+      "properties": {
+        "id": { "$ref": "#/$defs/Id" },
+        "name": { "type": "string", "minLength": 1 },
+        "region_id": { "$ref": "#/$defs/Id" },
+        "node_type": { "$ref": "#/$defs/NodeType" },
+        "position": { "$ref": "#/$defs/Position" }
+      }
+    },
+    "QrCode": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema_version", "data"],
+      "properties": {
+        "schema_version": {
+          "type": "string",
+          "default": "v0.1.0"
+        },
+        "data": { "$ref": "#/$defs/Node" }
+      }
+    }
+  }
+}

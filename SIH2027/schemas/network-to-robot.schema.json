@@ -1,0 +1,96 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://spore.dev/schemas/amr/network-to-robot.schema.json",
+  "title": "AMR Network to Robot Message",
+  "description": "Ground-truth interface for messages sent from the network controller to a warehouse robot (AMR).",
+  "$ref": "#/$defs/NetworkToRobot",
+  "$defs": {
+    "Id": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "CargoId": {
+      "type": "string",
+      "format": "uuid",
+      "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+      "description": "Cargo/order identifier. Intentionally a UUID rather than Id: orders are minted by an external system, so IDs cannot come from a central sequential allocator."
+    },
+    "Timestamp": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "CargoState": {
+      "type": "string",
+      "enum": ["PICKUP", "DROPOFF", "EN_ROUTE"]
+    },
+    "Cargo": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["cargo_id", "state"],
+      "properties": {
+        "cargo_id": { "$ref": "#/$defs/CargoId" },
+        "state": { "$ref": "#/$defs/CargoState" }
+      }
+    },
+    "MissionPark": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type"],
+      "properties": {
+        "type": { "const": "PARK" }
+      }
+    },
+    "MissionCharge": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type"],
+      "properties": {
+        "type": { "const": "CHARGE" }
+      }
+    },
+    "MissionHold": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type"],
+      "properties": {
+        "type": { "const": "HOLD" }
+      }
+    },
+    "MissionIdle": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type"],
+      "properties": {
+        "type": { "const": "IDLE" }
+      }
+    },
+    "MissionCargo": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "cargo"],
+      "properties": {
+        "type": { "const": "CARGO" },
+        "cargo": { "$ref": "#/$defs/Cargo" }
+      }
+    },
+    "Mission": {
+      "oneOf": [
+        { "$ref": "#/$defs/MissionPark" },
+        { "$ref": "#/$defs/MissionCharge" },
+        { "$ref": "#/$defs/MissionHold" },
+        { "$ref": "#/$defs/MissionIdle" },
+        { "$ref": "#/$defs/MissionCargo" }
+      ]
+    },
+    "NetworkToRobot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["target_node_id", "timestamp"],
+      "properties": {
+        "target_node_id": { "$ref": "#/$defs/Id" },
+        "set_mission": { "$ref": "#/$defs/Mission" },
+        "timestamp": { "$ref": "#/$defs/Timestamp" }
+      }
+    }
+  }
+}
