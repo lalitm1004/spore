@@ -48,3 +48,25 @@ def test_a_config_whose_white_reference_is_not_above_black_is_rejected():
 
     with pytest.raises(ValueError, match="white_ref"):
         ControllerConfig.from_dict({"name": "bot_01", "sensors": broken, "control": {}})
+
+
+def test_sensor_config_carries_adc_and_sampling_settings():
+    config = ControllerConfig.from_dict(
+        {
+            "name": "bot_01",
+            "sensors": {
+                "offsets": [0.02, 0.0, -0.02],
+                "adc": {"bits": 10, "full_scale": 1000.0},
+                "sample_period_s": 0.016,
+                "latency_s": 0.0,
+            },
+            "control": {},
+        }
+    )
+
+    assert config.sensors.adc.bits == 10
+    assert config.sensors.adc.max_count == 1023
+    assert config.sensors.sample_period_s == 0.016
+    # Calibration references are in ADC counts now, not raw simulator units.
+    assert config.sensors.white_ref == 1023
+    assert config.sensors.black_ref == 205

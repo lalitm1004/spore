@@ -3,6 +3,8 @@
 from dataclasses import dataclass, field
 from typing import Tuple
 
+from robot.hal import Adc
+
 
 @dataclass(frozen=True)
 class PIDGains:
@@ -14,9 +16,13 @@ class PIDGains:
 @dataclass(frozen=True)
 class SensorConfig:
     offsets: Tuple[float, ...]
-    white_ref: float = 1000.0
-    black_ref: float = 200.0
+    # References are in ADC counts: 1000 raw -> 1023, 200 raw -> 205.
+    white_ref: float = 1023.0
+    black_ref: float = 205.0
     min_confidence: float = 0.15
+    sample_period_s: float = 0.016
+    latency_s: float = 0.0
+    adc: Adc = field(default_factory=Adc)
 
     def __post_init__(self):
         if self.white_ref <= self.black_ref:
@@ -48,6 +54,8 @@ class ControllerConfig:
     def from_dict(cls, data: dict) -> "ControllerConfig":
         sensors = dict(data["sensors"])
         sensors["offsets"] = tuple(float(o) for o in sensors["offsets"])
+        if "adc" in sensors:
+            sensors["adc"] = Adc(**sensors["adc"])
 
         control = dict(data.get("control") or {})
         control["pid"] = PIDGains(**(control.get("pid") or {}))
