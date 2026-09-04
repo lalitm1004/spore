@@ -22,7 +22,7 @@ HEIGHT = 7000
 # Storage field: travel lanes form a lattice, storage blocks between them are solid.
 FX0, FX1 = 3400, 9000
 FY0, FY1 = 1400, 5600
-VP, HP = 800, 1400              # lane pitch -> 3 x 6 cell storage blocks
+VP, HP = 800, 1400  # lane pitch -> 3 x 6 cell storage blocks
 
 # Ring highway
 HW_W, HW_E = 800, 11200
@@ -39,45 +39,115 @@ Y_CHARGE, Y_CHARGE_S, Y_CHARGE_N = 1000, 800, 1200
 Y_CROSSDOCK = 6000
 Y_PARK_N, Y_PARK_S = 6200, 5800
 
-BULK_X = (800, 2000, 3200)      # bulk storage: wider lane pitch than the field
+BULK_X = (800, 2000, 3200)  # bulk storage: wider lane pitch than the field
 BULK_Y = (1400, 2400)
-BUF_Y = (2600, 3200)            # put-away buffer, directly under receiving
+BUF_Y = (2600, 3200)  # put-away buffer, directly under receiving
 
-(R_HIGHWAY, R_FIELD, R_IN_DOCK, R_RECEIVING, R_BUFFER, R_BULK, R_STOW, R_PICK,
- R_PACK, R_SORT, R_OUT_DOCK, R_CROSSDOCK, R_CHARGING, R_PARKING) = range(1, 15)
+(
+    R_HIGHWAY,
+    R_FIELD,
+    R_IN_DOCK,
+    R_RECEIVING,
+    R_BUFFER,
+    R_BULK,
+    R_STOW,
+    R_PICK,
+    R_PACK,
+    R_SORT,
+    R_OUT_DOCK,
+    R_CROSSDOCK,
+    R_CHARGING,
+    R_PARKING,
+) = range(1, 15)
 
 REGIONS = [
-    {"id": R_HIGHWAY, "name": "ring_highway", "density": "medium",
-     "description": "Perimeter highway loop; every zone hangs off it."},
-    {"id": R_FIELD, "name": "grid_field", "density": "dense",
-     "description": "Lattice of travel lanes around 21 solid storage blocks."},
-    {"id": R_IN_DOCK, "name": "inbound_dock", "density": "sparse",
-     "description": "3 receiving doors on the west wall."},
-    {"id": R_RECEIVING, "name": "receiving_inspection", "density": "sparse",
-     "description": "Unload, verify and inspect goods before they enter stock."},
-    {"id": R_BUFFER, "name": "inbound_buffer", "density": "sparse",
-     "description": "Put-away buffer: inspected goods wait for a free stow station."},
-    {"id": R_BULK, "name": "bulk_storage", "density": "sparse",
-     "description": "Oversize and bulk stock on wide lanes, for items too large for "
-                    "the grid field."},
-    {"id": R_STOW, "name": "stow", "density": "sparse",
-     "description": "Stow stations feeding accepted goods into the field."},
-    {"id": R_PICK, "name": "pick", "density": "sparse",
-     "description": "Pick stations on the east face of the field."},
-    {"id": R_PACK, "name": "pack_vas", "density": "sparse",
-     "description": "Pack and value-added services: kitting, repack, labelling."},
-    {"id": R_SORT, "name": "sort_staging", "density": "sparse",
-     "description": "Sort and stage completed orders by outbound route."},
-    {"id": R_OUT_DOCK, "name": "outbound_dock", "density": "sparse",
-     "description": "5 shipping doors on the east wall."},
-    {"id": R_CROSSDOCK, "name": "crossdock", "density": "medium",
-     "description": "Express lane carrying goods inbound to outbound without storing them."},
-    {"id": R_CHARGING, "name": "charging", "density": "sparse",
-     "description": "Charger bank spanning the full south edge, bays down both sides "
-                    "of the spine."},
-    {"id": R_PARKING, "name": "parking", "density": "sparse",
-     "description": "Idle-robot bays filling the north strip, both sides of the "
-                    "cross-dock lane."},
+    {
+        "id": R_HIGHWAY,
+        "name": "ring_highway",
+        "density": "medium",
+        "description": "Perimeter highway loop; every zone hangs off it.",
+    },
+    {
+        "id": R_FIELD,
+        "name": "grid_field",
+        "density": "dense",
+        "description": "Lattice of travel lanes around 21 solid storage blocks.",
+    },
+    {
+        "id": R_IN_DOCK,
+        "name": "inbound_dock",
+        "density": "sparse",
+        "description": "3 receiving doors on the west wall.",
+    },
+    {
+        "id": R_RECEIVING,
+        "name": "receiving_inspection",
+        "density": "sparse",
+        "description": "Unload, verify and inspect goods before they enter stock.",
+    },
+    {
+        "id": R_BUFFER,
+        "name": "inbound_buffer",
+        "density": "sparse",
+        "description": "Put-away buffer: inspected goods wait for a free stow station.",
+    },
+    {
+        "id": R_BULK,
+        "name": "bulk_storage",
+        "density": "sparse",
+        "description": "Oversize and bulk stock on wide lanes, for items too large for "
+        "the grid field.",
+    },
+    {
+        "id": R_STOW,
+        "name": "stow",
+        "density": "sparse",
+        "description": "Stow stations feeding accepted goods into the field.",
+    },
+    {
+        "id": R_PICK,
+        "name": "pick",
+        "density": "sparse",
+        "description": "Pick stations on the east face of the field.",
+    },
+    {
+        "id": R_PACK,
+        "name": "pack_vas",
+        "density": "sparse",
+        "description": "Pack and value-added services: kitting, repack, labelling.",
+    },
+    {
+        "id": R_SORT,
+        "name": "sort_staging",
+        "density": "sparse",
+        "description": "Sort and stage completed orders by outbound route.",
+    },
+    {
+        "id": R_OUT_DOCK,
+        "name": "outbound_dock",
+        "density": "sparse",
+        "description": "5 shipping doors on the east wall.",
+    },
+    {
+        "id": R_CROSSDOCK,
+        "name": "crossdock",
+        "density": "medium",
+        "description": "Express lane carrying goods inbound to outbound without storing them.",
+    },
+    {
+        "id": R_CHARGING,
+        "name": "charging",
+        "density": "sparse",
+        "description": "Charger bank spanning the full south edge, bays down both sides "
+        "of the spine.",
+    },
+    {
+        "id": R_PARKING,
+        "name": "parking",
+        "density": "sparse",
+        "description": "Idle-robot bays filling the north strip, both sides of the "
+        "cross-dock lane.",
+    },
 ]
 
 # When paths overlap, the most specific node type and the lowest region id win.
@@ -86,7 +156,7 @@ TYPE_PRIORITY = {"PT": 0, "YI": 1, "PK": 2, "CH": 3, "TR": 4}
 VLANES = list(range(FX0, FX1 + 1, VP))
 HLANES = list(range(FY0, FY1 + 1, HP))
 
-SPINE_TIES = (3800, 6200, 8600)   # offset from bay lanes so traffic misses the bays
+SPINE_TIES = (3800, 6200, 8600)  # offset from bay lanes so traffic misses the bays
 IN_DOORS = (4200, 4800, 5400)
 OUT_DOORS = (1400, 2400, 3400, 4400, 5400)
 RECEIVE_H = (3400, 4200, 5600)
@@ -248,13 +318,15 @@ def serialize(b):
     for pos, meta in ordered:
         key = (meta["region_id"], meta["node_type"])
         seq[key] = seq.get(key, 0) + 1
-        nodes.append({
-            "id": ids[pos],
-            "name": f"{region_name[meta['region_id']]}/{meta['node_type']}/{seq[key]:03d}",
-            "region_id": meta["region_id"],
-            "node_type": meta["node_type"],
-            "position": {"x": float(pos[0]), "y": float(pos[1])},
-        })
+        nodes.append(
+            {
+                "id": ids[pos],
+                "name": f"{region_name[meta['region_id']]}/{meta['node_type']}/{seq[key]:03d}",
+                "region_id": meta["region_id"],
+                "node_type": meta["node_type"],
+                "position": {"x": float(pos[0]), "y": float(pos[1])},
+            }
+        )
     edges = sorted(
         ({"a": ids[a], "b": ids[b_], "length": SPACING} for a, b_ in b.edges),
         key=lambda e: (e["a"], e["b"]),
@@ -270,7 +342,13 @@ def serialize(b):
     }, ids
 
 
-TYPE_COLORS = {"PT": "#9aa4ad", "TR": "#1857b8", "CH": "#0f9d58", "PK": "#9a6b00", "YI": "#d23f31"}
+TYPE_COLORS = {
+    "PT": "#9aa4ad",
+    "TR": "#1857b8",
+    "CH": "#0f9d58",
+    "PK": "#9a6b00",
+    "YI": "#d23f31",
+}
 REGION_BOXES = [
     ("#faf3e6", HW_W, RECEIVE_H[0], X_STOW, RECEIVE_H[-1], "RECEIVING & INSPECTION"),
     ("#fdf3e2", HW_W, BUF_Y[0], X_STOW, BUF_Y[1], "PUT-AWAY BUFFER"),
@@ -293,7 +371,12 @@ def storage_blocks():
 def bulk_blocks():
     half = SPACING // 2
     for x0, x1 in zip(BULK_X, BULK_X[1:]):
-        yield x0 + half, BULK_Y[0] + half, x1 - x0 - SPACING, BULK_Y[1] - BULK_Y[0] - SPACING
+        yield (
+            x0 + half,
+            BULK_Y[0] + half,
+            x1 - x0 - SPACING,
+            BULK_Y[1] - BULK_Y[0] - SPACING,
+        )
 
 
 def to_svg(doc, scale=0.11, pad=90):
@@ -302,50 +385,75 @@ def to_svg(doc, scale=0.11, pad=90):
     py = lambda y: pad + (HEIGHT - y) * scale
     pos = {n["id"]: (n["position"]["x"], n["position"]["y"]) for n in doc["nodes"]}
 
-    out = [f'<svg xmlns="http://www.w3.org/2000/svg" width="{w:.0f}" height="{h:.0f}" '
-           f'viewBox="0 0 {w:.0f} {h:.0f}" font-family="monospace">',
-           f'<rect width="{w:.0f}" height="{h:.0f}" fill="#ffffff"/>']
+    out = [
+        f'<svg xmlns="http://www.w3.org/2000/svg" width="{w:.0f}" height="{h:.0f}" '
+        f'viewBox="0 0 {w:.0f} {h:.0f}" font-family="monospace">',
+        f'<rect width="{w:.0f}" height="{h:.0f}" fill="#ffffff"/>',
+    ]
 
     for tint, x0, y0, x1, y1, _ in REGION_BOXES:
-        out.append(f'<rect x="{px(x0):.1f}" y="{py(y1):.1f}" width="{(x1-x0)*scale:.1f}" '
-                   f'height="{(y1-y0)*scale:.1f}" fill="{tint}" stroke="#c9d0d6" '
-                   f'stroke-dasharray="4 3"/>')
+        out.append(
+            f'<rect x="{px(x0):.1f}" y="{py(y1):.1f}" width="{(x1 - x0) * scale:.1f}" '
+            f'height="{(y1 - y0) * scale:.1f}" fill="{tint}" stroke="#c9d0d6" '
+            f'stroke-dasharray="4 3"/>'
+        )
 
     for bx, by, bw, bh in list(storage_blocks()) + list(bulk_blocks()):
-        out.append(f'<rect x="{px(bx):.1f}" y="{py(by+bh):.1f}" width="{bw*scale:.1f}" '
-                   f'height="{bh*scale:.1f}" fill="#c3ccd8" stroke="#9aa6b4" stroke-width="0.5"/>')
+        out.append(
+            f'<rect x="{px(bx):.1f}" y="{py(by + bh):.1f}" width="{bw * scale:.1f}" '
+            f'height="{bh * scale:.1f}" fill="#c3ccd8" stroke="#9aa6b4" stroke-width="0.5"/>'
+        )
 
-    out.append(f'<rect x="{px(0):.1f}" y="{py(HEIGHT):.1f}" width="{WIDTH*scale:.1f}" '
-               f'height="{HEIGHT*scale:.1f}" fill="none" stroke="#191e21" stroke-width="2"/>')
+    out.append(
+        f'<rect x="{px(0):.1f}" y="{py(HEIGHT):.1f}" width="{WIDTH * scale:.1f}" '
+        f'height="{HEIGHT * scale:.1f}" fill="none" stroke="#191e21" stroke-width="2"/>'
+    )
 
     for e in doc["edges"]:
         (x1, y1), (x2, y2) = pos[e["a"]], pos[e["b"]]
-        out.append(f'<line x1="{px(x1):.1f}" y1="{py(y1):.1f}" x2="{px(x2):.1f}" '
-                   f'y2="{py(y2):.1f}" stroke="#b6bec6" stroke-width="1.1"/>')
+        out.append(
+            f'<line x1="{px(x1):.1f}" y1="{py(y1):.1f}" x2="{px(x2):.1f}" '
+            f'y2="{py(y2):.1f}" stroke="#b6bec6" stroke-width="1.1"/>'
+        )
 
     for n in doc["nodes"]:
         t = n["node_type"]
         x, y = n["position"]["x"], n["position"]["y"]
         r = 1.5 if t == "PT" else 3.0
-        out.append(f'<circle cx="{px(x):.1f}" cy="{py(y):.1f}" r="{r}" fill="{TYPE_COLORS[t]}"/>')
+        out.append(
+            f'<circle cx="{px(x):.1f}" cy="{py(y):.1f}" r="{r}" fill="{TYPE_COLORS[t]}"/>'
+        )
 
     for _, x0, y0, x1, y1, label in REGION_BOXES:
         tx, ty = px(x0) + 8, py(y1) + 17
-        out.append(f'<rect x="{tx-4:.1f}" y="{ty-12:.1f}" width="{len(label)*6.9:.1f}" '
-                   f'height="16" fill="#ffffff" fill-opacity="0.9"/>')
+        out.append(
+            f'<rect x="{tx - 4:.1f}" y="{ty - 12:.1f}" width="{len(label) * 6.9:.1f}" '
+            f'height="16" fill="#ffffff" fill-opacity="0.9"/>'
+        )
         esc = label.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
-        out.append(f'<text x="{tx:.1f}" y="{ty:.1f}" font-size="11.5" fill="#2b3439">{esc}</text>')
+        out.append(
+            f'<text x="{tx:.1f}" y="{ty:.1f}" font-size="11.5" fill="#2b3439">{esc}</text>'
+        )
 
-    legend = [("PT", "pass-through"), ("TR", "transfer"), ("CH", "charging"),
-              ("PK", "parking bay"), ("YI", "yield / pull-over bay")]
+    legend = [
+        ("PT", "pass-through"),
+        ("TR", "transfer"),
+        ("CH", "charging"),
+        ("PK", "parking bay"),
+        ("YI", "yield / pull-over bay"),
+    ]
     for i, (t, label) in enumerate(legend):
         lx, ly = pad + i * 175, pad + HEIGHT * scale + 40
-        out.append(f'<circle cx="{lx}" cy="{ly-4}" r="4" fill="{TYPE_COLORS[t]}"/>')
-        out.append(f'<text x="{lx+12}" y="{ly}" font-size="12" fill="#191e21">{t} {label}</text>')
-    out.append(f'<text x="{pad}" y="{pad-30}" font-size="15" fill="#191e21">'
-               f'AMR warehouse map — {WIDTH/100:.0f} m x {HEIGHT/100:.0f} m, '
-               f'{len(doc["nodes"])} nodes, {len(doc["edges"])} edges, '
-               f'{SPACING} cm spacing — flow runs west to east</text>')
+        out.append(f'<circle cx="{lx}" cy="{ly - 4}" r="4" fill="{TYPE_COLORS[t]}"/>')
+        out.append(
+            f'<text x="{lx + 12}" y="{ly}" font-size="12" fill="#191e21">{t} {label}</text>'
+        )
+    out.append(
+        f'<text x="{pad}" y="{pad - 30}" font-size="15" fill="#191e21">'
+        f"AMR warehouse map — {WIDTH / 100:.0f} m x {HEIGHT / 100:.0f} m, "
+        f"{len(doc['nodes'])} nodes, {len(doc['edges'])} edges, "
+        f"{SPACING} cm spacing — flow runs west to east</text>"
+    )
     out.append("</svg>")
     return "\n".join(out)
 
@@ -362,27 +470,32 @@ def to_ascii(doc, step=1):
             best[r][c] = t
     lines = ["+" + "-" * cols + "+"]
     for r in range(rows - 1, -1, -1):
-        lines.append("|" + "".join(" " if t is None else glyph[t] for t in best[r]) + "|")
+        lines.append(
+            "|" + "".join(" " if t is None else glyph[t] for t in best[r]) + "|"
+        )
     lines.append("+" + "-" * cols + "+")
     return "\n".join(lines)
 
 
-def main():
-    here = Path(__file__).parent
+def run():
+    out = Path.cwd() / "output"
+    out.mkdir(parents=True, exist_ok=True)
     b = build()
     doc, _ = serialize(b)
 
-    (here / "warehouse.json").write_text(json.dumps(doc, indent=2) + "\n")
-    (here / "warehouse_map.svg").write_text(to_svg(doc) + "\n")
+    (out / "warehouse.json").write_text(json.dumps(doc, indent=2) + "\n")
+    (out / "warehouse_map.svg").write_text(to_svg(doc) + "\n")
 
     counts = {}
     for n in doc["nodes"]:
         counts[n["node_type"]] = counts.get(n["node_type"], 0) + 1
     print(to_ascii(doc))
-    print(f"\n{WIDTH/100:.0f} m x {HEIGHT/100:.0f} m, {SPACING} cm spacing")
-    print(f"{len(doc['nodes'])} nodes, {len(doc['edges'])} edges, "
-          f"{len(VLANES)}x{len(HLANES)} field lanes, "
-          f"{sum(1 for _ in storage_blocks())} storage blocks")
+    print(f"\n{WIDTH / 100:.0f} m x {HEIGHT / 100:.0f} m, {SPACING} cm spacing")
+    print(
+        f"{len(doc['nodes'])} nodes, {len(doc['edges'])} edges, "
+        f"{len(VLANES)}x{len(HLANES)} field lanes, "
+        f"{sum(1 for _ in storage_blocks())} storage blocks"
+    )
     print("by type: " + ", ".join(f"{k}={v}" for k, v in sorted(counts.items())))
     for r in REGIONS:
         n = sum(1 for x in doc["nodes"] if x["region_id"] == r["id"])
@@ -390,4 +503,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    run()
