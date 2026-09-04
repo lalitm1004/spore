@@ -40,6 +40,7 @@ def build_columns(sensor_count):
     return ["t"] + raw + normalised + [
         "line_pos", "error", "p", "i", "d", "u", "v_left", "v_right", "lost",
         "distance", "crossing", "node_id", "obstacle", "range_m",
+        "border", "bands", "rear_lost", "rear_pos",
     ]
 
 
@@ -285,6 +286,22 @@ def main(argv=None):
         sensor.enable(timestep)
         sensors.append(sensor)
 
+    # Rear array, for reversing. Same geometry mirrored, so the same estimator
+    # and the same PD gains work -- the loop is only unstable when the sensor
+    # trails the direction of travel, and here it never does.
+    rear_sensors = []
+    for index in range(len(config.sensors.offsets)):
+        sensor = webots_robot.getDevice("irb{}".format(index))
+        if sensor is None:
+            break
+        sensor.enable(timestep)
+        rear_sensors.append(sensor)
+    rear_front_end = SampledSensors(
+        adc=config.sensors.adc,
+        sample_period_s=config.sensors.sample_period_s,
+        latency_s=config.sensors.latency_s,
+    ) if rear_sensors else None
+
     motors = {}
     encoders = {}
     for side in ("left", "right"):
@@ -312,7 +329,10 @@ def main(argv=None):
     guard = ObstacleGuard(ObstacleConfig(
         stop_m=config.lidar.stop_m,
         clear_m=config.lidar.clear_m,
-        arrive_m=config.lidar.arrive_m,
+        decel_s=config.lidar.decel_s,
+        pause_s=config.lidar.pause_s,
+        accel_s=config.lidar.accel_s,
+        borders_to_pass=config.lidar.borders_to_pass,
         max_backoff_m=config.lidar.max_backoff_m,
         departed_m=config.lidar.departed_m,
         backoff_speed=config.lidar.backoff_speed,
@@ -341,6 +361,11 @@ def main(argv=None):
     )
     pid = PID(kp=control.pid.kp, ki=control.pid.ki, kd=control.pid.kd,
               output_limit=control.steering_limit)
+    # A second controller for reversing, so neither loop sees the other's
+    # derivative history. Softer, because the retreat is slow and a stiff gain
+    # at 0.04 m/s just oscillates.
+    reverse_pid = PID(kp=control.pid.kp * 0.4, ki=0.0, kd=control.pid.kd * 0.4,
+                      output_limit=control.steering_limit)
     detector = EventDetector()
     link = SerialLink(args.link) if args.link else None
 
@@ -356,7 +381,7 @@ def main(argv=None):
     lost_since = None
     last_position = 0.0
     last_steering = 0.0
-    node_encoders = None
+    border_now = False
     trip_distance = None
 
     while webots_robot.step(timestep) != -1:
@@ -389,22 +414,16 @@ def main(argv=None):
             scan = lidar.getRangeImage() or []
             was_blocked = guard.blocked
 
-            # How much of the path back to the node is left, measured at the
-            # wheels: the mean of the two shafts' outstanding rotation, in
-            # metres of arc.
-            retreat_remaining = None
-            if node_encoders is not None:
-                left_left = encoders["left"].getValue() - node_encoders[0]
-                right_left = encoders["right"].getValue() - node_encoders[1]
-                retreat_remaining = (abs(left_left) + abs(right_left)) / 2.0 \
-                    * config.odometry.wheel_radius
-
             if trip_distance is None and not guard.blocked:
                 trip_distance = distance
-            guard.update(nearest(scan, config.lidar.max_range),
-                         distance - (trip_distance if trip_distance is not None
-                                     else distance),
-                         retreat_remaining)
+            border_now = optics.sees_border() if optics is not None else False
+            guard.update(
+                nearest(scan, config.lidar.max_range),
+                now,
+                border_now,
+                distance - (trip_distance if trip_distance is not None else distance),
+                cruise_speed=base_speed,
+            )
             if not guard.blocked:
                 trip_distance = distance
             if guard.blocked != was_blocked and link is not None:
@@ -414,6 +433,8 @@ def main(argv=None):
                     "range": round(guard.last_range, 4),
                 }))
 
+        rear_lost = None
+        rear_position = None
         marker_read = optics.update(distance) if optics is not None else None
         if marker_read is not None:
             # An absolute fix in both position and heading. The tile is laid
@@ -430,13 +451,8 @@ def main(argv=None):
                 odometry.reset(Pose(x=fix[0] / 1000.0, y=fix[1] / 1000.0,
                                     theta=heading,
                                     distance=odometry.pose.distance))
-                # Wheel positions at the node. A differential drive is
-                # path-reversible, so replaying both rotations backwards
-                # retraces the arc exactly -- which straight-line reversing
-                # does not, and the lane curves.
-                node_encoders = (encoders["left"].getValue(),
-                                 encoders["right"].getValue())
-                trip_distance = None
+                if guard is None or not guard.blocked:
+                    trip_distance = None
             print("{}: {}".format(config.name, marker_read.summary), flush=True)
             write_status(status_path, config.name, now, distance, marker_read,
                          fix=fix, theta=heading, drifted_theta=drifted_theta)
@@ -471,19 +487,26 @@ def main(argv=None):
             error, steering = 0.0, 0.0
             output = pid.update(error=0.0, dt=dt)
             lost_since = None
-            base = guard.speeds()
+            base = guard.speeds(now)
 
-            if guard.state is Obstacle.BACKING and node_encoders is not None:
-                left_left = encoders["left"].getValue() - node_encoders[0]
-                right_left = encoders["right"].getValue() - node_encoders[1]
-                worst = max(abs(left_left), abs(right_left), 1e-6)
-                rate = abs(config.lidar.backoff_speed)
-                left_cmd = -rate * left_left / worst
-                right_cmd = -rate * right_left / worst
-                # Back to a (base, steering) pair, so the usual mixing and
-                # limiting below applies unchanged.
-                base = (left_cmd + right_cmd) / 2.0
-                steering = (right_cmd - left_cmd) / 2.0
+            if guard.state is Obstacle.BACKING and rear_sensors:
+                # Steer off the rear array while reversing, so the sensor that
+                # leads the direction of travel is the one being followed.
+                #
+                # The sign is inverted against the forward loop. A point at
+                # -L has lateral velocity -L*omega, so moving the rear of the
+                # robot toward the line needs the opposite rotation to moving
+                # its front toward the line. Following the rear array with the
+                # forward sign steers away from the lane, which is what the
+                # front array does when reversing and why that failed.
+                rear_counts = rear_front_end.update(
+                    now, [sensor.getValue() for sensor in rear_sensors])
+                rear_reading = estimator.estimate(rear_counts)
+                rear_lost = rear_reading.lost
+                if not rear_lost:
+                    error = rear_reading.position
+                    steering = -reverse_pid.update(error=error, dt=dt).u
+                    rear_position = error
         elif not running:
             error, steering, base = 0.0, 0.0, 0.0
             output = pid.update(error=0.0, dt=dt)
@@ -529,6 +552,10 @@ def main(argv=None):
                "distance": round(distance, 5),
                "crossing": optics.crossing.state.value if optics else "CLEAR",
                "obstacle": guard.state.value if guard else "CLEAR",
+               "border": int(border_now) if guard else "",
+               "rear_lost": int(rear_lost) if rear_lost is not None else "",
+               "rear_pos": round(rear_position, 5) if rear_position is not None else "",
+               "bands": guard.borders_seen if guard else "",
                "range_m": round(guard.last_range, 4) if guard and
                           guard.last_range != float("inf") else "",
                "node_id": optics.last_read.node_id if optics and optics.last_read else ""}

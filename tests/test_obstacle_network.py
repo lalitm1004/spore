@@ -31,92 +31,122 @@ def test_nearest_of_an_empty_scan_is_clear():
 
 # ------------------------------------------------------------- the reflex ----
 
+def run(guard, steps):
+    """Feed (range, sees_border) pairs at 16 ms, returning the state each step."""
+    seen = []
+    for index, (range_m, border) in enumerate(steps):
+        seen.append(guard.update(range_m, index * 0.016, border,
+                                 travelled=index * 0.001, cruise_speed=6.0))
+    return seen
+
+
 def test_clear_path_never_fires():
     guard = ObstacleGuard()
-    for step in range(50):
-        assert guard.update(0.9, step * 0.01, None) is Obstacle.CLEAR
+    assert set(run(guard, [(0.9, False)] * 50)) == {Obstacle.CLEAR}
     assert not guard.blocked
     assert guard.trips == 0
 
 
-def test_reflex_retreats_all_the_way_to_the_last_node():
-    """A node is a position the router can act on. Stopping 80 mm back leaves
-    the robot mid-lane with nothing useful to say about where it is."""
-    guard = ObstacleGuard(ObstacleConfig(stop_m=0.18, arrive_m=0.04))
+def test_it_slows_and_settles_before_reversing():
+    """Cruise straight into reverse pitches the chassis and throws the camera
+    boom around; on hardware it is how a gearbox dies."""
+    guard = ObstacleGuard(ObstacleConfig(decel_s=0.1, pause_s=0.1, accel_s=0.1))
 
-    # Tripped 400 mm of path past the node.
-    assert guard.update(0.15, 0.0, 0.40) is Obstacle.BACKING
-    assert guard.speeds() < 0, "backing off must drive the wheels in reverse"
-
-    # Clearance alone is not enough to stop any more.
-    assert guard.update(0.50, 0.20, 0.20) is Obstacle.BACKING
-    assert guard.update(0.60, 0.34, 0.06) is Obstacle.BACKING
-    assert guard.update(0.60, 0.38, 0.02) is Obstacle.HOLDING
-    assert guard.speeds() == 0.0
+    assert guard.update(0.15, 0.00, False, 0.0, cruise_speed=6.0) is Obstacle.STOPPING
+    assert guard.update(0.15, 0.05, False, 0.0) is Obstacle.STOPPING
+    assert guard.update(0.15, 0.11, False, 0.0) is Obstacle.PAUSED
+    assert guard.speeds(0.11) == 0.0, "must be stationary while settling"
+    assert guard.update(0.15, 0.22, False, 0.0) is Obstacle.BACKING
 
 
-def test_without_a_node_it_settles_for_clearance():
-    """Before the first marker there is nowhere to retreat to."""
-    guard = ObstacleGuard(ObstacleConfig(stop_m=0.18, clear_m=0.30))
-    assert guard.update(0.15, 0.0, None) is Obstacle.BACKING
-    assert guard.update(0.20, 0.02, None) is Obstacle.BACKING
-    assert guard.update(0.31, 0.05, None) is Obstacle.HOLDING
+def test_deceleration_ramps_down_from_cruise():
+    guard = ObstacleGuard(ObstacleConfig(decel_s=1.0))
+    guard.update(0.15, 0.0, False, 0.0, cruise_speed=6.0)
+
+    assert guard.speeds(0.0) == pytest.approx(6.0)
+    assert guard.speeds(0.5) == pytest.approx(3.0)
+    assert guard.speeds(1.0) == pytest.approx(0.0)
 
 
-def test_backoff_gives_up_rather_than_reversing_blind():
-    """There is no rear sensor, so reversing forever is not safe. If clearance
-    is not improving, stop and hold."""
-    guard = ObstacleGuard(ObstacleConfig(stop_m=0.18, clear_m=0.30, max_backoff_m=0.15))
-    guard.update(0.10, 0.0, 9.0)                       # a node it can never reach
-    assert guard.update(0.10, 0.10, 8.9) is Obstacle.BACKING
-    assert guard.update(0.10, 0.16, 8.8) is Obstacle.HOLDING
+def test_reverse_ramps_up_rather_than_stepping():
+    guard = ObstacleGuard(ObstacleConfig(decel_s=0.0, pause_s=0.0,
+                                         accel_s=1.0, backoff_speed=2.0))
+    guard.update(0.15, 0.0, False, 0.0, cruise_speed=6.0)
+    guard.update(0.15, 0.1, False, 0.0)
+    guard.update(0.15, 0.2, False, 0.0)
+    assert guard.state is Obstacle.BACKING
+
+    assert guard.speeds(0.2) == pytest.approx(0.0)
+    assert guard.speeds(0.7) == pytest.approx(-1.0)
+    assert guard.speeds(1.2) == pytest.approx(-2.0)
 
 
-def test_forward_overshoot_does_not_count_as_backing_off():
-    """The robot coasts forward for a few steps after the wheels reverse.
-
-    An earlier version measured odometry path length, which is monotonic, so
-    that overshoot counted as progress and the reflex finished having driven
-    partly into the obstacle. Displacement from the trip point cannot do that.
+def test_it_stops_on_the_second_orange_band():
+    """Reversing over a tile the sensor crosses the far band, the code, then
+    the near band. The near band is where the robot stood before it drove on.
     """
-    guard = ObstacleGuard(ObstacleConfig(stop_m=0.18, clear_m=0.30, max_backoff_m=0.15))
-    guard.update(0.15, 0.0, None)
+    guard = ObstacleGuard(ObstacleConfig(decel_s=0.0, pause_s=0.0, accel_s=0.0))
+    guard.update(0.15, 0.0, False, 0.0, cruise_speed=6.0)   # STOPPING
+    guard.update(0.15, 0.1, False, 0.0)                     # PAUSED
+    guard.update(0.15, 0.2, False, 0.0)                     # BACKING
+    assert guard.state is Obstacle.BACKING
 
-    # Coasting forward: closer, and no clearance gained.
-    assert guard.update(0.14, 0.02, None) is Obstacle.BACKING
-    assert guard.update(0.13, 0.03, None) is Obstacle.BACKING
-    # Now actually reversing, but still short of clear_m.
-    assert guard.update(0.22, 0.05, None) is Obstacle.BACKING
+    assert guard.update(0.4, 0.3, True, 0.1) is Obstacle.BACKING    # far band
+    assert guard.update(0.4, 0.4, True, 0.2) is Obstacle.BACKING    # still on it
+    assert guard.update(0.4, 0.5, False, 0.3) is Obstacle.BACKING   # the code
+    assert guard.update(0.4, 0.6, True, 0.4) is Obstacle.HOLDING    # near band
+    assert guard.borders_seen == 2
 
 
-def test_backing_stops_at_clear_m_when_there_is_no_node():
-    """`clear_m` is the "far enough to stop reversing" threshold, and it has to
-    exceed `stop_m` or the robot would stop reversing while still close enough
-    to trip again immediately."""
-    guard = ObstacleGuard(ObstacleConfig(stop_m=0.18, clear_m=0.30))
-    guard.update(0.15, 0.0, None)
-    assert guard.update(0.25, 0.05, None) is Obstacle.BACKING  # past stop_m
-    assert guard.update(0.31, 0.08, None) is Obstacle.HOLDING  # past clear_m
+def test_a_band_already_underneath_is_not_counted():
+    """If the reflex fires while the sensor is still over a tile, that band is
+    one the robot has already crossed."""
+    guard = ObstacleGuard(ObstacleConfig(decel_s=0.0, pause_s=0.0, accel_s=0.0))
+    guard.update(0.15, 0.0, True, 0.0, cruise_speed=6.0)
+    guard.update(0.15, 0.1, True, 0.0)
+    guard.update(0.15, 0.2, True, 0.0)   # BACKING, already on orange
+    assert guard.state is Obstacle.BACKING
+    assert guard.borders_seen == 0
+
+    assert guard.update(0.4, 0.3, False, 0.1) is Obstacle.BACKING
+    assert guard.update(0.4, 0.4, True, 0.2) is Obstacle.BACKING   # band one
+    assert guard.update(0.4, 0.5, False, 0.3) is Obstacle.BACKING
+    assert guard.update(0.4, 0.6, True, 0.4) is Obstacle.HOLDING   # band two
+
+
+def test_it_gives_up_rather_than_reversing_blind():
+    """No rear sensor, so reversing for ever is not safe. If the marker never
+    turns up, stop anyway."""
+    guard = ObstacleGuard(ObstacleConfig(decel_s=0.0, pause_s=0.0, accel_s=0.0,
+                                         max_backoff_m=0.5))
+    guard.update(0.15, 0.0, False, 0.0, cruise_speed=6.0)
+    guard.update(0.15, 0.1, False, 0.0)
+    assert guard.update(0.15, 0.2, False, 0.1) is Obstacle.BACKING
+    assert guard.update(0.15, 0.3, False, 0.6) is Obstacle.HOLDING
 
 
 def test_parked_robot_does_not_resume_on_its_own_retreat():
     """Reversing is what produced the clearance, so clearance alone must not
     mean "all clear" -- or the robot drives forward, trips on the same
-    obstacle, reverses, and repeats for ever. Observed in sim as a BACKING /
-    CLEAR cycle every 4 seconds.
+    obstacle, reverses, and repeats for ever. Seen in sim as a BACKING/CLEAR
+    cycle every four seconds.
     """
-    guard = ObstacleGuard(ObstacleConfig(stop_m=0.18, clear_m=0.30,
-                                         departed_m=0.15, arrive_m=0.04))
-    guard.update(0.15, 0.0, 0.30)                    # trips
-    guard.update(0.30, 0.28, 0.02)                   # arrives at the node
+    guard = ObstacleGuard(ObstacleConfig(decel_s=0.0, pause_s=0.0, accel_s=0.0,
+                                         departed_m=0.15))
+    guard.update(0.15, 0.0, False, 0.0, cruise_speed=6.0)  # STOPPING
+    guard.update(0.15, 0.1, False, 0.0)                    # PAUSED
+    guard.update(0.15, 0.2, False, 0.1)                    # BACKING
+    guard.update(0.15, 0.3, True, 0.2)                     # far band
+    guard.update(0.15, 0.4, False, 0.3)                    # the code
+    guard.update(0.15, 0.5, True, 0.4)                     # near band -> parked
     assert guard.state is Obstacle.HOLDING
 
-    # Range is now well past clear_m, but only because the robot moved.
-    for _ in range(20):
-        assert guard.update(0.32, 0.30, 0.0) is Obstacle.HOLDING
+    # Range is well past clear_m, but only because the robot moved.
+    for step in range(20):
+        assert guard.update(0.32, 1.0 + step * 0.1, False, 0.5) is Obstacle.HOLDING
 
     # The obstacle itself moving is a different matter.
-    assert guard.update(0.60, 0.30, 0.0) is Obstacle.CLEAR
+    assert guard.update(0.60, 5.0, False, 0.5) is Obstacle.CLEAR
 
 
 def test_thresholds_that_would_chatter_are_rejected():

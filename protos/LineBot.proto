@@ -17,6 +17,8 @@ PROTO LineBot [
   field SFFloat    sensorHeight     0.015     # sensor height above the floor
   field SFFloat    sensorAperture   0.5       # cone angle; sets the footprint
   field SFInt32    sensorRays       5         # >1 gives an analog reading
+  field SFBool     hasRearArray     TRUE      # so reversing can follow the line
+  field SFFloat    rearArrayX       -0.07
   field SFBool     hasOptics        TRUE      # colour trigger + QR camera
   field SFFloat    colorSensorX     0.125     # on the forward boom, clear of the chassis
   field SFFloat    colorSensorFov   0.5
@@ -186,10 +188,21 @@ PROTO LineBot [
           }
         }
       }
+      %< const arrays = [["", 0.07]]; >%
+      %< if (fields.hasRearArray.value) { arrays.push(["b", fields.rearArrayX.value]); } >%
+      %< for (const [tag, ax] of arrays) { >%
       %< for (let i = 0; i < count; i++) { >%
       %<   const y = (count - 1) / 2 * spacing - i * spacing; >%
+      # %<= tag === "" ? "Forward" : "Rear" >% array, sensor %<= i >%.
+      #
+      # The rear array is what makes reversing controllable. Steering off the
+      # forward array while reversing is non-minimum-phase -- the sensor is
+      # behind the direction of travel, so correcting toward the error rotates
+      # it further off the line. Measured before this existed: the line was
+      # absent for 77% of a retreat. With a trailing array the geometry is the
+      # mirror of driving forward, and the same PD works.
       DistanceSensor {
-        translation 0.07 %<= y >% %<= sensorZ >%
+        translation %<= ax >% %<= y >% %<= sensorZ >%
         rotation 0 1 0 1.5707963
         children [
           Shape {
@@ -203,7 +216,7 @@ PROTO LineBot [
             }
           }
         ]
-        name "ir%<= i >%"
+        name "ir%<= tag >%%<= i >%"
         type "infra-red"
         numberOfRays %<= fields.sensorRays.value >%
         aperture %<= fields.sensorAperture.value >%
@@ -213,6 +226,7 @@ PROTO LineBot [
           %<= farDistance >% 200 0.002
         ]
       }
+      %< } >%
       %< } >%
       %< if (fields.hasLidar.value) { >%
       # Forward lidar. A reflex sensor, never a planning input: it can stop the

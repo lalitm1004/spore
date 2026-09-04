@@ -1,16 +1,26 @@
-"""Forward obstacle reflex: stop, back off, hold until it clears.
+"""Forward obstacle reflex: slow, settle, reverse to the last marker, hold.
 
-Deliberately a reflex and not a planner. It reads one sensor, it can only stop
-or reverse, and nothing it sees ever becomes a route decision -- routing is the
-network layer's job and stays that way. That separation is what keeps the
-"collision avoidance is a property of the protocol, not a sensor" argument
-intact even with a range sensor on the robot: this exists to survive the case
-the protocol cannot cover, which is something that was never announced because
-it is not a robot.
+Deliberately a reflex and not a planner. It reads one sensor, it can only slow,
+stop and reverse, and nothing it sees ever becomes a route decision -- routing
+is the network layer's job and stays that way. That separation is what keeps
+"collision avoidance is a property of the protocol, not a sensor" true even
+with a range finder aboard: this covers the one case the protocol cannot,
+which is something that never announced itself because it is not a robot.
 
-Hysteresis is the point of the two thresholds. A single one chatters at the
-boundary -- stop, clear, stop, clear -- which on real hardware is how you burn
-out a gearbox.
+The sequence is deliberately unhurried:
+
+    CLEAR -> STOPPING -> PAUSED -> BACKING -> HOLDING
+
+Going straight from cruise into reverse pitches the chassis hard enough to
+throw the camera boom around, and on real hardware is how a gearbox dies.
+Ramping down, settling, then ramping into reverse costs about two seconds and
+is what the hardware would have to do anyway.
+
+Ending the retreat is the colour sensor's job, not odometry's. Reversing over a
+marker, the sensor crosses the tile's far orange band, then the code, then the
+near band; that second band is the tile's near edge, which is where the robot
+stood before it drove on. Counting bands needs no dead reckoning, so it cannot
+drift, and it does not care that the lane curves.
 
 Pure: no Webots, no I/O.
 """
@@ -21,20 +31,25 @@ from typing import Optional, Sequence
 
 
 class Obstacle(Enum):
-    CLEAR = "CLEAR"      # nothing ahead; drive normally
-    BACKING = "BACKING"  # reversing, back toward the last node
-    HOLDING = "HOLDING"  # parked at the node, waiting for it to go away
+    CLEAR = "CLEAR"        # nothing ahead; drive normally
+    STOPPING = "STOPPING"  # ramping down to a halt
+    PAUSED = "PAUSED"      # stopped, settling before reversing
+    BACKING = "BACKING"    # reversing toward the last marker
+    HOLDING = "HOLDING"    # parked, waiting for it to go away
 
 
 @dataclass(frozen=True)
 class ObstacleConfig:
-    stop_m: float = 0.18      # closer than this and the reflex fires
-    clear_m: float = 0.30     # must be further than this to resume
-    arrive_m: float = 0.04    # close enough to count as back at the node
-    max_backoff_m: float = 2.0   # give up reversing after this much travel
-    backoff_speed: float = 2.0   # wheel rad/s, gentle
-    departed_m: float = 0.15  # range must improve by this much, while parked,
-                              # before the obstacle counts as gone
+    stop_m: float = 0.18       # closer than this and the reflex fires
+    clear_m: float = 0.30      # far enough to stop reversing, absent a marker
+    decel_s: float = 0.8       # ramp from cruise down to a halt
+    pause_s: float = 1.0       # settle before reversing
+    accel_s: float = 0.6       # ramp into reverse
+    backoff_speed: float = 2.0     # wheel rad/s once fully reversing
+    borders_to_pass: int = 2   # orange bands to cross before stopping
+    max_backoff_m: float = 2.0     # give up reversing after this much travel
+    departed_m: float = 0.15   # range must improve by this much, while parked,
+                               # before the obstacle counts as gone
 
     def __post_init__(self):
         if self.clear_m <= self.stop_m:
@@ -55,61 +70,68 @@ def nearest(ranges: Sequence[float], max_range: float) -> float:
 
 
 class ObstacleGuard:
-    """Tracks the reflex across steps, driven by odometry distance."""
+    """Tracks the reflex across steps."""
 
     def __init__(self, config: ObstacleConfig = ObstacleConfig()):
         self.config = config
         self.state = Obstacle.CLEAR
-        self.backing_from = None
-        self.retreating = False
-        self.parked_range: Optional[float] = None
+        self.entered_at: Optional[float] = None
+        self.cruise_speed = 0.0
+        self.borders_seen = 0
         self.trips = 0
         self.last_range = float("inf")
+        self.parked_range: Optional[float] = None
+        self._border_was = False
 
-    def update(self, nearest_m: float, travelled: float,
-               retreat_remaining: Optional[float] = None) -> Obstacle:
+    # ------------------------------------------------------------ stepping --
+
+    def update(self, nearest_m: float, now: float, sees_border: bool,
+               travelled: float, cruise_speed: float = 0.0) -> Obstacle:
         """Advance the reflex.
 
-        `travelled` is how far the robot has moved since the reflex fired, in
-        metres, used only as a give-up bound. `retreat_remaining` is how much
-        of the path back to the last node is left, or None if no node has been
-        read yet.
-
-        The reflex retreats to a node rather than to some arbitrary clearance,
-        because a node is a position the router can act on -- stopping 80 mm
-        back leaves the robot mid-lane with nothing useful to say about where
-        it is. Straight-line distance will not do for that: the lane curves, so
-        reversing straight diverges from the node instead of returning to it.
-        The caller measures the remaining path from the wheels, which retrace
-        exactly.
+        `travelled` is metres since the reflex fired, used only as a give-up
+        bound. `cruise_speed` is what the wheels were doing when it tripped, so
+        the deceleration ramp starts from the right place rather than jumping.
         """
         self.last_range = nearest_m
         config = self.config
+        elapsed = now - (self.entered_at if self.entered_at is not None else now)
 
         if self.state is Obstacle.CLEAR:
             if nearest_m < config.stop_m:
-                self.state = Obstacle.BACKING
-                self.retreating = retreat_remaining is not None
+                self._enter(Obstacle.STOPPING, now)
+                self.cruise_speed = cruise_speed
                 self.trips += 1
             return self.state
 
-        if self.state is Obstacle.BACKING:
-            if self.retreating and retreat_remaining is not None:
-                if retreat_remaining <= config.arrive_m:
-                    self.state = Obstacle.HOLDING
-                    self.parked_range = None
-                    return self.state
-            elif nearest_m >= config.clear_m:
-                # No node read yet, so there is nowhere to retreat to; settle
-                # for clearance.
-                self.state = Obstacle.HOLDING
-                self.parked_range = None
-                return self.state
+        if self.state is Obstacle.STOPPING:
+            if elapsed >= config.decel_s:
+                self._enter(Obstacle.PAUSED, now)
+            return self.state
 
-            if travelled >= config.max_backoff_m:
-                # Reversing is not helping -- stop rather than keep going
-                # blind, since there is no rear sensor.
-                self.state = Obstacle.HOLDING
+        if self.state is Obstacle.PAUSED:
+            if elapsed >= config.pause_s:
+                self._enter(Obstacle.BACKING, now)
+                self.borders_seen = 0
+                # If the reflex fired while the sensor was still over a tile,
+                # that band is one the robot has already crossed. Seed the edge
+                # detector with it so its trailing edge is not counted as an
+                # arrival.
+                self._border_was = sees_border
+            return self.state
+
+        if self.state is Obstacle.BACKING:
+            if sees_border and not self._border_was:
+                self.borders_seen += 1
+            self._border_was = sees_border
+
+            if self.borders_seen >= config.borders_to_pass:
+                self._enter(Obstacle.HOLDING, now)
+                self.parked_range = None
+            elif travelled >= config.max_backoff_m:
+                # Reversing is not finding the marker and there is no rear
+                # sensor, so stop rather than keep going blind.
+                self._enter(Obstacle.HOLDING, now)
                 self.parked_range = None
             return self.state
 
@@ -122,21 +144,37 @@ class ObstacleGuard:
         if self.parked_range is None:
             self.parked_range = nearest_m
         elif nearest_m > self.parked_range + config.departed_m:
-            self.state = Obstacle.CLEAR
-            self.backing_from = None
-            self.retreating = False
+            self._enter(Obstacle.CLEAR, now)
             self.parked_range = None
+            self.borders_seen = 0
         return self.state
+
+    def _enter(self, state: Obstacle, now: float) -> None:
+        self.state = state
+        self.entered_at = now
+
+    # ------------------------------------------------------------- outputs --
 
     @property
     def blocked(self) -> bool:
         """True whenever the reflex owns the motors."""
         return self.state is not Obstacle.CLEAR
 
-    def speeds(self) -> float:
-        """Base wheel speed the reflex wants. Negative reverses."""
+    def speeds(self, now: float) -> float:
+        """Base wheel speed the reflex wants, ramped. Negative reverses."""
+        config = self.config
+        elapsed = now - (self.entered_at if self.entered_at is not None else now)
+
+        if self.state is Obstacle.STOPPING:
+            if config.decel_s <= 0:
+                return 0.0
+            return self.cruise_speed * max(0.0, 1.0 - elapsed / config.decel_s)
+
         if self.state is Obstacle.BACKING:
-            return -self.config.backoff_speed
+            if config.accel_s <= 0:
+                return -config.backoff_speed
+            return -config.backoff_speed * min(1.0, elapsed / config.accel_s)
+
         return 0.0
 
     @property
