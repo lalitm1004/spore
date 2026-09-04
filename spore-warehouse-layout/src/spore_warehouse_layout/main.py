@@ -99,111 +99,79 @@ BULK_Y: tuple[int, int] = (1400, 2400)
 BUF_Y: tuple[int, int] = (2600, 3200)  # put-away buffer, directly under receiving
 
 (
-    R_HIGHWAY,
-    R_FIELD,
-    R_IN_DOCK,
     R_RECEIVING,
-    R_BUFFER,
-    R_BULK,
-    R_STOW,
-    R_PICK,
-    R_PACK,
-    R_SORT,
-    R_OUT_DOCK,
-    R_CROSSDOCK,
-    R_CHARGING,
     R_PARKING,
-) = range(1, 15)
+    R_CHARGING,
+    R_PICK_PACK_SORT,
+    R_STORAGE_A,
+    R_STORAGE_B,
+    R_STORAGE_C,
+) = range(1, 8)
 
 REGIONS: list[Region] = [
     {
-        "id": R_HIGHWAY,
-        "name": "ring_highway",
-        "density": "medium",
-        "description": "Perimeter highway loop; every zone hangs off it.",
-    },
-    {
-        "id": R_FIELD,
-        "name": "grid_field",
-        "density": "dense",
-        "description": "Lattice of travel lanes around 21 solid storage blocks.",
-    },
-    {
-        "id": R_IN_DOCK,
-        "name": "inbound_dock",
-        "density": "sparse",
-        "description": "3 receiving doors on the west wall.",
-    },
-    {
         "id": R_RECEIVING,
-        "name": "receiving_inspection",
+        "name": "receiving_and_buffer",
         "density": "sparse",
-        "description": "Unload, verify and inspect goods before they enter stock.",
-    },
-    {
-        "id": R_BUFFER,
-        "name": "inbound_buffer",
-        "density": "sparse",
-        "description": "Put-away buffer: inspected goods wait for a free stow station.",
-    },
-    {
-        "id": R_BULK,
-        "name": "bulk_storage",
-        "density": "sparse",
-        "description": "Oversize and bulk stock on wide lanes, for items too large for "
-        "the grid field.",
-    },
-    {
-        "id": R_STOW,
-        "name": "stow",
-        "density": "sparse",
-        "description": "Stow stations feeding accepted goods into the field.",
-    },
-    {
-        "id": R_PICK,
-        "name": "pick",
-        "density": "sparse",
-        "description": "Pick stations on the east face of the field.",
-    },
-    {
-        "id": R_PACK,
-        "name": "pack_vas",
-        "density": "sparse",
-        "description": "Pack and value-added services: kitting, repack, labelling.",
-    },
-    {
-        "id": R_SORT,
-        "name": "sort_staging",
-        "density": "sparse",
-        "description": "Sort and stage completed orders by outbound route.",
-    },
-    {
-        "id": R_OUT_DOCK,
-        "name": "outbound_dock",
-        "density": "sparse",
-        "description": "5 shipping doors on the east wall.",
-    },
-    {
-        "id": R_CROSSDOCK,
-        "name": "crossdock",
-        "density": "medium",
-        "description": "Express lane carrying goods inbound to outbound without storing them.",
-    },
-    {
-        "id": R_CHARGING,
-        "name": "charging",
-        "density": "sparse",
-        "description": "Charger bank spanning the full south edge, bays down both sides "
-        "of the spine.",
+        "description": "Inbound doors, receiving & inspection, put-away buffer and stow "
+        "stations feeding the field.",
     },
     {
         "id": R_PARKING,
         "name": "parking",
         "density": "sparse",
-        "description": "Idle-robot bays filling the north strip, both sides of the "
-        "cross-dock lane.",
+        "description": "Idle-robot bays along the north strip, the cross-dock express "
+        "lane, and the north half of the ring highway.",
+    },
+    {
+        "id": R_CHARGING,
+        "name": "charging",
+        "density": "sparse",
+        "description": "Charger bays along the south edge and the south half of the "
+        "ring highway.",
+    },
+    {
+        "id": R_PICK_PACK_SORT,
+        "name": "pick_pack_sort",
+        "density": "sparse",
+        "description": "Pick, pack/VAS and sort/staging columns, plus the outbound "
+        "shipping doors.",
+    },
+    {
+        "id": R_STORAGE_A,
+        "name": "bulk_and_storage_cols_1_2",
+        "density": "dense",
+        "description": "Bulk/oversize storage plus the first two columns of the grid "
+        "field (nearest stow).",
+    },
+    {
+        "id": R_STORAGE_B,
+        "name": "storage_cols_3_4_5",
+        "density": "dense",
+        "description": "The middle three columns of the grid field.",
+    },
+    {
+        "id": R_STORAGE_C,
+        "name": "storage_cols_6_7",
+        "density": "dense",
+        "description": "The last two columns of the grid field (nearest pick).",
     },
 ]
+
+# Storage-block column -> region, west to east. Column c sits between
+# VLANES[c] and VLANES[c + 1].
+BLOCK_REGION: tuple[int, ...] = (
+    R_STORAGE_A, R_STORAGE_A,
+    R_STORAGE_B, R_STORAGE_B, R_STORAGE_B,
+    R_STORAGE_C, R_STORAGE_C,
+)
+# Vertical lattice lane -> region. A lane shared by two column groups belongs
+# to the group on its west side.
+LANE_REGION: tuple[int, ...] = (
+    R_STORAGE_A, R_STORAGE_A, R_STORAGE_A,
+    R_STORAGE_B, R_STORAGE_B, R_STORAGE_B,
+    R_STORAGE_C, R_STORAGE_C,
+)
 
 # When paths overlap, the most specific node type and the lowest region id win.
 TYPE_PRIORITY: dict[NodeType, int] = {"PT": 0, "YI": 1, "PK": 2, "CH": 3, "TR": 4}
@@ -264,18 +232,28 @@ class MapBuilder:
             lo, hi = sorted((a, b))
             self.edges.add((lo, hi))
 
-    def _add(self, p: Pos, region_id: int, node_type: NodeType) -> None:
+    def _add(
+        self, p: Pos, region_id: int, node_type: NodeType, force_region: bool = False
+    ) -> None:
         cur = self.nodes.get(p)
         if cur is None:
             self.nodes[p] = {"region_id": region_id, "node_type": node_type}
             return
-        cur["region_id"] = min(cur["region_id"], region_id)
+        cur["region_id"] = region_id if force_region else min(cur["region_id"], region_id)
         if TYPE_PRIORITY[node_type] > TYPE_PRIORITY[cur["node_type"]]:
             cur["node_type"] = node_type
 
-    def mark(self, points: list[Pos], node_type: NodeType) -> None:
+    def mark(
+        self, points: list[Pos], node_type: NodeType, region_id: int | None = None
+    ) -> None:
+        """Retag existing points. region_id defaults to the point's current region
+        (inherit); pass one explicitly to force it, e.g. when a node's lattice lane
+        and its functional group disagree."""
         for p in points:
-            self._add(p, self.nodes[p]["region_id"], node_type)
+            if region_id is not None:
+                self._add(p, region_id, node_type, force_region=True)
+            else:
+                self._add(p, self.nodes[p]["region_id"], node_type)
 
     def bay(self, anchor: Pos, tip: Pos, region_id: int, node_type: NodeType) -> None:
         """One-cell spur off a lane: somewhere to stand that is not on the path."""
@@ -286,24 +264,35 @@ class MapBuilder:
 def build() -> MapBuilder:
     b = MapBuilder()
 
-    # Ring highway.
-    b.path(hline(HW_S, HW_W, HW_E), R_HIGHWAY)
-    b.path(hline(HW_N, HW_W, HW_E), R_HIGHWAY)
-    b.path(vline(HW_W, HW_S, HW_N), R_HIGHWAY)
-    b.path(vline(HW_E, HW_S, HW_N), R_HIGHWAY)
+    # Ring highway: south half (incl. lower halves of the vertical edges) joins
+    # charging; north half joins parking. Split at the vertical edges' midpoint,
+    # rounded down to the 200cm grid — (HW_S + HW_N) // 2 lands on an odd multiple
+    # of 100 and would otherwise create off-grid phantom nodes.
+    HW_MID = (HW_S + HW_N) // 2 // SPACING * SPACING
+    b.path(hline(HW_S, HW_W, HW_E), R_CHARGING)
+    b.path(hline(HW_N, HW_W, HW_E), R_PARKING)
+    b.path(vline(HW_W, HW_S, HW_MID), R_CHARGING)
+    b.path(vline(HW_W, HW_MID, HW_N), R_PARKING)
+    b.path(vline(HW_E, HW_S, HW_MID), R_CHARGING)
+    b.path(vline(HW_E, HW_MID, HW_N), R_PARKING)
 
-    # Storage field: lane lattice, solid blocks between the lanes.
-    for x in VLANES:
-        b.path(vline(x, FY0, FY1), R_FIELD)
+    # Storage field: lane lattice, solid blocks between the lanes. Each lane and
+    # each row segment is tagged by which storage-column group it belongs to.
+    for i, x in enumerate(VLANES):
+        b.path(vline(x, FY0, FY1), LANE_REGION[i])
+    field_splits = (FX0, VLANES[2], VLANES[5], FX1)
     for y in HLANES:
-        b.path(hline(y, FX0, FX1), R_FIELD)
-    for x in VLANES[:-1]:
+        for x0, x1, region in zip(
+            field_splits, field_splits[1:], (R_STORAGE_A, R_STORAGE_B, R_STORAGE_C)
+        ):
+            b.path(hline(y, x0, x1), region)
+    for c, x in enumerate(VLANES[:-1]):
         for y in HLANES[:-1]:
-            b.mark([(x, y + 600)], "TR")
+            b.mark([(x, y + 600)], "TR", region_id=BLOCK_REGION[c])
 
     # Inbound: dock doors -> receiving & inspection floor.
     for y in IN_DOORS:
-        b.path(hline(y, X_IN_DOCK, HW_W), R_IN_DOCK)
+        b.path(hline(y, X_IN_DOCK, HW_W), R_RECEIVING)
         b.mark([(X_IN_DOCK, y)], "TR")
     for y in RECEIVE_H:
         b.path(hline(y, HW_W, X_STOW), R_RECEIVING)
@@ -313,34 +302,34 @@ def build() -> MapBuilder:
 
     # Put-away buffer: inspected goods wait here for a free stow station.
     for y in BUF_Y:
-        b.path(hline(y, HW_W, X_STOW), R_BUFFER)
+        b.path(hline(y, HW_W, X_STOW), R_RECEIVING)
     for x in RECEIVE_V:
         b.mark([(x, 2800), (x, 3000)], "TR")
 
     # Bulk / oversize storage: wider lanes, larger blocks than the grid field.
     for x in BULK_X:
-        b.path(vline(x, BULK_Y[0], BULK_Y[1]), R_BULK)
+        b.path(vline(x, BULK_Y[0], BULK_Y[1]), R_STORAGE_A)
     for y in BULK_Y:
-        b.path(hline(y, BULK_X[0], BULK_X[-1]), R_BULK)
-    b.path(vline(BULK_X[1], BULK_Y[1], BUF_Y[0]), R_BULK)
+        b.path(hline(y, BULK_X[0], BULK_X[-1]), R_STORAGE_A)
+    b.path(vline(BULK_X[1], BULK_Y[1], BUF_Y[0]), R_STORAGE_A)
     for x in BULK_X[:-1]:
         b.mark([(x + 400, BULK_Y[0]), (x + 400, BULK_Y[1])], "TR")
 
     # Stow column feeding the west face of the field.
-    b.path(vline(X_STOW, FY0, FY1), R_STOW)
+    b.path(vline(X_STOW, FY0, FY1), R_RECEIVING)
     for y in HLANES:
-        b.path(hline(y, X_STOW, FX0), R_STOW)
+        b.path(hline(y, X_STOW, FX0), R_RECEIVING)
         b.mark([(X_STOW, y)], "TR")
 
     # Outbound: field east face -> pick -> pack/VAS -> sort/stage -> shipping doors.
-    for x, region in ((X_PICK, R_PICK), (X_PACK, R_PACK), (X_SORT, R_SORT)):
-        b.path(vline(x, FY0, FY1), region)
+    for x in (X_PICK, X_PACK, X_SORT):
+        b.path(vline(x, FY0, FY1), R_PICK_PACK_SORT)
         b.mark([(x, y) for y in HLANES], "TR")
     for y in HLANES:
-        b.path(hline(y, FX1, X_PICK), R_PICK)
-        b.path(hline(y, X_PICK, HW_E), R_SORT)
+        b.path(hline(y, FX1, X_PICK), R_PICK_PACK_SORT)
+        b.path(hline(y, X_PICK, HW_E), R_PICK_PACK_SORT)
     for y in OUT_DOORS:
-        b.path(hline(y, HW_E, X_OUT_DOCK), R_OUT_DOCK)
+        b.path(hline(y, HW_E, X_OUT_DOCK), R_PICK_PACK_SORT)
         b.mark([(X_OUT_DOCK, y)], "TR")
 
     # Charging bank: spine across the full south edge, chargers down both sides.
@@ -350,7 +339,7 @@ def build() -> MapBuilder:
         b.bay((x, Y_CHARGE), (x, Y_CHARGE_N), R_CHARGING, "CH")
 
     # North strip: cross-dock express lane with parking bays down both sides.
-    b.path(hline(Y_CROSSDOCK, HW_W, HW_E), R_CROSSDOCK)
+    b.path(hline(Y_CROSSDOCK, HW_W, HW_E), R_PARKING)
     for x in PARK_BAYS:
         b.bay((x, Y_CROSSDOCK), (x, Y_PARK_N), R_PARKING, "PK")
         b.bay((x, Y_CROSSDOCK), (x, Y_PARK_S), R_PARKING, "PK")
@@ -358,7 +347,7 @@ def build() -> MapBuilder:
     # Tie the south and north bands into the ring and the field edges.
     for x in SPINE_TIES:
         b.path(vline(x, HW_S, FY0), R_CHARGING)
-        b.path(vline(x, FY1, HW_N), R_CROSSDOCK)
+        b.path(vline(x, FY1, HW_N), R_PARKING)
 
     # Pull-over bays where traffic converges.
     for anchor, tip in YIELD_BAYS:
@@ -408,10 +397,12 @@ TYPE_COLORS: dict[NodeType, str] = {
     "YI": "#d23f31",
 }
 REGION_BOXES: list[tuple[str, int, int, int, int, str]] = [
-    ("#faf3e6", HW_W, RECEIVE_H[0], X_STOW, RECEIVE_H[-1], "RECEIVING & INSPECTION"),
-    ("#fdf3e2", HW_W, BUF_Y[0], X_STOW, BUF_Y[1], "PUT-AWAY BUFFER"),
-    ("#efe8f7", BULK_X[0], BULK_Y[0], BULK_X[-1], BULK_Y[1], "BULK / OVERSIZE STORAGE"),
-    ("#e8eef8", FX0, FY0, FX1, FY1, "GRID FIELD - 21 storage blocks"),
+    ("#faf3e6", HW_W, RECEIVE_H[0], X_STOW, RECEIVE_H[-1], "RECEIVING / INSPECTION / BUFFER"),
+    ("#faf3e6", HW_W, BUF_Y[0], X_STOW, BUF_Y[1], ""),
+    ("#efe8f7", BULK_X[0], BULK_Y[0], BULK_X[-1], BULK_Y[1], "BULK + STORAGE COLS 1-2"),
+    ("#e8eef8", VLANES[0], FY0, VLANES[2], FY1, ""),
+    ("#dbe6f6", VLANES[2], FY0, VLANES[5], FY1, "STORAGE COLS 3-4-5"),
+    ("#e8eef8", VLANES[5], FY0, VLANES[7], FY1, "STORAGE COLS 6-7"),
     ("#eef4ea", X_PICK, FY0, X_SORT, FY1, "PICK / PACK / SORT"),
     ("#e9f6ee", HW_W, HW_S, HW_E, FY0, "CHARGING"),
     ("#eceff4", HW_W, FY1, HW_E, HW_N, "PARKING"),

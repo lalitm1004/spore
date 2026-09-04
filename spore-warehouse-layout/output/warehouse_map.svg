@@ -1,9 +1,11 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1500" height="950" viewBox="0 0 1500 950" font-family="monospace">
 <rect width="1500" height="950" fill="#ffffff"/>
 <rect x="178.0" y="244.0" width="264.0" height="242.0" fill="#faf3e6" stroke="#c9d0d6" stroke-dasharray="4 3"/>
-<rect x="178.0" y="508.0" width="264.0" height="66.0" fill="#fdf3e2" stroke="#c9d0d6" stroke-dasharray="4 3"/>
+<rect x="178.0" y="508.0" width="264.0" height="66.0" fill="#faf3e6" stroke="#c9d0d6" stroke-dasharray="4 3"/>
 <rect x="178.0" y="596.0" width="264.0" height="110.0" fill="#efe8f7" stroke="#c9d0d6" stroke-dasharray="4 3"/>
-<rect x="464.0" y="244.0" width="616.0" height="462.0" fill="#e8eef8" stroke="#c9d0d6" stroke-dasharray="4 3"/>
+<rect x="464.0" y="244.0" width="176.0" height="462.0" fill="#e8eef8" stroke="#c9d0d6" stroke-dasharray="4 3"/>
+<rect x="640.0" y="244.0" width="264.0" height="462.0" fill="#dbe6f6" stroke="#c9d0d6" stroke-dasharray="4 3"/>
+<rect x="904.0" y="244.0" width="176.0" height="462.0" fill="#e8eef8" stroke="#c9d0d6" stroke-dasharray="4 3"/>
 <rect x="1102.0" y="244.0" width="154.0" height="462.0" fill="#eef4ea" stroke="#c9d0d6" stroke-dasharray="4 3"/>
 <rect x="178.0" y="706.0" width="1144.0" height="88.0" fill="#e9f6ee" stroke="#c9d0d6" stroke-dasharray="4 3"/>
 <rect x="178.0" y="156.0" width="1144.0" height="88.0" fill="#eceff4" stroke="#c9d0d6" stroke-dasharray="4 3"/>
@@ -1864,14 +1866,18 @@
 <circle cx="1278.0" cy="156.0" r="1.5" fill="#9aa4ad"/>
 <circle cx="1300.0" cy="156.0" r="1.5" fill="#9aa4ad"/>
 <circle cx="1322.0" cy="156.0" r="1.5" fill="#9aa4ad"/>
-<rect x="182.0" y="249.0" width="151.8" height="16" fill="#ffffff" fill-opacity="0.9"/>
-<text x="186.0" y="261.0" font-size="11.5" fill="#2b3439">RECEIVING &amp; INSPECTION</text>
-<rect x="182.0" y="513.0" width="103.5" height="16" fill="#ffffff" fill-opacity="0.9"/>
-<text x="186.0" y="525.0" font-size="11.5" fill="#2b3439">PUT-AWAY BUFFER</text>
+<rect x="182.0" y="249.0" width="213.9" height="16" fill="#ffffff" fill-opacity="0.9"/>
+<text x="186.0" y="261.0" font-size="11.5" fill="#2b3439">RECEIVING / INSPECTION / BUFFER</text>
+<rect x="182.0" y="513.0" width="0.0" height="16" fill="#ffffff" fill-opacity="0.9"/>
+<text x="186.0" y="525.0" font-size="11.5" fill="#2b3439"></text>
 <rect x="182.0" y="601.0" width="158.7" height="16" fill="#ffffff" fill-opacity="0.9"/>
-<text x="186.0" y="613.0" font-size="11.5" fill="#2b3439">BULK / OVERSIZE STORAGE</text>
-<rect x="468.0" y="249.0" width="207.0" height="16" fill="#ffffff" fill-opacity="0.9"/>
-<text x="472.0" y="261.0" font-size="11.5" fill="#2b3439">GRID FIELD - 21 storage blocks</text>
+<text x="186.0" y="613.0" font-size="11.5" fill="#2b3439">BULK + STORAGE COLS 1-2</text>
+<rect x="468.0" y="249.0" width="0.0" height="16" fill="#ffffff" fill-opacity="0.9"/>
+<text x="472.0" y="261.0" font-size="11.5" fill="#2b3439"></text>
+<rect x="644.0" y="249.0" width="124.2" height="16" fill="#ffffff" fill-opacity="0.9"/>
+<text x="648.0" y="261.0" font-size="11.5" fill="#2b3439">STORAGE COLS 3-4-5</text>
+<rect x="908.0" y="249.0" width="110.4" height="16" fill="#ffffff" fill-opacity="0.9"/>
+<text x="912.0" y="261.0" font-size="11.5" fill="#2b3439">STORAGE COLS 6-7</text>
 <rect x="1106.0" y="249.0" width="124.2" height="16" fill="#ffffff" fill-opacity="0.9"/>
 <text x="1110.0" y="261.0" font-size="11.5" fill="#2b3439">PICK / PACK / SORT</text>
 <rect x="182.0" y="711.0" width="55.2" height="16" fill="#ffffff" fill-opacity="0.9"/>
