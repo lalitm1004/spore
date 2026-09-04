@@ -41,3 +41,15 @@ class TrackConfig:
             )
 
         return SHAPES[self.shape](width=width, height=height)
+
+
+def deep_merge(base: dict, override: dict) -> dict:
+    """Recursively merge `override` onto `base`, mutating neither."""
+    merged = dict(base)
+    for key, value in override.items():
+        existing = merged.get(key)
+        if isinstance(existing, dict) and isinstance(value, dict):
+            merged[key] = deep_merge(existing, value)
+        else:
+            merged[key] = value
+    return merged
