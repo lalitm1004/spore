@@ -2,7 +2,10 @@
 # Run the fleet. One place for the flags that are easy to get wrong.
 #
 #   ./fleet.sh up          bring the fleet up (regenerates if fleet.yaml changed)
-#   ./fleet.sh view        same, but in a mode a browser can actually display
+#   ./fleet.sh chunk       cut a small piece of the map and run it, so the
+#                          browser viewer works (the whole warehouse is 924 MB
+#                          of marker texture; a browser cannot expand that)
+#   ./fleet.sh view        server-side rendering, for watching the whole map
 #   ./fleet.sh down        tear it down, orphans and all
 #   ./fleet.sh restart     down then up
 #   ./fleet.sh status      what is running, and how far through the run
@@ -78,6 +81,23 @@ case "${1:-help}" in
     "${COMPOSE[@]}" up -d --remove-orphans
     say "fleet up  --  MODE=$MODE RENDERING=$RENDERING STREAM_MODE=$STREAM_MODE MISSION_DURATION=${MISSION_DURATION}s"
     say "viewer:   $VIEWER"
+    ;;
+
+  chunk)
+    # The streaming viewer renders in the *browser*, so it has to expand every
+    # texture in the world. The whole warehouse is 881 marker tiles -- 924 MB
+    # -- and no tab will do that. A 32 x 16 m piece is 83 tiles and 101 MB,
+    # which it will.
+    #
+    # Everything else still comes from fleet.yaml. This is the same fleet on a
+    # smaller map, not a different configuration.
+    shift
+    window="${1:-8200,600,32,16}"
+    say "cutting a chunk: $window  (x_cm,y_cm,width_m,height_m)"
+    uv run python -m tools.gen_fleet --window "$window"
+    "$0" up
+    say ""
+    say "Set Mode to W3D in the viewer -- this is small enough for it now."
     ;;
 
   view)

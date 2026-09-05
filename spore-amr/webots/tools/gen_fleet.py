@@ -640,9 +640,25 @@ def main(argv=None) -> int:
     parser.add_argument("--manifest", type=pathlib.Path, default=pathlib.Path("fleet.yaml"))
     parser.add_argument("--skip-markers", action="store_true",
                         help="do not re-render marker textures")
+    parser.add_argument("--window", metavar="X_CM,Y_CM,W_M,H_M", default=None,
+                        help="cut a smaller piece of the same warehouse")
     args = parser.parse_args(argv)
 
     manifest = yaml.safe_load(args.manifest.read_text())
+
+    # A chunk of the same warehouse, for when the whole one is too much to
+    # watch. The full map is 881 marker tiles -- 924 MB of texture, which a
+    # browser rendering the w3d stream cannot expand -- so the streaming
+    # viewer only works on a piece of it. Everything else still comes from the
+    # manifest; this overrides the window and nothing more, so `fleet.yaml`
+    # stays the source of truth for the fleet itself.
+    if args.window:
+        origin_x, origin_y, width_m, height_m = (
+            float(v) for v in args.window.split(","))
+        manifest["track"]["warehouse"]["origin_cm"] = [origin_x, origin_y]
+        manifest["track"]["warehouse"]["size_m"] = [width_m, height_m]
+        print("window override: ({:.0f}, {:.0f}) cm, {:.0f} x {:.0f} m".format(
+            origin_x, origin_y, width_m, height_m))
 
     # Markers are generated here rather than as a separate step: a world that
     # references a texture nobody rendered is a world that loads with white
@@ -725,7 +741,19 @@ def main(argv=None) -> int:
 
         from tools.make_markers import main as make_markers
 
-        make_markers(["--manifest", str(args.manifest)])
+        # The *effective* manifest, not the file: with `--window` the two
+        # differ, and reading the file again generated 881 tiles for an
+        # 83-node graph -- 798 of them for nodes the world does not contain.
+        import tempfile
+
+        with tempfile.NamedTemporaryFile("w", suffix=".yaml",
+                                         delete=False) as handle:
+            yaml.safe_dump(manifest, handle)
+            effective = handle.name
+        try:
+            make_markers(["--manifest", effective])
+        finally:
+            pathlib.Path(effective).unlink()
 
     pathlib.Path("worlds").mkdir(exist_ok=True)
     pathlib.Path("worlds/track.wbt").write_text(world_source(manifest))
