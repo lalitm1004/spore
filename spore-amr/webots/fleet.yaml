@@ -2,9 +2,22 @@
 # Regenerate with:  uv run python -m tools.make_track && uv run python -m tools.gen_fleet
 
 track:
-  plane_size: [4.0, 4.0]     # ground plane, metres (square keeps the texture power-of-two)
-  track_size: [3.0, 2.0]     # the oval itself
-  shape: oval
+  # A 4x4 lattice at 2 m spacing -- the same node_spacing warehouse.json uses,
+  # so the simulated geometry is the real geometry. The plane follows from the
+  # lattice and is forced to a power of two in metres: Webots silently rescales
+  # a non-power-of-two texture, and rescaling resamples the exact lane edges
+  # the IR array reads.
+  graph:
+    rows: 4
+    columns: 4
+    spacing: 2.0
+    kinds:                      # everything else is PT, a plain waypoint
+      - {row: 0, column: 0, kind: PK}
+      - {row: 0, column: 3, kind: CH}
+      - {row: 3, column: 0, kind: TR}
+      - {row: 3, column: 3, kind: TR}
+      - {row: 1, column: 1, kind: YI}
+      - {row: 2, column: 2, kind: YI}
   line_width: 0.02
   pixels_per_metre: 512
 
@@ -21,18 +34,13 @@ robot:
 # line and move with the track. The QR payload carries absolute position, so
 # the fleet's graph is emergent -- no robot is ever handed a map.
 markers:
+  # Nodes come from the graph; only the tile's geometry is set here.
   spec:
     tile_mm: 100.0        # 92.7 mm of this is inside the camera's footprint
-    qr_mm: 60.0           # 33 modules -> 5.0 camera px per module
+    qr_mm: 60.0           # 49 modules -> 6.8 camera px per module at 512 px
     margin_mm: 5.0
-    pixels_per_mm: 10.0
+    pixels_per_mm: 10.24  # 100 mm -> exactly 1024 px, a power of two
     border_rgb: [255, 122, 0]
-  nodes:
-    - {id: 10, kind: PT, at: 0.00, region_id: 1}
-    - {id: 20, kind: TR, at: 0.20, region_id: 2}
-    - {id: 30, kind: YI, at: 0.40, region_id: 3}
-    - {id: 40, kind: CH, at: 0.60, region_id: 3}
-    - {id: 50, kind: PK, at: 0.80, region_id: 4}
 
 defaults:
   sensors:
@@ -56,7 +64,25 @@ defaults:
 
 robots:
   - name: bot_01
-    pose: {x: 0.0, y: -1.0, theta: 0.0}
+    pose: {x: -2.000, y: -3.000, theta: 0.0000}   # lane 0-1
+  - name: bot_02
+    pose: {x: 0.000, y: -3.000, theta: 0.0000}   # lane 1-2
+  - name: bot_03
+    pose: {x: 2.000, y: -3.000, theta: 0.0000}   # lane 2-3
+  - name: bot_04
+    pose: {x: 3.000, y: -2.000, theta: 1.5708}   # lane 3-7
+  - name: bot_05
+    pose: {x: -3.000, y: 0.000, theta: 1.5708}   # lane 4-8
+  - name: bot_06
+    pose: {x: -1.000, y: 0.000, theta: 1.5708}   # lane 5-9
+  - name: bot_07
+    pose: {x: 1.000, y: 0.000, theta: 1.5708}   # lane 6-10
+  - name: bot_08
+    pose: {x: -2.000, y: 1.000, theta: 0.0000}   # lane 8-9
+  - name: bot_09
+    pose: {x: 0.000, y: 1.000, theta: 0.0000}   # lane 9-10
+  - name: bot_10
+    pose: {x: 2.000, y: 1.000, theta: 0.0000}   # lane 10-11
 
 # Obstacles for the forward-lidar reflex. Unlike marker tiles these carry a
 # boundingObject, so a ray has something to hit.
@@ -64,8 +90,6 @@ robots:
 # Placed 1.24 m into the lap -- far enough that the robot is tracking the line
 # properly before it meets one. At spawn it would trip on the first tick, which
 # is correct behaviour and a useless demonstration of it.
-obstacles:
-  # On the right arc, past marker 20. Deliberately on a curve: retreating round
-  # a bend is the case that needs the rear array, so it is the case worth
-  # testing.
-  - {x: 1.496, y: -0.086, size: [0.10, 0.16, 0.12]}
+# No static obstacles: with ten robots on the grid they are each other's
+# obstacles, which is the case worth watching.
+obstacles: []

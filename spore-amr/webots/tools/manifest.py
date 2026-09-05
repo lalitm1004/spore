@@ -4,6 +4,7 @@ from dataclasses import dataclass, field
 from typing import List, Optional, Tuple
 
 from tools.track.centerline import oval
+from tools.track.graph import lattice
 from tools.track.marker import KINDS, MarkerSpec, encode_payload
 
 # Name prefixes follow warehouse.json's convention, e.g. "charging/PT/001".
@@ -11,6 +12,49 @@ KIND_SLUGS = {"PT": "aisle", "TR": "transfer", "CH": "charging",
               "PK": "parking", "YI": "yield"}
 
 SHAPES = {"oval": oval}
+
+
+@dataclass(frozen=True)
+class GraphConfig:
+    """A lattice track: the shape that has junctions.
+
+    `spacing` defaults to 2.0 m to match warehouse.json's node_spacing of
+    200 cm, so the simulated geometry is the real geometry.
+    """
+
+    rows: int = 4
+    columns: int = 4
+    spacing: float = 2.0
+    kinds: Tuple[Tuple[int, int, str], ...] = ()   # (row, column, kind)
+
+    @classmethod
+    def from_dict(cls, data: Optional[dict]) -> Optional["GraphConfig"]:
+        if not data:
+            return None
+        kinds = tuple(
+            (int(k["row"]), int(k["column"]), str(k["kind"]))
+            for k in (data.get("kinds") or [])
+        )
+        return cls(
+            rows=int(data.get("rows", 4)),
+            columns=int(data.get("columns", 4)),
+            spacing=float(data.get("spacing", 2.0)),
+            kinds=kinds,
+        )
+
+    def build(self):
+        return lattice(rows=self.rows, columns=self.columns, spacing=self.spacing,
+                       kinds={(r, c): k for r, c, k in self.kinds})
+
+    def required_plane(self) -> float:
+        """Smallest plane that fits the lattice with a margin, rounded up to a
+        power of two in metres so the texture is never rescaled."""
+        span = max((self.rows - 1), (self.columns - 1)) * self.spacing
+        needed = span + 2.0
+        size = 1.0
+        while size < needed:
+            size *= 2.0
+        return size
 
 
 @dataclass(frozen=True)
@@ -27,15 +71,38 @@ class TrackConfig:
     shape: str = "oval"
     line_width: float = 0.02
     pixels_per_metre: int = 512
+    graph: Optional[GraphConfig] = None
 
     @classmethod
     def from_dict(cls, data: dict) -> "TrackConfig":
-        known = {f: data[f] for f in cls.__dataclass_fields__ if f in data}
+        known = {f: data[f] for f in cls.__dataclass_fields__
+                 if f in data and f != "graph"}
+        graph = GraphConfig.from_dict(data.get("graph"))
+        if graph is not None:
+            # The plane follows the lattice, not the other way round: it has to
+            # be a power of two in metres or Webots rescales the texture.
+            size = graph.required_plane()
+            known["plane_size"] = (size, size)
+            known.setdefault("track_size", (size, size))
+            known["shape"] = "lattice"
         for key in ("plane_size", "track_size"):
-            known[key] = tuple(float(v) for v in known[key])
-        return cls(**known)
+            if key in known:
+                known[key] = tuple(float(v) for v in known[key])
+        return cls(graph=graph, **known)
+
+    @property
+    def is_graph(self) -> bool:
+        return self.graph is not None
+
+    def build_graph(self):
+        if self.graph is None:
+            raise ValueError("this track has no graph; it is a {}".format(self.shape))
+        return self.graph.build()
 
     def build_centerline(self):
+        if self.is_graph:
+            raise ValueError(
+                "a lattice track has no single centerline; use build_graph()")
         if self.shape not in SHAPES:
             raise ValueError(
                 "unknown track shape {!r}; known shapes: {}".format(

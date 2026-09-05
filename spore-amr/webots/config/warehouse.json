@@ -1,0 +1,319 @@
+{
+  "schema_version": "v0.1.0",
+  "units": "cm",
+  "node_spacing": 200,
+  "dimensions": {
+    "width": 800,
+    "height": 800
+  },
+  "regions": [
+    {
+      "id": 1,
+      "name": "southwest",
+      "density": "sparse",
+      "description": "Generated quadrant of the simulated lattice."
+    },
+    {
+      "id": 2,
+      "name": "southeast",
+      "density": "sparse",
+      "description": "Generated quadrant of the simulated lattice."
+    },
+    {
+      "id": 3,
+      "name": "northwest",
+      "density": "sparse",
+      "description": "Generated quadrant of the simulated lattice."
+    },
+    {
+      "id": 4,
+      "name": "northeast",
+      "density": "sparse",
+      "description": "Generated quadrant of the simulated lattice."
+    }
+  ],
+  "nodes": [
+    {
+      "id": 0,
+      "name": "parking/PK/000",
+      "region_id": 1,
+      "node_type": "PK",
+      "position": {
+        "x": 100.0,
+        "y": 100.0
+      }
+    },
+    {
+      "id": 1,
+      "name": "aisle/PT/001",
+      "region_id": 1,
+      "node_type": "PT",
+      "position": {
+        "x": 300.0,
+        "y": 100.0
+      }
+    },
+    {
+      "id": 2,
+      "name": "aisle/PT/002",
+      "region_id": 2,
+      "node_type": "PT",
+      "position": {
+        "x": 500.0,
+        "y": 100.0
+      }
+    },
+    {
+      "id": 3,
+      "name": "charging/CH/003",
+      "region_id": 2,
+      "node_type": "CH",
+      "position": {
+        "x": 700.0,
+        "y": 100.0
+      }
+    },
+    {
+      "id": 4,
+      "name": "aisle/PT/004",
+      "region_id": 1,
+      "node_type": "PT",
+      "position": {
+        "x": 100.0,
+        "y": 300.0
+      }
+    },
+    {
+      "id": 5,
+      "name": "yield/YI/005",
+      "region_id": 1,
+      "node_type": "YI",
+      "position": {
+        "x": 300.0,
+        "y": 300.0
+      }
+    },
+    {
+      "id": 6,
+      "name": "aisle/PT/006",
+      "region_id": 2,
+      "node_type": "PT",
+      "position": {
+        "x": 500.0,
+        "y": 300.0
+      }
+    },
+    {
+      "id": 7,
+      "name": "aisle/PT/007",
+      "region_id": 2,
+      "node_type": "PT",
+      "position": {
+        "x": 700.0,
+        "y": 300.0
+      }
+    },
+    {
+      "id": 8,
+      "name": "aisle/PT/008",
+      "region_id": 3,
+      "node_type": "PT",
+      "position": {
+        "x": 100.0,
+        "y": 500.0
+      }
+    },
+    {
+      "id": 9,
+      "name": "aisle/PT/009",
+      "region_id": 3,
+      "node_type": "PT",
+      "position": {
+        "x": 300.0,
+        "y": 500.0
+      }
+    },
+    {
+      "id": 10,
+      "name": "yield/YI/010",
+      "region_id": 4,
+      "node_type": "YI",
+      "position": {
+        "x": 500.0,
+        "y": 500.0
+      }
+    },
+    {
+      "id": 11,
+      "name": "aisle/PT/011",
+      "region_id": 4,
+      "node_type": "PT",
+      "position": {
+        "x": 700.0,
+        "y": 500.0
+      }
+    },
+    {
+      "id": 12,
+      "name": "transfer/TR/012",
+      "region_id": 3,
+      "node_type": "TR",
+      "position": {
+        "x": 100.0,
+        "y": 700.0
+      }
+    },
+    {
+      "id": 13,
+      "name": "aisle/PT/013",
+      "region_id": 3,
+      "node_type": "PT",
+      "position": {
+        "x": 300.0,
+        "y": 700.0
+      }
+    },
+    {
+      "id": 14,
+      "name": "aisle/PT/014",
+      "region_id": 4,
+      "node_type": "PT",
+      "position": {
+        "x": 500.0,
+        "y": 700.0
+      }
+    },
+    {
+      "id": 15,
+      "name": "transfer/TR/015",
+      "region_id": 4,
+      "node_type": "TR",
+      "position": {
+        "x": 700.0,
+        "y": 700.0
+      }
+    }
+  ],
+  "edges": [
+    {
+      "a": 0,
+      "b": 1,
+      "length": 200
+    },
+    {
+      "a": 0,
+      "b": 4,
+      "length": 200
+    },
+    {
+      "a": 1,
+      "b": 2,
+      "length": 200
+    },
+    {
+      "a": 1,
+      "b": 5,
+      "length": 200
+    },
+    {
+      "a": 2,
+      "b": 3,
+      "length": 200
+    },
+    {
+      "a": 2,
+      "b": 6,
+      "length": 200
+    },
+    {
+      "a": 3,
+      "b": 7,
+      "length": 200
+    },
+    {
+      "a": 4,
+      "b": 5,
+      "length": 200
+    },
+    {
+      "a": 4,
+      "b": 8,
+      "length": 200
+    },
+    {
+      "a": 5,
+      "b": 6,
+      "length": 200
+    },
+    {
+      "a": 5,
+      "b": 9,
+      "length": 200
+    },
+    {
+      "a": 6,
+      "b": 7,
+      "length": 200
+    },
+    {
+      "a": 6,
+      "b": 10,
+      "length": 200
+    },
+    {
+      "a": 7,
+      "b": 11,
+      "length": 200
+    },
+    {
+      "a": 8,
+      "b": 9,
+      "length": 200
+    },
+    {
+      "a": 8,
+      "b": 12,
+      "length": 200
+    },
+    {
+      "a": 9,
+      "b": 10,
+      "length": 200
+    },
+    {
+      "a": 9,
+      "b": 13,
+      "length": 200
+    },
+    {
+      "a": 10,
+      "b": 11,
+      "length": 200
+    },
+    {
+      "a": 10,
+      "b": 14,
+      "length": 200
+    },
+    {
+      "a": 11,
+      "b": 15,
+      "length": 200
+    },
+    {
+      "a": 12,
+      "b": 13,
+      "length": 200
+    },
+    {
+      "a": 13,
+      "b": 14,
+      "length": 200
+    },
+    {
+      "a": 14,
+      "b": 15,
+      "length": 200
+    }
+  ]
+}

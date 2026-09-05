@@ -47,9 +47,12 @@ class MarkerSpec:
     tile_mm: float = 100.0
     qr_mm: float = 60.0
     margin_mm: float = 5.0      # white quiet space between border and code
-    # 10 px per module at 57 modules, so the texture is never the limit --
-    # the camera is.
-    pixels_per_mm: float = 10.0
+    # Chosen so tile_mm * pixels_per_mm lands on a power of two: 100 mm at
+    # 10.24 px/mm is exactly 1024. Webots rescales a non-power-of-two texture
+    # silently, and rescaling a QR code resamples the very module edges the
+    # decoder reads -- the same failure that once resampled the lane edges the
+    # IR array reads.
+    pixels_per_mm: float = 10.24
     border_rgb: Tuple[int, int, int] = ORANGE
 
     @property

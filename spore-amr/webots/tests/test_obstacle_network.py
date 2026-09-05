@@ -1,15 +1,13 @@
-"""The obstacle reflex and the stand-in router.
+"""The obstacle reflex.
 
-Both are pure, so both are testable without Webots -- which matters most for
-the reflex, since the failure it guards against is one you cannot safely
-provoke on hardware.
+Pure, so testable without Webots -- which matters most here, since the failure
+it guards against is one you cannot safely provoke on hardware.
+
+The router that used to share this file now lives in tests/test_network.py.
 """
-
-import math
 
 import pytest
 
-from robot.network import Junction, RandomRouter
 from robot.obstacle import Obstacle, ObstacleConfig, ObstacleGuard, nearest
 
 
@@ -154,49 +152,23 @@ def test_thresholds_that_would_chatter_are_rejected():
         ObstacleConfig(stop_m=0.30, clear_m=0.20)
 
 
-# -------------------------------------------------------------- the router ---
+def test_holding_gives_up_eventually():
+    """Waiting for the obstacle to move works when it is a carton. It does not
+    when it is another robot that is also waiting -- neither moves, and the
+    pair is deadlocked. Measured with ten robots and no coordination: one spent
+    69% of a run parked behind another.
+    """
+    guard = ObstacleGuard(ObstacleConfig(decel_s=0.0, pause_s=0.0, accel_s=0.0,
+                                         hold_timeout_s=5.0))
+    guard.update(0.15, 0.0, False, 0.0, cruise_speed=6.0)   # STOPPING
+    guard.update(0.15, 0.1, False, 0.0)                     # PAUSED
+    guard.update(0.15, 0.2, False, 0.1)                     # BACKING
+    guard.update(0.15, 0.3, True, 0.2)
+    guard.update(0.15, 0.4, False, 0.3)
+    guard.update(0.15, 0.5, True, 0.4)                      # parked
+    assert guard.state is Obstacle.HOLDING
 
-def junction(out_edges, heading_deg=0.0, query_id=1):
-    return Junction(query_id=query_id, node=30, kind="PT", x_mm=1000, y_mm=1000,
-                    out_edges=tuple(out_edges), heading_rad=math.radians(heading_deg))
-
-
-def test_router_only_ever_returns_a_legal_edge():
-    router = RandomRouter(seed=7)
-    edges = [(0, 40), (90, 50), (270, 60)]
-    for _ in range(200):
-        route = router.route(junction(edges))
-        assert (route.bearing_deg, route.to_node) in edges
-
-
-def test_router_echoes_the_query_id():
-    """Without it, a late answer to the previous junction is indistinguishable
-    from the answer to this one."""
-    route = RandomRouter(seed=1).route(junction([(0, 40)], query_id=99))
-    assert route.query_id == 99
-
-
-def test_router_is_reproducible_from_its_seed():
-    edges = [(0, 40), (90, 50), (180, 60), (270, 70)]
-    a = [RandomRouter(seed=3).route(junction(edges, query_id=i)).to_node for i in range(20)]
-    b = [RandomRouter(seed=3).route(junction(edges, query_id=i)).to_node for i in range(20)]
-    assert a == b
-
-
-def test_router_prefers_not_to_double_back():
-    """Arriving heading 0, the way back is bearing 180. With somewhere else to
-    go, take it -- on a one-way lane, reversing would be a wrong-way entry."""
-    router = RandomRouter(seed=0)
-    edges = [(0, 40), (180, 20)]
-    for _ in range(50):
-        assert router.route(junction(edges, heading_deg=0)).to_node == 40
-
-
-def test_router_will_double_back_at_a_dead_end():
-    """Preference, not prohibition: if reversing is the only way out, take it."""
-    route = RandomRouter(seed=0).route(junction([(180, 20)], heading_deg=0))
-    assert route.to_node == 20
-
-
-def test_router_declines_a_node_with_no_way_out():
-    assert RandomRouter(seed=0).route(junction([])) is None
+    # The obstacle never moves -- range is unchanged throughout.
+    assert guard.update(0.15, 3.0, False, 0.4) is Obstacle.HOLDING
+    assert guard.update(0.15, 6.0, False, 0.4) is Obstacle.CLEAR
+    assert guard.timeouts == 1

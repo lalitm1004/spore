@@ -50,6 +50,7 @@ class ObstacleConfig:
     max_backoff_m: float = 2.0     # give up reversing after this much travel
     departed_m: float = 0.15   # range must improve by this much, while parked,
                                # before the obstacle counts as gone
+    hold_timeout_s: float = 8.0    # then try again anyway -- see below
 
     def __post_init__(self):
         if self.clear_m <= self.stop_m:
@@ -79,6 +80,7 @@ class ObstacleGuard:
         self.cruise_speed = 0.0
         self.borders_seen = 0
         self.trips = 0
+        self.timeouts = 0
         self.last_range = float("inf")
         self.parked_range: Optional[float] = None
         self._border_was = False
@@ -144,6 +146,21 @@ class ObstacleGuard:
         if self.parked_range is None:
             self.parked_range = nearest_m
         elif nearest_m > self.parked_range + config.departed_m:
+            self._enter(Obstacle.CLEAR, now)
+            self.parked_range = None
+            self.borders_seen = 0
+        elif elapsed >= config.hold_timeout_s:
+            # Waiting for the obstacle to move works when the obstacle is a
+            # carton. It does not when the obstacle is another robot that is
+            # also waiting: neither moves, and the pair is deadlocked. Measured
+            # with ten robots and no coordination -- one spent 69% of a run
+            # parked behind another.
+            #
+            # Retrying does not resolve the conflict; that is the network
+            # layer's job, and this reflex has no business trying. It only
+            # stops a jam from being permanent, and the retry trips straight
+            # back if the way is still blocked.
+            self.timeouts += 1
             self._enter(Obstacle.CLEAR, now)
             self.parked_range = None
             self.borders_seen = 0

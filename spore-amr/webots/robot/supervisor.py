@@ -72,8 +72,10 @@ def main(argv=None):
     manifest = yaml.safe_load(args.manifest.read_text())
     track = TrackConfig.from_dict(manifest["track"])
     markers = MarkerConfig.from_dict(manifest.get("markers"))
-    centerline = track.build_centerline()
     origin_offset = (track.plane_size[0] / 2.0, track.plane_size[1] / 2.0)
+    # A lattice has no single centreline; its markers are its nodes.
+    marker_count = (len(track.build_graph().nodes) if track.is_graph
+                    else len(markers.nodes))
 
     supervisor = Supervisor()
     timestep = int(supervisor.getBasicTimeStep())
@@ -89,7 +91,7 @@ def main(argv=None):
 
     supervisor.setLabel(TITLE_LABEL,
                         "Floorgraph  |  {} markers  |  {} robots".format(
-                            len(markers.nodes), len(names)),
+                            marker_count, len(names)),
                         0.01, 0.01, 0.07, WHITE, 0.0, "Arial")
 
     # The labels only exist in the 3D view, which a headless run has no way to
