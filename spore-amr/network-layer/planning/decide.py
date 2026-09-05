@@ -254,17 +254,38 @@ def decide(
             outranked_by(my_rank, my_bot_id, ranks.get(b, 0), b) for b in blockers
         )
         if losing:
+            # Never stand aside *through* the robot we are standing aside for.
+            # Two separate things have to be checked, because `nearest` filters
+            # the candidates and not the road to them:
+            #
+            #   the spot   -- `avoid`, so we do not pick somewhere to wait that
+            #                 a blocker is already sitting on;
+            #   the step   -- `is_free`, because the first hop is the one we
+            #                 are about to actually drive, and it is the hop
+            #                 that can land on the blocker.
+            #
+            # Without the second check a yield could send us straight into the
+            # node we were yielding to avoid, which is the one outcome worse
+            # than not yielding at all.
+            occupied = frozenset(
+                graph.index(claim.node_id)
+                for peer in traffic.peers
+                if peer.bot_id in set(blockers)
+                for claim in peer.reservations
+                if graph.has_id(claim.node_id)
+            )
             spot = choose_yield_spot(
                 graph,
                 topology,
                 graph.index(here.node_id),
                 radius=config.yield_search_hops,
+                avoid=occupied,
             )
             if spot is not None:
                 spot_id = graph.id_of(spot)
                 step = _first_step_towards(graph, graph.index(here.node_id), spot)
                 turn = turn_for(query, graph.id_of(step)) if step is not None else None
-                if turn is not None:
+                if turn is not None and traffic.is_free(step, here.t_in, ahead.t_out):
                     return Decision(
                         query_id=query.query_id,
                         kind=DecisionKind.YIELD,

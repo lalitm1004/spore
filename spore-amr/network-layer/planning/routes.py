@@ -6,8 +6,16 @@ WHAT
     primary does.
 
 WHERE
-    Held per job by `bot.Bot` and consulted by `planning.decide` when the route
-    in hand stops working. Pure: no search, no traffic, no clock.
+    **Not currently wired in, and the reason is worth recording.** The cache
+    pays off in a plan-once-then-follow model, where losing the route means
+    paying for a fresh search. The fleet does not work that way: the robot asks
+    at every node and `bot._route` plans afresh each time, because traffic
+    changes between one node and the next and a plan costs under a millisecond.
+    An alternative held in hand would save nothing.
+
+    Kept because the model could change -- a robot that commits to a longer
+    route, or a planner too expensive to run per node, would want exactly this.
+    Pure: no search, no traffic, no clock.
 
 WHY
     Recomputing from scratch every time a lane closes is wasteful when the

@@ -228,3 +228,81 @@ RESERVATION_REACH_HOPS = int(os.environ.get("RESERVATION_REACH_HOPS", "8"))
 #: a third smooths over a single mis-scan. Carried in heartbeats, relayed in
 #: acks, and summarised between leaders (PROTOCOL.md §3.1, §3.2).
 NODE_TRAIL_LEN = int(os.environ.get("NODE_TRAIL_LEN", "3"))
+
+
+# ---- Coherence ------------------------------------------------------------------
+
+class ConfigError(ValueError):
+    """Two settings that cannot both be right.
+
+    Every one of these fails *silently* if left alone: the fleet starts, runs,
+    and misbehaves in a way that looks like something else entirely. Better to
+    refuse to boot and say which pair is wrong.
+    """
+
+
+def validate(node_spacing_cm: int | None = None) -> None:
+    """Check the relationships between settings, not just their values.
+
+    Called from `bot.Bot.start()`. Each check names the symptom rather than the
+    rule, because the symptom is what someone will be staring at.
+
+    `node_spacing_cm` comes from the loaded map, so the one check that needs to
+    know how far apart two nodes are can live here with the others rather than
+    somewhere on its own. A bot with no map passes it as None and skips that
+    check, which is right: nothing can plan a route without a map anyway.
+    """
+    problems = []
+
+    if T_MAX_HOLD >= ROBOT_SOCKET_TIMEOUT:
+        problems.append(
+            f"T_MAX_HOLD ({T_MAX_HOLD}s) must be under ROBOT_SOCKET_TIMEOUT "
+            f"({ROBOT_SOCKET_TIMEOUT}s): a robot held longer than it is willing to "
+            "wait cannot tell us apart from a network layer that has died"
+        )
+    if RESERVATION_TTL <= T_ANNOUNCE:
+        problems.append(
+            f"RESERVATION_TTL ({RESERVATION_TTL}s) must exceed T_ANNOUNCE "
+            f"({T_ANNOUNCE}s): claims would lapse before the announcement that "
+            "renews them, so nothing would ever hold a node"
+        )
+    if BATTERY_CRITICAL > JOB_MIN_BATTERY:
+        problems.append(
+            f"BATTERY_CRITICAL ({BATTERY_CRITICAL}%) must not exceed "
+            f"JOB_MIN_BATTERY ({JOB_MIN_BATTERY}%): a bot would be routed as if "
+            "desperate for charge while still being handed new work"
+        )
+    if T_DEAD <= T_HB:
+        problems.append(
+            f"T_DEAD ({T_DEAD}s) must exceed T_HB ({T_HB}s): a leader would evict "
+            "bots faster than they report, and the region would never hold a roster"
+        )
+    if T_STALL <= T_HB:
+        problems.append(
+            f"T_STALL ({T_STALL}s) must exceed T_HB ({T_HB}s): every robot pausing "
+            "for traffic would be escalated as stuck"
+        )
+
+    if node_spacing_cm:
+        # The window a stationary robot announces has to outlast the drive it is
+        # meant to prevent. Two announce periods keeps a claim alive between
+        # announcements, which is a different question, and for a long time it
+        # was the only one asked -- at the shipped defaults `2 * T_ANNOUNCE` and
+        # one hop were both exactly 2000 ms, so a claim expired on the same
+        # millisecond a neighbour arrived and strict overlap read that as free.
+        # `ReservationSender._hold_ms` takes the larger of the two; this refuses
+        # to boot if the settings ever make that arithmetic wrong again.
+        from planning.kinematics import DEFAULT_KINEMATICS
+
+        traversal_ms = DEFAULT_KINEMATICS.cruise_ms(node_spacing_cm)
+        claim_ms = max(2 * T_ANNOUNCE * 1000, traversal_ms + PLAN_SAFETY * 1000)
+        if claim_ms <= traversal_ms:
+            problems.append(
+                f"the claim window ({claim_ms:.0f}ms) must exceed one traversal "
+                f"({traversal_ms:.0f}ms at {node_spacing_cm}cm spacing): a robot "
+                "standing still would stop holding its node before a neighbour "
+                "driving at it could arrive, and they would meet there"
+            )
+
+    if problems:
+        raise ConfigError("; ".join(problems))

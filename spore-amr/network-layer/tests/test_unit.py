@@ -156,3 +156,53 @@ def policy():
 ])
 def test_virtual_network_admission_table(policy, service, caller, region, role, ok):
     assert policy._allowed(service, caller, region, role) is ok
+
+
+# ---- Configuration coherence -------------------------------------------------
+# Each of these pairs fails silently when wrong: the fleet boots, runs, and goes
+# wrong in a way that looks like a different problem entirely.
+
+def test_the_shipped_configuration_is_coherent():
+    import config
+
+    config.validate()  # must not raise
+
+
+@pytest.mark.parametrize(("setting", "value", "symptom"), [
+    ("T_MAX_HOLD", 99.0, "cannot tell us apart from a network layer that has died"),
+    ("RESERVATION_TTL", 0.1, "nothing would ever hold a node"),
+    ("BATTERY_CRITICAL", 99.0, "still being handed new work"),
+    ("T_DEAD", 0.1, "never hold a roster"),
+    ("T_STALL", 0.1, "escalated as stuck"),
+])
+def test_an_incoherent_setting_stops_the_bot_booting(monkeypatch, setting, value, symptom):
+    import config
+
+    monkeypatch.setattr(config, setting, value)
+    with pytest.raises(config.ConfigError, match=symptom):
+        config.validate()
+
+
+def test_the_shipped_claim_window_outlasts_a_traversal(real_map):
+    """The check that needs the map, at the spacing the fleet actually runs."""
+    import config
+
+    config.validate(real_map.node_spacing)  # must not raise
+
+
+def test_a_claim_window_shorter_than_a_hop_stops_the_bot_booting(monkeypatch, real_map):
+    """The narrowest miss in the whole config, and the most expensive.
+
+    At the shipped defaults `2 * T_ANNOUNCE` and one hop are both exactly
+    2000 ms, so a stationary robot's claim expired on the same millisecond a
+    neighbour arrived -- and because overlap is strict, that read as *free*.
+    Nothing about a 200 cm spacing and a 1 s heartbeat makes that coincidence a
+    design; move either constant a little and a robot standing still becomes
+    invisible to the robot driving at it.
+    """
+    import config
+
+    monkeypatch.setattr(config, "T_ANNOUNCE", 0.01)
+    monkeypatch.setattr(config, "PLAN_SAFETY", -1.0)
+    with pytest.raises(config.ConfigError, match="they would meet there"):
+        config.validate(real_map.node_spacing)

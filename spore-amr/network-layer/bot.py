@@ -83,7 +83,6 @@ from planning.decide import Decision, DecisionKind, Query
 from planning.geometry import heading_from_radians
 from planning.graph import Graph
 from planning.planner import Planner
-from planning.routes import RouteCache
 from planning.server import RobotLink
 from planning.topology import Topology
 from planning.types import Goal, Obstruction, Request, Reservation, SelfState
@@ -278,8 +277,6 @@ class Bot:
         #: Where the robot is being sent, if anywhere. Set by the job layer;
         #: the route to it is worked out per query, not stored as a command.
         self.nav_goal: Goal | None = None
-        #: Alternatives held for the current job, as diffs (planning/routes.py).
-        self.routes: RouteCache | None = None
         self._last_target: int | None = None
         #: Blockages the planner routes around, keyed by node. Reported ones
         #: would land here too, once the robot link carries the node id -- today
@@ -524,6 +521,9 @@ class Bot:
                 self._leadership = Leadership(Role.FOLLOWER, None, None, time.monotonic())
             self._hb_sender.start()
 
+        # Refuse to boot on a configuration that cannot work, rather than
+        # running and misbehaving in a way that looks like something else.
+        config.validate(getattr(self.graph, "node_spacing", None))
         self._robot_link.start()
         signal.signal(signal.SIGTERM, self._handle_signal)
         signal.signal(signal.SIGINT, self._handle_signal)
@@ -587,7 +587,11 @@ class Bot:
                 hold_ms=int(config.T_BLOCKED_HOLD * 1000),
                 because="no warehouse map loaded",
             )
-        if self.nav_goal is None:
+        # Snapshot the goal rather than reading it twice. The run loop can clear
+        # it between the check and the use -- abandoning a job before pickup does
+        # exactly that -- and the planner would then be handed no goal at all.
+        goal = self.nav_goal
+        if goal is None:
             return Decision(
                 query_id=query.query_id, kind=DecisionKind.WAIT,
                 hold_ms=int(config.T_ARRIVED_HOLD * 1000),
@@ -599,11 +603,6 @@ class Bot:
         traffic = traffic_module.build(
             self.graph, observations, now=now, config=self.planning,
             kinematics=self.planner.kinematics,
-            hop_cost=self.planner.kinematics.cruise_ms(self.graph.node_spacing),
-            obstructions=tuple(
-                Obstruction(node_id=node, level=level)
-                for node, level in sorted(self.obstructions.items())
-            ),
             exclude_bot_id=self.bot_id,
         )
         plan = self.planner.plan(Request(
@@ -614,10 +613,18 @@ class Bot:
                 moving=self.state == "MOVING",
                 energy=self._energy_state(),
             ),
-            goal=self.nav_goal,
+            goal=goal,
             # The same peers the traffic view is built from, so the search
             # respects predicted occupancy and not just declared claims.
             peers=traffic.peers,
+            # Tier 3. These have to travel on the request, because the search
+            # is the only thing that prices them -- a blocked node is one the
+            # planner declines to route through, and it can only decline what
+            # it was told about.
+            obstructions=tuple(
+                Obstruction(node_id=node, level=level)
+                for node, level in sorted(self.obstructions.items())
+            ),
         ))
         decision = decide_module.decide(
             self.graph, self.topology, query,
@@ -637,7 +644,6 @@ class Bot:
             self.obstructions[node_id] = level
         # The route in hand was costed without this, so it is no longer the
         # cheapest thing we know -- drop it rather than drive it.
-        self.routes = None
         self._last_target = None
 
     def _observations(self) -> tuple:
@@ -720,7 +726,6 @@ class Bot:
         if self._nav_strikes == 1:
             log.warning("bot-%d: stalled at node %d; dropping the route",
                         self.bot_id, self.latest_node_id)
-            self.routes = None
             self._last_target = None
         elif self._nav_strikes == 2:
             log.warning("bot-%d: still stalled at node %d; will stand aside",
@@ -831,7 +836,6 @@ class Bot:
         # node seventy hops away -- it asks at every node it reaches, and
         # `_route` answers with the next turn (PROTOCOL.md §16).
         self.nav_goal = Goal.node(job.pickup_node)
-        self.routes = None
         self._last_target = None
         self._robot_sink.send(RobotCommand(
             target_node_id=job.pickup_node,
@@ -856,7 +860,6 @@ class Bot:
         if update.mission == "CARGO" and update.cargo_state:
             if update.cargo_state == CS_EN_ROUTE and self.cargo_state == CS_PICKUP:
                 self.nav_goal = Goal.node(job.dropoff_node)
-                self.routes = None
                 self._last_target = None
                 self._robot_sink.send(RobotCommand(
                     target_node_id=job.dropoff_node,
@@ -883,7 +886,6 @@ class Bot:
             self.current_job = None
             self.cargo_state = ""
             self.nav_goal = None
-            self.routes = None
 
     def self_peer(self) -> Peer:
         """Ourselves as a roster record — what a leader would see if we were

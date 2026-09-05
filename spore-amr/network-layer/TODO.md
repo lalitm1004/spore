@@ -101,7 +101,7 @@ refer to `PROTOCOL.md`.
 - [x] Distance caches bounded — an unbounded one reached ~33 MB on the real map
 - [x] Cross-region routes planned optimistically; replanned on arrival
 - [ ] The first decision after migrating is uninformed — accepted, not solved
-- [ ] Route alternates are built but not yet populated per job by the dispatcher
+- [~] Route alternates are built but deliberately unwired — see F1 below
 
 ## Routing (§16) — the robot link
 
@@ -131,7 +131,7 @@ test has no row, so the contract cannot quietly stop being true.
 - [x] **E1-E6** collisions — two and three on a node, following, claims crossing, and the no-overlap invariant on its own
 - [x] **F2, F3, F4, F6** redirections — obstruction avoided and cleared, migration replan, a peer's claim changing the answer
 - [x] **G1, G2, G7** yielding — carrying beats free, the id tiebreak, exactly one side gives way
-- [ ] **F1** promoting a cached alternate — the route cache is built and unit-tested, but nothing populates it per job yet
+- [~] **F1** promoting a cached alternate — **not applicable as the fleet works today.** The cache saves a search only when losing a route is expensive; the robot asks at every node and a plan costs under a millisecond, so `bot._route` replans afresh each time and an alternative in hand would save nothing. `planning/routes.py` is kept, unwired, for a model that commits to longer routes
 - [ ] **F5** REROUTE on a genuine route change — A4 covers the negative (unchanged means PROCEED); the positive needs a route that actually moves
 - [ ] **G3-G6** the yield-spot cascade on containers — unit-tested; pinning which spot is chosen would be asserting the map rather than the rule
 - [ ] **E3** two bots driving head-on down a whole corridor — the contest itself is covered by E4, G1 and G7

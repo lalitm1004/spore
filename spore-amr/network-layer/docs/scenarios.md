@@ -157,9 +157,12 @@ Being straight about the holes is the point of writing this down.
   string, so the node is lost on the way in and nothing builds an obstruction
   from what a robot actually reported. These prove how the planner *responds* to
   a blockage, not how it hears about one.
-- **F1, promoting a cached alternate, has no test** because nothing populates
-  the per-job route cache yet. The cache and its diff storage are built and
-  unit-tested; the dispatcher does not fill it.
+- **F1, promoting a cached alternate, has no test because the fleet does not
+  work that way.** Holding alternatives pays off when losing a route means
+  paying for a fresh search. The robot asks at every node and a plan costs under
+  a millisecond, so the answer is recomputed each time and an alternative in hand
+  would save nothing. `planning/routes.py` stays, unwired and unit-tested, for a
+  model that commits to longer routes.
 - **The yield-spot cascade (a `YI` bay, else a junction, else a bay) is
   unit-tested, not container-tested.** Which spot is chosen depends on the map
   around the contested corridor, and pinning that in a container test would be

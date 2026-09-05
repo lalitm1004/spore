@@ -89,8 +89,43 @@ class ReservationSender:
         if not bot.latest_node_id:
             bot.ledger.withdraw()   # no QR scan yet: we cannot say where we are
             return
-        hold_until = now + 2 * int(config.T_ANNOUNCE * 1000)
-        bot.ledger.propose([(bot.latest_node_id, now, hold_until)], now, rank=self._rank())
+        bot.ledger.propose(
+            [(bot.latest_node_id, now, now + self._hold_ms())], now, rank=self._rank()
+        )
+
+    def _hold_ms(self) -> int:
+        """How long to hold the node the robot is standing on.
+
+        Two quantities have to be covered and they answer different questions:
+
+          **staying announced** -- two announce periods, so the claim outlives
+          the gap between one announcement and the next;
+          **staying honest** -- one traversal plus the planner's safety margin,
+          so a neighbour that decides *right now* to drive in here still finds
+          the node taken when it arrives.
+
+        The claim takes the larger. Tying it to the announce period alone was
+        very nearly a collision: at production timings `2 * T_ANNOUNCE` and one
+        hop are both exactly 2000 ms, so a stationary robot's claim expired on
+        the same millisecond a neighbour reached it -- and because overlap is
+        strict, that read as *free*. Nothing about a 200 cm node spacing and a
+        1 s heartbeat makes that coincidence a design; move either constant a
+        little and a robot standing still becomes invisible to the robot
+        driving at it.
+
+        With no map loaded there is no traversal to reason about and nothing
+        can plan a route here anyway, so the announce window is the whole
+        answer.
+        """
+        announced = 2 * int(config.T_ANNOUNCE * 1000)
+        bot = self._bot
+        if bot.graph is None or bot.planner is None:
+            return announced
+        arriving = int(
+            bot.planner.kinematics.cruise_ms(bot.graph.node_spacing)
+            + config.PLAN_SAFETY * 1000
+        )
+        return max(announced, arriving)
 
     def _rank(self) -> int:
         bot = self._bot

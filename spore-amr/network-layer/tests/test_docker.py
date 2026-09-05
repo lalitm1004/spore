@@ -793,6 +793,57 @@ def _corridor(min_hops: int = 6):
     raise AssertionError(f"no corridor of {min_hops}+ hops on this map")
 
 
+def _bot_with_a_goal(fleet, cs, job_id: str, at: int):
+    """Give one bot a real job, stand it on `at`, and return its container.
+
+    Every routing scenario has to do this first. A bot with no job answers
+    `WAIT "no job"` before the planner is ever consulted, so asking a jobless
+    bot for a turn proves the socket replies and nothing more -- and an
+    assertion written as `if kind in ("PROCEED", "REROUTE")` then never runs at
+    all. That is not hypothetical: it is how F2 passed for weeks while the bot
+    drove happily into nodes it had been told were impassable.
+
+    Hence `_planned()` below, which every one of these scenarios now calls on
+    the reply before trusting it.
+
+    The dispatcher chooses the holder, not the scenario, so the job goes out
+    first and the winner is placed afterwards.
+    """
+    far = _map_nodes(PARK, 40)
+    for c in cs:
+        fleet.inject(c, latest_node_id=at, region_id=PARK, battery=90.0,
+                     state="IDLE", mission="IDLE")
+    assert wait_until(lambda: all(p.mission == "IDLE" for p in fleet.state(cs[0]).roster),
+                      20, what="the roster to settle before dispatch")
+    assert fleet.submit_job(cs[0], job_id, far[-2], far[-1]).accepted
+    holder = _holder_of(fleet, cs, job_id)
+    assert holder is not None, "nobody took the job, so no bot has a goal to plan toward"
+    fleet.inject(holder, latest_node_id=at, region_id=PARK)
+    # Park everyone else out of the way. They had to start beside the holder to
+    # be candidates for the job, but leaving them there makes every scenario a
+    # congestion scenario: their claims sit on the very lanes under test, and a
+    # test about obstructions would be measuring peer traffic instead. The
+    # scenarios that *want* a second bot in the way place it themselves.
+    for c in cs:
+        if c is not holder:
+            fleet.inject(c, latest_node_id=far[0], region_id=PARK, battery=90.0,
+                         state="IDLE", mission="IDLE")
+    return holder
+
+
+def _planned(reply, where: str = ""):
+    """Assert the planner actually ran, and hand the reply back.
+
+    Guards the vacuous-pass hole described in `_bot_with_a_goal`: a scenario
+    that means to test routing must fail loudly if the bot never routed,
+    rather than skipping its own assertion.
+    """
+    assert reply is not None, f"no answer at all {where}".strip()
+    assert reply.get("because") != "no job", \
+        f"the bot had no goal, so the planner was never asked {where}".strip()
+    return reply
+
+
 @pytest.mark.docker
 def test_C1_a_job_becomes_a_sequence_of_turns(fleet):
     """Every node on the way is answered, and each answer names a real lane."""
@@ -852,17 +903,16 @@ def test_C3_a_neighbours_claim_is_respected(two_bots):
     corridor = _corridor(6)
     ours, theirs = corridor[0], corridor[1]
 
-    fleet.inject(cs[0], latest_node_id=ours, region_id=PARK, battery=90.0,
+    ours_c = _bot_with_a_goal(fleet, cs, "C3", ours)
+    other_c = next(c for c in cs if c is not ours_c)
+    fleet.inject(other_c, latest_node_id=theirs, region_id=PARK, battery=90.0,
                  state="IDLE", mission="IDLE")
-    fleet.inject(cs[1], latest_node_id=theirs, region_id=PARK, battery=90.0,
-                 state="IDLE", mission="IDLE")
-    other_id = fleet.state(cs[1]).bot_id
+    other_id = fleet.state(other_c).bot_id
     assert wait_until(lambda: any(r.bot_id == other_id and r.node_id == theirs
-                                  for r in fleet.state(cs[0]).reservations), 20,
+                                  for r in fleet.state(ours_c).reservations), 20,
                       what="the neighbour's claim to arrive")
 
-    reply = fleet.ask(cs[0], _query(ours, _neighbours(ours)))
-    assert reply is not None
+    reply = _planned(fleet.ask(ours_c, _query(ours, _neighbours(ours))))
     if reply["kind"] in ("PROCEED", "REROUTE"):
         assert reply["target_node_id"] != theirs, "it drove into a node a peer holds"
 
@@ -1372,16 +1422,16 @@ def test_E4_a_following_bot_does_not_close_up_on_the_one_ahead(two_bots):
     fleet.reset(cs)
     corridor = _corridor(6)
     leader_node, follower_node = corridor[2], corridor[1]
-    fleet.inject(cs[0], latest_node_id=leader_node, region_id=PARK, battery=90.0,
+    # The follower is the one doing the routing, so the job has to land on it.
+    follower_c = _bot_with_a_goal(fleet, cs, "E4", follower_node)
+    ahead_c = next(c for c in cs if c is not follower_c)
+    fleet.inject(ahead_c, latest_node_id=leader_node, region_id=PARK, battery=90.0,
                  state="IDLE", mission="IDLE")
-    fleet.inject(cs[1], latest_node_id=follower_node, region_id=PARK, battery=90.0,
-                 state="IDLE", mission="IDLE")
-    ahead_id = fleet.state(cs[0]).bot_id
-    assert wait_until(lambda: any(r.bot_id == ahead_id for r in fleet.state(cs[1]).reservations),
+    ahead_id = fleet.state(ahead_c).bot_id
+    assert wait_until(lambda: any(r.bot_id == ahead_id for r in fleet.state(follower_c).reservations),
                       20, what="the leader's claim to reach the follower")
 
-    reply = fleet.ask(cs[1], _query(follower_node, _neighbours(follower_node)))
-    assert reply is not None
+    reply = _planned(fleet.ask(follower_c, _query(follower_node, _neighbours(follower_node))))
     if reply["kind"] in ("PROCEED", "REROUTE"):
         assert reply["target_node_id"] != leader_node, "it drove into an occupied node"
     fleet.assert_no_overlap(cs)
@@ -1393,23 +1443,31 @@ def test_E4_a_following_bot_does_not_close_up_on_the_one_ahead(two_bots):
 @pytest.mark.docker
 def test_F2_an_obstruction_is_routed_around(two_bots):
     """The planner has always supported obstructions; nothing fed it one until
-    now. See ObstructionMsg in fleet.proto for what this shortcut skips."""
+    now. See ObstructionMsg in fleet.proto for what this shortcut skips.
+
+    Obstructions ride on the planning `Request`, not on the traffic view -- the
+    search is the only thing that prices them. This scenario is what proves
+    that wire is connected, so it takes the lane it is given rather than
+    tolerating a bot that never planned.
+    """
     fleet, cs = two_bots
     fleet.reset(cs)
     node = _map_nodes(PARK, 1)[0]
-    fleet.inject(cs[0], latest_node_id=node, region_id=PARK, battery=90.0,
-                 state="IDLE", mission="IDLE")
+    ours = _bot_with_a_goal(fleet, cs, "F2", node)
 
-    before = fleet.ask(cs[0], _query(node, _neighbours(node)))
-    assert before is not None
-    blocked = before.get("target_node_id") or list(_neighbours(node).values())[0]
+    before = _planned(fleet.ask(ours, _query(node, _neighbours(node))), "before the block")
+    assert before["kind"] in ("PROCEED", "REROUTE"), \
+        f"nothing was in the way, so there is a lane to block; got {before}"
+    blocked = before["target_node_id"]
 
-    fleet.obstruct(cs[0], blocked, level=1.0)
-    after = fleet.ask(cs[0], _query(node, _neighbours(node), query_id=2))
-    assert after is not None, "an obstruction is not a reason to go silent"
+    fleet.obstruct(ours, blocked, level=1.0)
+    after = _planned(fleet.ask(ours, _query(node, _neighbours(node), query_id=2)),
+                     "after the block")
+    assert after["kind"] in ("PROCEED", "REROUTE", "WAIT", "YIELD"), \
+        "an obstruction is not a reason to go silent"
     if after["kind"] in ("PROCEED", "REROUTE"):
         assert after["target_node_id"] != blocked, "it drove into a node reported blocked"
-    fleet.obstruct(cs[0], blocked, level=0.0)
+    fleet.obstruct(ours, blocked, level=0.0)
 
 
 @pytest.mark.docker
@@ -1419,16 +1477,16 @@ def test_F3_clearing_an_obstruction_opens_the_lane_again(two_bots):
     fleet, cs = two_bots
     fleet.reset(cs)
     node = _map_nodes(PARK, 1)[0]
-    fleet.inject(cs[0], latest_node_id=node, region_id=PARK, battery=90.0,
-                 state="IDLE", mission="IDLE")
+    ours = _bot_with_a_goal(fleet, cs, "F3", node)
     lane = list(_neighbours(node).values())[0]
 
-    fleet.obstruct(cs[0], lane, level=1.0)
-    blocked = fleet.ask(cs[0], _query(node, _neighbours(node), query_id=1))
-    fleet.obstruct(cs[0], lane, level=0.0)
-    cleared = fleet.ask(cs[0], _query(node, _neighbours(node), query_id=2))
+    fleet.obstruct(ours, lane, level=1.0)
+    blocked = _planned(fleet.ask(ours, _query(node, _neighbours(node), query_id=1)),
+                       "while blocked")
+    fleet.obstruct(ours, lane, level=0.0)
+    cleared = _planned(fleet.ask(ours, _query(node, _neighbours(node), query_id=2)),
+                       "once cleared")
 
-    assert blocked is not None and cleared is not None
     if blocked["kind"] in ("PROCEED", "REROUTE"):
         assert blocked["target_node_id"] != lane
     # With nothing in the way the lane is allowed again; the point is that the
@@ -1460,31 +1518,40 @@ def test_F4_a_bot_that_migrates_replans_on_arrival(fleet):
 @pytest.mark.docker
 def test_F6_a_peers_claim_between_two_questions_changes_the_answer(two_bots):
     """Traffic is not static between one node and the next, and the answer has
-    to move with it."""
+    to move with it.
+
+    A claim has to outlive the drive it is meant to prevent, and for a while
+    this scenario could not be made to hold. The reason was not the TTL -- that
+    governs when a *received* claim lapses -- but the window the sender
+    announces, which was two announce periods and so expired before a neighbour
+    two seconds away could arrive. `ReservationSender._hold_ms` now covers a
+    traversal, so the shared fleet is enough and this needs no clock of its own.
+    """
     fleet, cs = two_bots
     fleet.reset(cs)
     corridor = _corridor(6)
     ours = corridor[0]
-    fleet.inject(cs[0], latest_node_id=ours, region_id=PARK, battery=90.0,
+    ours_c = _bot_with_a_goal(fleet, cs, "F6", ours)
+    other_c = next(c for c in cs if c is not ours_c)
+
+    first = _planned(fleet.ask(ours_c, _query(ours, _neighbours(ours))), "on the first ask")
+    assert first["kind"] in ("PROCEED", "REROUTE"), \
+        f"nothing was in the way, so there is a lane to contest; got {first}"
+    contested = first["target_node_id"]
+
+    fleet.inject(other_c, latest_node_id=contested, region_id=PARK, battery=90.0,
                  state="IDLE", mission="IDLE")
-    first = fleet.ask(cs[0], _query(ours, _neighbours(ours)))
-    assert first is not None
+    other = fleet.state(other_c).bot_id
+    assert wait_until(
+        lambda: any(r.bot_id == other and r.node_id == contested
+                    for r in fleet.state(ours_c).reservations),
+        20, what="the peer's claim to arrive")
 
-    if first["kind"] in ("PROCEED", "REROUTE"):
-        contested = first["target_node_id"]
-        fleet.inject(cs[1], latest_node_id=contested, region_id=PARK, battery=90.0,
-                     state="IDLE", mission="IDLE")
-        other = fleet.state(cs[1]).bot_id
-        assert wait_until(
-            lambda: any(r.bot_id == other and r.node_id == contested
-                        for r in fleet.state(cs[0]).reservations),
-            20, what="the peer's claim to arrive")
-
-        second = fleet.ask(cs[0], _query(ours, _neighbours(ours), query_id=2))
-        assert second is not None
-        if second["kind"] in ("PROCEED", "REROUTE"):
-            assert second["target_node_id"] != contested, \
-                "it kept driving at a node a peer had since claimed"
+    second = _planned(fleet.ask(ours_c, _query(ours, _neighbours(ours), query_id=2)),
+                      "on the second ask")
+    if second["kind"] in ("PROCEED", "REROUTE"):
+        assert second["target_node_id"] != contested, \
+            "it kept driving at a node a peer had since claimed"
 
 
 # -----------------------------------------------------------------------------

@@ -1,14 +1,13 @@
 """What the other robots are doing, in three tiers of confidence.
 
 WHAT
-    `TrafficView` — everything the search needs to know about other robots at
-    one instant: which node-time windows are taken, which nodes are impassable,
-    and which are merely expensive.
+    `TrafficView` — who the other robots are and which node-time windows they
+    have taken, at one instant.
 
 WHERE
     Built once per decision by `planning.decide`, from the reservation ledger
     (`reservations.ledger`) and the roster (`peers.table`). Handed to
-    `planning.sipp` as constraints and cost.
+    `planning.sipp` as constraints.
 
 WHY
     A robot learns about its neighbours two very different ways, and conflating
@@ -22,7 +21,14 @@ WHY
       1. Declared -- peer `res[]` from the ledger. Hard.
       2. Predicted -- extrapolated from `node_trail`. Hard, but never applied to
          a peer that has declared anything.
-      3. Soft -- positions, region density, obstructions. Cost only.
+      3. Soft -- positions, region density, obstructions. Cost only, and for
+         that reason not this module's business: the search prices them itself,
+         from `Request.obstructions` and `Request.gossip`. A view that built its
+         own congestion field would be building a second copy of the planner's,
+         from the same inputs, one bounded BFS per query, for nobody to read --
+         and the two would drift the moment either side changed its hop cost.
+         Tiers 1 and 2 are the part a caller *cannot* recover from the request,
+         so they are the part that lives here.
 
     **A prediction never contradicts a declaration.** If a peer has told us it
     holds A and B, we do not additionally block C because we guessed it was
@@ -52,12 +58,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from planning import congestion as congestion_module
 from planning.geometry import Heading, heading_between
 from planning.graph import Graph
 from planning.intervals import ReservationTable
 from planning.kinematics import Kinematics
-from planning.types import Config, Obstruction, PeerView, RegionGossip, Reservation
+from planning.types import Config, PeerView, Reservation
 
 
 @dataclass(frozen=True, slots=True)
@@ -138,7 +143,6 @@ class TrafficView:
     """The three tiers, resolved into what the search actually consumes."""
 
     table: ReservationTable
-    field: congestion_module.CongestionField
     peers: tuple[PeerView, ...] = ()
     """The peers as the search must see them — declared claims where a peer gave
     us any, predicted ones where it did not. Handed to `Planner.plan` so the
@@ -160,13 +164,6 @@ class TrafficView:
     def interval_containing(self, node: int, t: int):
         return self.table.interval_containing(node, t)
 
-    @property
-    def blocked(self) -> frozenset[int]:
-        return self.field.blocked
-
-    def penalty(self, node: int) -> float:
-        return self.field(node)
-
 
 def build(
     graph: Graph,
@@ -175,9 +172,6 @@ def build(
     now: int,
     config: Config,
     kinematics: Kinematics,
-    hop_cost: float,
-    obstructions: tuple[Obstruction, ...] = (),
-    gossip: tuple[RegionGossip, ...] = (),
     exclude_bot_id: int | None = None,
 ) -> TrafficView:
     """Assemble the traffic picture for one decision."""
@@ -212,15 +206,6 @@ def build(
         peers=peers,
         table=ReservationTable(
             graph, peers, now=now, config=config, exclude_bot_id=exclude_bot_id
-        ),
-        field=congestion_module.build(
-            graph,
-            config=config,
-            hop_cost=hop_cost,
-            peers=peers,
-            gossip=gossip,
-            obstructions=obstructions,
-            exclude_bot_id=exclude_bot_id,
         ),
         predicted_for=frozenset(predicted_for),
     )
