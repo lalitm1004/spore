@@ -419,15 +419,44 @@ def optics_config(manifest: dict) -> dict:
     }
 
 
+def spawn_region_ids(manifest: dict, configs: List[dict]) -> dict:
+    """Which region each robot starts in, read off the track it spawns on.
+
+    Taken from the map rather than configured, for the same reason the poses
+    are: a layout change must not be able to leave a stale region behind.
+    """
+    spawns = {c["name"]: (c.get("pose") or {}).get("from_node") for c in configs}
+    if not any(node_id is not None for node_id in spawns.values()):
+        # An oval or any other track with no lane graph: there are no regions to
+        # be in, so every bot boots in region 0 and migrates once it scans a QR
+        # code that says otherwise.
+        return {name: 0 for name in spawns}
+
+    track = TrackConfig.from_dict(manifest["track"])
+    graph = track.build_graph()
+    return {
+        name: getattr(graph.nodes.get(node_id), "region_id", 0) or 0
+        for name, node_id in spawns.items()
+    }
+
+
 def compose_source(manifest: dict) -> dict:
     services = {}
-    for index, config in enumerate(robot_configs(manifest)):
+    configs = robot_configs(manifest)
+    robot_names = [c["name"] for c in configs]
+    spawn_regions = spawn_region_ids(manifest, configs)
+    for index, config in enumerate(configs):
         name = config["name"]
         resources = config.get("resources") or {}
+        # Each robot runs a real network-layer bot beside its companion: the
+        # thing that elects leaders, takes jobs, reserves nodes and answers the
+        # robot's routing questions. It needs a fleet identity, the addresses of
+        # its peers for bootstrap discovery, and the socket the companion will
+        # connect to (PROTOCOL.md §16).
         services[name] = {
             "image": CONTROLLER_IMAGE,
             "depends_on": ["sim"],
-            "volumes": ["./:/project"],
+            "volumes": ["./:/project", "../network-layer:/network-layer:ro"],
             "working_dir": "/project",
             "user": "${DOCKER_USER:-1000:1000}",
             "init": True,
@@ -438,10 +467,16 @@ def compose_source(manifest: dict) -> dict:
                 "SIM_HOST": "sim",
                 "MISSION_DURATION": "${{MISSION_DURATION:-{}}}".format(
                     config.get("mission_duration_s", 120)),
-                # A distinct seed per robot: with one seed the whole fleet
-                # makes the same choice at the same junction, which is a very
-                # convincing-looking bug.
-                "NETLAYER_SEED": str(config.get("netlayer_seed", index)),
+                "BOT_ID": str(index),
+                # The region the robot spawns in. It migrates on its own once
+                # it scans a QR code somewhere else, so this only has to be
+                # right at boot.
+                "REGION_ID": str(spawn_regions.get(name, 0)),
+                "OWN_ADDRESS": "{}:50051".format(name),
+                "PEER_LEADERS": ",".join(
+                    "{}:50051".format(other) for other in robot_names if other != name),
+                "ROBOT_SOCKET": "/tmp/{}-robot.sock".format(name),
+                "WAREHOUSE_MAP": "/project/config/warehouse.json",
             },
             "mem_limit": resources.get("memory", "256m"),
             "cpus": resources.get("cpus", "0.5"),

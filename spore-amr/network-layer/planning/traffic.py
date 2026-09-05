@@ -139,6 +139,11 @@ class TrafficView:
 
     table: ReservationTable
     field: congestion_module.CongestionField
+    peers: tuple[PeerView, ...] = ()
+    """The peers as the search must see them — declared claims where a peer gave
+    us any, predicted ones where it did not. Handed to `Planner.plan` so the
+    search reasons about exactly the traffic this view describes."""
+
     predicted_for: frozenset[int] = field(default_factory=frozenset)
     """Bot ids we are guessing about rather than quoting. Diagnostics only —
     useful when explaining why a robot waited for someone who never came."""
@@ -204,6 +209,7 @@ def build(
 
     peers = tuple(views)
     return TrafficView(
+        peers=peers,
         table=ReservationTable(
             graph, peers, now=now, config=config, exclude_bot_id=exclude_bot_id
         ),

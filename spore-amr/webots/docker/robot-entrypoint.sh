@@ -31,16 +31,23 @@ for _ in $(seq 1 100); do
   sleep 0.1
 done
 
-# Each robot runs its own network layer. One shared service answering every
+# Each robot runs its own network-layer bot. One shared service answering every
 # robot would be a control plane wearing a hat, and per-robot means killing a
 # single robot's coordinator is a real thing to demonstrate.
-NETLAYER_SOCK="/tmp/${ROBOT_NAME}-netlayer.sock"
-python3 /project/robot/netlayer.py \
-  --socket "${NETLAYER_SOCK}" \
-  --seed "${NETLAYER_SEED:-0}" &
+#
+# This is the real thing: it elects a region leader, keeps a roster, takes cargo
+# jobs, reserves nodes against its neighbours, and answers the companion's
+# routing questions on the socket below (spore-amr/network-layer/PROTOCOL.md).
+ROBOT_SOCKET="${ROBOT_SOCKET:-/tmp/${ROBOT_NAME}-robot.sock}"
+export ROBOT_SOCKET
+export PYTHONPATH="/network-layer:${PYTHONPATH:-}"
+python3 /network-layer/bot.py &
 
-for _ in $(seq 1 100); do
-  [ -S "${NETLAYER_SOCK}" ] && break
+# Wait for the socket rather than a fixed sleep: the bot binds it after loading
+# the map and starting its gRPC server, and how long that takes varies with how
+# many bots are coming up at once.
+for _ in $(seq 1 200); do
+  [ -S "${ROBOT_SOCKET}" ] && break
   sleep 0.1
 done
 
@@ -48,7 +55,7 @@ python3 /project/robot/companion.py \
   --link "${COMPANION_TTY}" \
   --config "${CONFIG}" \
   --map "${WAREHOUSE_MAP:-/project/config/warehouse.json}" \
-  --netlayer "${NETLAYER_SOCK}" \
+  --network "${ROBOT_SOCKET}" \
   --mission-duration "${MISSION_DURATION}" &
 
 exec /usr/local/webots/webots-controller \

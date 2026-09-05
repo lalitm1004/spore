@@ -89,15 +89,20 @@ refer to `PROTOCOL.md`.
 - [ ] Claiming a **route** rather than the node underfoot — needs something deciding where the robot goes next (see below)
 - [ ] `may_enter` gating actual movement — nothing drives the robot from this repo yet (see below)
 
-## Open: two robot contracts that never met
+## Routing (§16) — the robot link
 
-Recorded because it decides where path planning eventually plugs in, not because
-it is a job for this package.
+- [x] The companion's `Query` is answered with a `Decision` over the unix socket
+- [x] `Decision` carries a kind, so WAIT is sayable rather than implied by silence
+- [x] Every query gets an answer — bad JSON, a planner error and a map disagreement all reply
+- [x] Jobs set a navigation goal; the robot is driven a node at a time, not sent a destination
+- [ ] Measured against ground truth in the Webots fleet — the bots and the robots now
+      run in the same containers, but a full ten-robot run has not been timed
 
-There are two things called the network layer and they have never been connected:
+The stand-in router and the placeholder glue project are both gone: each robot
+container runs a real `bot.py`, and `spore-amr/webots/robot/network.py` is now
+only the shared message shapes. There is one network layer.
 
-| | `network-layer/` (this repo) | `webots/robot/netlayer.py` (`webots-implementation`) |
-|---|---|---|
+---|---|---|
 | transport | gRPC, bot to bot | unix socket, one per robot |
 | what it tells the robot | "go to node 400" | "turn left, you will arrive at node 412" |
 | plugged in? | **no** — `RobotSink` has no implementation | yes, answered by `RandomRouter` |

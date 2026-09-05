@@ -32,7 +32,33 @@ HOW — two rules that look over-cautious and are not
 """
 from __future__ import annotations
 
+import threading
+from collections.abc import Callable
+from functools import wraps
+from typing import TypeVar
+
 from reservations.claims import Announce, Claim, Contest, Window, contests
+
+T = TypeVar("T")
+
+
+def _guarded(method: Callable[..., T]) -> Callable[..., T]:
+    """Take the ledger's lock for the whole call.
+
+    Three threads reach into a ledger: a gRPC worker delivering a neighbour's
+    announcement, the run loop claiming and expiring, and an admin call reading
+    it out for inspection. Without this, iterating the neighbour map while an
+    announcement inserts into it raises -- and it would raise on a real fleet
+    long before it raised in a test. The lock is reentrant because these methods
+    call each other, and contention is nil: a few operations a second.
+    """
+
+    @wraps(method)
+    def wrapper(self, *args, **kwargs):
+        with self._lock:
+            return method(self, *args, **kwargs)
+
+    return wrapper
 
 
 class ReservationLedger:
@@ -47,10 +73,12 @@ class ReservationLedger:
         self._peers: dict[int, tuple[Claim, ...]] = {}
         self._expiry: dict[int, int] = {}
         self._seen_seq: dict[int, int] = {}
+        self._lock = threading.RLock()
         self._seq = 0
 
     # ---- Our own claims -----------------------------------------------------
 
+    @_guarded
     def propose(
         self, windows: list[tuple[int, int, int]], now: int, *, rank: int | None = None
     ) -> bool:
@@ -99,15 +127,18 @@ class ReservationLedger:
                 return claim.effective_at_ms
         return None
 
+    @_guarded
     def withdraw(self) -> None:
         """Drop our claims — after losing a contest, or when the route changes."""
         self._mine = ()
         self._seq += 1
 
     @property
+    @_guarded
     def mine(self) -> tuple[Claim, ...]:
         return self._mine
 
+    @_guarded
     def announcement(self, now: int) -> Announce:
         """Our claims as offsets from `now`, ready for the wire."""
         return Announce(
@@ -127,6 +158,7 @@ class ReservationLedger:
 
     # ---- Neighbours ---------------------------------------------------------
 
+    @_guarded
     def receive(self, announce: Announce, now: int) -> None:
         """Take a neighbour's announcement, stamped with local arrival time.
 
@@ -149,12 +181,14 @@ class ReservationLedger:
         )
         self._expiry[announce.bot_id] = now + (announce.ttl_ms or self.ttl_ms)
 
+    @_guarded
     def forget(self, bot_id: int) -> None:
         """Drop a neighbour — it departed, or drifted out of claim range."""
         self._peers.pop(bot_id, None)
         self._expiry.pop(bot_id, None)
         self._seen_seq.pop(bot_id, None)
 
+    @_guarded
     def expire(self, now: int) -> tuple[int, ...]:
         """Drop neighbours that have gone quiet. Returns their bot ids."""
         stale = tuple(sorted(b for b, when in self._expiry.items() if when <= now))
@@ -162,15 +196,18 @@ class ReservationLedger:
             self.forget(bot_id)
         return stale
 
+    @_guarded
     def peer_claims(self) -> tuple[Claim, ...]:
         return tuple(c for bot_id in sorted(self._peers) for c in self._peers[bot_id])
 
     @property
+    @_guarded
     def neighbours(self) -> tuple[int, ...]:
         return tuple(sorted(self._peers))
 
     # ---- The question that matters ------------------------------------------
 
+    @_guarded
     def may_enter(self, node_id: int, start_ms: int, end_ms: int, now: int) -> bool:
         """May this bot drive into `node_id` for `[start_ms, end_ms]`?"""
         held = any(
@@ -184,10 +221,12 @@ class ReservationLedger:
             return False
         return not any(c.overlaps(node_id, start_ms, end_ms) for c in self.peer_claims())
 
+    @_guarded
     def lost(self) -> tuple[Contest, ...]:
         """Contests we must give way in — the signal to withdraw and replan."""
         return tuple(c for c in contests(self._mine, self.peer_claims()) if c.i_yield)
 
+    @_guarded
     def blockers(self, node_id: int, start_ms: int, end_ms: int) -> tuple[int, ...]:
         return tuple(
             sorted({c.bot_id for c in self.peer_claims() if c.overlaps(node_id, start_ms, end_ms)})

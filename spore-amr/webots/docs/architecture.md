@@ -11,13 +11,12 @@ has been measured, and what is still open.
 This is the **robot half** of an AMR fleet: perception, motion control, the
 physical layer, and a simulator faithful enough to develop them against. The
 distributed coordination the project is really about — task allocation,
-reservations, deadlock resolution — is somebody else's code. It is represented
-here by `robot/network.py`'s `RandomRouter`, which picks a legal turn uniformly
-and knows nothing about tasks, congestion or other robots.
+reservations, deadlock resolution — is `spore-amr/network-layer`, and each
+robot runs one of its bots in its own container.
 
-That stand-in is not a placeholder to be embarrassed about. It is the interface
-frozen early, so the firmware and the companion were written against their
-final contract rather than ported to it later, and a fleet of random routers is
+Freezing this interface early is what made that swap cheap: the firmware and
+the companion were written against their final contract rather than ported to
+it later, and for a long time the thing answering was
 a real baseline — random assignment is the floor any allocation algorithm has
 to beat.
 
@@ -25,13 +24,13 @@ to beat.
 
 Each robot is three OS processes in one container.
 
-| | `robot/main.py` | `robot/companion.py` | `robot/netlayer.py` |
+| | `robot/main.py` | `robot/companion.py` | `network-layer/bot.py` |
 |---|---|---|---|
 | stands for | the ESP32 / Arduino | the Pi | the network layer |
-| owns | IR arrays, motors, cameras, lidar | the map, the policy | routing |
+| owns | IR arrays, motors, cameras, lidar | the map, the policy | routing, jobs, membership |
 | Webots access | yes, the extern controller | none | none |
-| rate | 62.5 Hz control loop | event-driven | request/response |
-| talks to | companion, over a socat pty | firmware and netlayer | companion |
+| rate | 62.5 Hz control loop | event-driven | 1 Hz tick + request/response |
+| talks to | companion, over a socat pty | firmware and the bot | companion, and other bots over gRPC |
 
 The firmware and companion are joined by a `socat` pty pair, so both sides open
 a real serial device path exactly as they would on hardware. The companion and
@@ -63,7 +62,6 @@ untouched — and it is why 167 tests run in about a second.
 robot/
   main.py          firmware: the only place Webots meets control    ~700 lines
   companion.py     the policy half, and the junction handshake       ~130
-  netlayer.py      the stand-in network layer, as a process          ~110
   supervisor.py    ground truth and the on-screen readout            ~190
 
   hal.py           MCU-like front end: 10-bit ADC, own sample clock    63
@@ -77,7 +75,7 @@ robot/
   obstacle.py      the lidar reflex                                   200
   turn.py          in-place turning to an absolute heading             93
   navigator.py     map lookup, and the socket to the network layer    200
-  network.py       Query/Decision wire types, RandomRouter            140
+  network.py       Query/Decision wire types (shared contract)         110
 
   protocol.py      the firmware <-> companion wire format              68
   events.py        what the firmware reports upward, and when          48
@@ -217,7 +215,7 @@ robot around. It costs nothing now that `track_width` is calibrated.
 ## 8. The junction handshake
 
 ```
-firmware                companion                    netlayer
+firmware                companion                    network layer
    |                        |                            |
    | EVT MARKER node=7 -->  |                            |
    | (stops on the tile)    | turns_from(7, heading) --> |
@@ -331,9 +329,7 @@ using the two message schemas, and that gap is worth closing deliberately:
    checked against ground truth. `tools/spike_turn.py` and
    `spike_turn_truth.py` exist for exactly this and have never completed a run
    — the first attempt used `--rm` and the container deleted its own logs.
-3. **The real network layer.** `robot/netlayer.py` is a socket and a `route()`
-   call; replacing the router is the whole change.
-4. **gRPC.** `proto/firmware.proto` is drafted for the firmware link. No code
+3. **gRPC.** `proto/firmware.proto` is drafted for the firmware link. No code
    references it; the ASCII protocol is what runs.
 
 ## 13. Things that are true and surprising

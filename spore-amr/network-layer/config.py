@@ -158,6 +158,11 @@ PLAN_STABLE_TICKS = int(os.environ.get("PLAN_STABLE_TICKS", "3"))
 #: fraction of one straight hop.
 CONGESTION_WEIGHT = float(os.environ.get("CONGESTION_WEIGHT", "0.35"))
 
+#: Below this the planner weights charge over speed outright (EnergyState
+#: CRITICAL): it will wait rather than detour, and prefer routes near chargers.
+#: Sits below JOB_MIN_BATTERY, which is where a bot stops taking new work.
+BATTERY_CRITICAL = float(os.environ.get("BATTERY_CRITICAL", "15.0"))
+
 #: Alternative routes kept per job, stored as diffs against the primary.
 ROUTE_ALTERNATES = int(os.environ.get("ROUTE_ALTERNATES", "3"))
 

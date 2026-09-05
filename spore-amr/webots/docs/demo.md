@@ -115,7 +115,7 @@ docker compose -f compose.yml -f compose.fleet.yml logs -f bot_01
 
 ```
 bot_01: node 113 PT charging/PT/097 at (1000.0, 400.0) cm  region 3
-netlayer: node 113 ['left', 'right', 'straight'] -> left (node 114)
+bot-0: accepted job 4f2a -> pickup at node 114
 bot_01: turning to 90 deg for node 114
 ```
 
@@ -128,7 +128,7 @@ at a charging bay, a degree-1 spur, the list is the single way back out.
 Fleet-wide:
 
 ```bash
-docker compose -f compose.yml -f compose.fleet.yml logs 2>&1 | grep -c "netlayer: node"
+docker compose -f compose.yml -f compose.fleet.yml logs 2>&1 | grep -c "accepted job"
 docker compose -f compose.yml -f compose.fleet.yml logs 2>&1 | grep "turning to"
 ```
 
@@ -172,7 +172,7 @@ service answering every robot would be a control plane wearing a hat.
 
 ```bash
 # kill one robot's coordinator; the others do not notice
-docker compose -f compose.yml -f compose.fleet.yml exec bot_03 pkill -f netlayer.py
+docker compose -f compose.yml -f compose.fleet.yml exec bot_03 pkill -f bot.py
 ```
 
 `bot_03` keeps following its lane and stops at the next junction with nothing

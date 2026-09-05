@@ -4,10 +4,13 @@
 FROM cyberbotics/webots:R2025a-ubuntu22.04
 
 # opencv-python-headless carries the QR decoder and needs no X libraries;
-# the same cv2.QRCodeDetector call is what would run on the Pi.
+# the same cv2.QRCodeDetector call is what would run on the Pi. grpcio and
+# protobuf are for the network-layer bot that runs beside each companion --
+# the fleet's membership, jobs and routing all speak gRPC between bots.
 RUN apt-get update \
     && apt-get install -y --no-install-recommends python3-yaml python3-pip socat \
     && pip3 install --no-cache-dir "numpy>=1.24" "opencv-python-headless>=4.9" \
+        "grpcio>=1.83.1" "protobuf>=7.36.1" \
     && rm -rf /var/lib/apt/lists/*
 
 ENV WEBOTS_HOME=/usr/local/webots

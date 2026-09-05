@@ -51,6 +51,13 @@ def answer_junction(navigator, network, event):
               flush=True)
         return []
 
+    if decision.is_wait:
+        # Hold, then ask the same question again. The firmware keeps the robot
+        # where it is; nothing needs to be commanded to stand still.
+        print("node {}: holding {} ms ({})".format(
+            node_id, decision.hold_ms, decision.because or "no reason given"), flush=True)
+        return [Message(kind="CMD", name="HOLD", fields={"ms": decision.hold_ms})]
+
     bearing = navigator.bearing_for(node_id, decision)
     if bearing is None:
         print("node {}: {} -> node {} is not a lane".format(
@@ -71,7 +78,7 @@ def main(argv=None):
     parser.add_argument("--mission-duration", type=float, default=120.0)
     parser.add_argument("--map", type=pathlib.Path, default=None,
                         help="warehouse.json; without it the robot cannot turn")
-    parser.add_argument("--netlayer", type=pathlib.Path, default=None,
+    parser.add_argument("--network", type=pathlib.Path, default=None,
                         help="unix socket of this robot's network layer")
     args = parser.parse_args(argv)
 
@@ -90,7 +97,7 @@ def main(argv=None):
     # The map lives here, not in the firmware: the firmware drives and must
     # not acquire a dependency on a file or a socket.
     navigator = Navigator(load_map(args.map)) if args.map and args.map.exists() else None
-    network = NetworkLink(args.netlayer) if args.netlayer else None
+    network = NetworkLink(args.network) if args.network else None
     if navigator is None:
         print("no map: junctions will not be answered", flush=True)
 

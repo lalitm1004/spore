@@ -1,30 +1,31 @@
-"""Stand-in for the network layer, until the real one exists.
+"""The robot <-> network wire: what a robot asks, and what it is told.
 
-The point is not the routing -- it is the interface. Everything above the
-`Router` protocol is what the real distributed layer will replace, so the
-firmware and the companion get written against their final contract now rather
-than being ported later.
+At every QR node the companion resolves which turns physically exist and asks
+this question; the network layer answers with one of them. The robot never
+picks a direction for itself -- that is the local autonomy the architecture
+says the network layer owns.
 
-`RandomRouter` is honest about being a mock: it picks a legal turn uniformly
-and knows nothing about tasks, congestion or other robots. That is enough to
-exercise the whole junction path -- arrive, ask, wait, turn, resume -- and a
-fleet of them is a real baseline, since random assignment is the floor any
-allocation algorithm has to beat.
+The network layer is `spore-amr/network-layer`, one bot process per robot,
+serving these messages on a unix socket (its PROTOCOL.md §16). This module is
+only the message shapes, shared by both sides so neither can drift: pure, no
+I/O, no transport.
 
-It picks from the turns the robot says exist, rather than from left/straight/
-right unconditionally. A blind choice names a lane that is not there -- at a
-corner two of three answers are walls -- and the robot then needs a retry loop
-more complicated than the field that avoids it.
-
-Message shapes follow spore-amr/shared/schemas/. Pure: no I/O, no transport.
+Message shapes follow spore-amr/shared/schemas/.
 """
 
 import json
-import random
 from dataclasses import dataclass
 from typing import Dict, Optional
 
 TURNS = ("left", "straight", "right")
+
+# What an answer can be. The original protocol had only "take this lane", which
+# left no way to say "stay where you are" -- and a robot told nothing is
+# indistinguishable from a robot whose network layer has died, because it only
+# asks again on reaching the next node. WAIT closes that hole: hold for
+# `hold_ms`, then ask the same question again.
+PROCEED, REROUTE, WAIT, YIELD = "PROCEED", "REROUTE", "WAIT", "YIELD"
+KINDS = (PROCEED, REROUTE, WAIT, YIELD)
 
 
 @dataclass(frozen=True)
@@ -87,45 +88,39 @@ class Decision:
     query_id: int
     turn: str
     target_node_id: int
+    kind: str = PROCEED
+    hold_ms: int = 0
+    because: str = ""
+
+    @property
+    def is_wait(self) -> bool:
+        return self.kind == WAIT
 
     def to_json(self) -> str:
         return json.dumps({
             "schema_version": "v0.1.0",
             "query_id": self.query_id,
+            "kind": self.kind,
             "turn": self.turn,
             "target_node_id": self.target_node_id,
+            "hold_ms": self.hold_ms,
+            "because": self.because,
         }, separators=(",", ":"))
 
     @classmethod
     def from_json(cls, text: str) -> "Decision":
         d = json.loads(text)
-        turn = d["turn"]
-        if turn not in TURNS:
+        # `kind` is optional so an older network layer, which sent only a turn,
+        # still parses: no kind means it is telling us to move.
+        kind = str(d.get("kind", PROCEED))
+        if kind not in KINDS:
+            raise ValueError("unknown kind {!r}".format(kind))
+        turn = d.get("turn", "")
+        # WAIT names no lane. Every other kind must name one that exists, or the
+        # robot would turn to a bearing nobody computed.
+        if kind != WAIT and turn not in TURNS:
             raise ValueError("unknown turn {!r}".format(turn))
         return cls(query_id=int(d["query_id"]), turn=turn,
-                   target_node_id=int(d["target_node_id"]))
-
-
-class RandomRouter:
-    """Picks a legal turn at random.
-
-    Seeded, because a run that cannot be reproduced cannot be debugged at 3am
-    and cannot honestly be averaged over trials.
-    """
-
-    name = "random"
-
-    def __init__(self, seed: int = 0):
-        self.random = random.Random(seed)
-        self.decisions = 0
-
-    def route(self, query: Query) -> Optional[Decision]:
-        if not query.available:
-            # A dead end. The caller decides what to do about it; the router
-            # has nothing legal to offer and will not invent something.
-            return None
-
-        turn = self.random.choice(sorted(query.available))
-        self.decisions += 1
-        return Decision(query_id=query.query_id, turn=turn,
-                        target_node_id=query.available[turn])
+                   target_node_id=int(d.get("target_node_id", 0)),
+                   kind=kind, hold_ms=int(d.get("hold_ms", 0)),
+                   because=str(d.get("because", "")))

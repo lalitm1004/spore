@@ -25,6 +25,7 @@ HOW
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 from enum import IntEnum, StrEnum
 
@@ -105,3 +106,14 @@ def heading_between(a: Position, b: Position) -> Heading:
     if dy < 0:
         return Heading.S
     raise ValueError(f"positions coincide: {a}")
+
+
+def heading_from_radians(radians: float) -> Heading:
+    """Nearest axis-aligned heading to a bearing.
+
+    The robot sends the bearing it arrived on, which is exact — lanes are
+    straight, so the angle between two nodes *is* the direction of travel. It
+    still needs rounding to one of four, because that is all a lane can be.
+    """
+    quarter = round(radians / (math.pi / 2)) % 4
+    return Heading(quarter)

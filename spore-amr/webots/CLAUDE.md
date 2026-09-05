@@ -2,13 +2,14 @@
 
 A containerised Webots simulation of line-following warehouse robots, under
 `spore-amr/webots/`. It is the **robot half** of the system: perception, motion
-control, and the physical layer. The real network layer — task allocation,
-multi-robot coordination — is somebody else's code, and is represented here by
-a stand-in that hands out random turns.
+control, and the physical layer. The network layer — membership, leader
+election, cargo jobs, node reservations and routing — is
+`spore-amr/network-layer`, and each robot runs one of its bots alongside its
+companion.
 
 Ten robots run on a window of the real `warehouse.json`, spawning at charging
-bays, stopping at every QR marker to ask their own network-layer process which
-way to turn.
+bays, stopping at every QR marker to ask their own network-layer bot which way
+to turn.
 
 Read this before changing anything. Most of what follows is a decision that
 cost measurement to reach, and several are things that look wrong until you
@@ -40,8 +41,9 @@ spore-warehouse-layout/output/
    └──────────────┬───────────────────┘
                   │ newline JSON over a unix socket  (robot/navigator.py)
    ┌──────────────┴───────────────────┐
-   │ robot/netlayer.py                │   one process per robot, not one
-   │  RandomRouter: a legal turn      │   shared service
+   │ spore-amr/network-layer/bot.py   │   one bot per robot, not one shared
+   │  SIPP routing, reservations,     │   service; elects a region leader,
+   │  jobs, leader election           │   takes jobs, reserves nodes
    └──────────────────────────────────┘
 ```
 
@@ -255,7 +257,7 @@ sih2026/controller:dev .`. Python is volume-mounted and needs no rebuild.
 ```bash
 uv run pytest -q                                    # 167 tests, no Webots
 docker compose ... logs bot_01 | grep "node "       # marker reads
-docker compose ... logs | grep "netlayer: node"     # routing decisions
+docker compose ... logs | grep "became leader\|accepted job"  # fleet activity
 docker compose ... logs supervisor | grep label:    # localisation error
 ```
 
@@ -279,12 +281,13 @@ Measured on the current warehouse window, ten robots:
 | wheel heading drift | under 1.7 degrees per lap |
 | obstacle reflex | trips at 178 mm, retreats to the previous marker |
 
-**Known rough edges:** ten robots on random routes jam, which is the honest
-result rather than a bug — see `docs/demo.md`. Charging bays are degree-1
-spurs that pair onto one junction, so robots leaving them contend immediately.
+**Known rough edges:** charging bays are degree-1 spurs that pair onto one
+junction, so robots leaving them contend immediately — which is now a
+reservation contest rather than a jam, and the losing bot yields by the
+priority rule (`network-layer/PROTOCOL.md` §16).
 
-**Not built:** the real network layer (this has a random stand-in);
-`robot/turn.py`'s accuracy has never been measured against ground truth;
+**Not built:** `robot/turn.py`'s accuracy has never been measured against
+ground truth;
 `proto/firmware.proto` is a drafted gRPC schema no code references.
 
 Further reading: `docs/architecture.md` for the module map and the reasoning,

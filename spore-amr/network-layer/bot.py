@@ -77,6 +77,18 @@ from bus.jobs import (
 )
 from bus.admin import AdminServicer
 from peers.table import PeerTable, Peer, Leader, Ledger
+from planning import decide as decide_module
+from planning import traffic as traffic_module
+from planning.decide import Decision, DecisionKind, Query
+from planning.geometry import heading_from_radians
+from planning.graph import Graph
+from planning.planner import Planner
+from planning.routes import RouteCache
+from planning.server import RobotLink
+from planning.topology import Topology
+from planning.types import Goal, Request, Reservation, SelfState
+from planning.types import from_env as planning_config
+from reservations import now_ms
 from reservations.ledger import ReservationLedger
 from reservations.sender import ReservationSender
 from reservations.server import ReservationServicer
@@ -251,6 +263,30 @@ class Bot:
             ttl_ms=int(config.RESERVATION_TTL * 1000),
         )
         self._reservations = ReservationSender(self)
+
+        # Pathfinding (PROTOCOL.md §16). The graph is built on the map already
+        # loaded above rather than reading it again -- one copy of the floor.
+        self.planning = planning_config()
+        self.graph: Graph | None = None
+        self.topology: Topology | None = None
+        self.planner: Planner | None = None
+        if getattr(self.map, "n", 0):
+            self.graph = Graph(self.map, hops_cache_size=config.HOPS_CACHE_SIZE)
+            self.topology = Topology(self.graph)
+            self.planner = Planner(self.graph, bot_id=self.bot_id, config=self.planning)
+
+        #: Where the robot is being sent, if anywhere. Set by the job layer;
+        #: the route to it is worked out per query, not stored as a command.
+        self.nav_goal: Goal | None = None
+        #: Alternatives held for the current job, as diffs (planning/routes.py).
+        self.routes: RouteCache | None = None
+        self._last_target: int | None = None
+        self._nav_node: int = 0
+        self._nav_since: float = time.monotonic()
+        self._nav_strikes: int = 0
+        self._robot_link = RobotLink(
+            config.ROBOT_SOCKET, self._route, bot_id=self.bot_id
+        )
         self._hb_sender = HeartbeatSender(self)
         self._leader_exchange = LeaderExchangeSender(self)
         self._grpc_server: grpc.Server | None = None
@@ -484,6 +520,7 @@ class Bot:
                 self._leadership = Leadership(Role.FOLLOWER, None, None, time.monotonic())
             self._hb_sender.start()
 
+        self._robot_link.start()
         signal.signal(signal.SIGTERM, self._handle_signal)
         signal.signal(signal.SIGINT, self._handle_signal)
         self._run_loop()
@@ -493,6 +530,7 @@ class Bot:
         later step sees this tick's truth."""
         while not self._shutdown.is_set():
             self._tick_robot_state()
+            self._tick_navigation()
             self._tick_reservations()
             self._tick_self_job()
             self._tick_priority()
@@ -523,6 +561,163 @@ class Bot:
             # Migrator's job, on its own schedule, with retries (reconcile
             # loop) — never a one-shot reaction to this update.
             self.desired_region_id = update.region_id
+
+    # =====================================================================
+    # Pathfinding — answering the robot (PROTOCOL.md §16)
+    # =====================================================================
+
+    def _route(self, query: Query) -> Decision:
+        """Answer one question from the robot standing at a node.
+
+        Runs on the robot link's thread, not the run loop's, so a slow plan
+        delays this robot rather than the whole bot. Everything it reads is
+        either atomic or behind its own lock.
+
+        Every path out of here returns a Decision. A robot that hears nothing
+        stops for the rest of its shift, so "we do not know" has to be said out
+        loud as a short WAIT rather than by falling silent.
+        """
+        if self.planner is None or self.graph is None or self.topology is None:
+            return Decision(
+                query_id=query.query_id, kind=DecisionKind.WAIT,
+                hold_ms=int(config.T_BLOCKED_HOLD * 1000),
+                because="no warehouse map loaded",
+            )
+        if self.nav_goal is None:
+            return Decision(
+                query_id=query.query_id, kind=DecisionKind.WAIT,
+                hold_ms=int(config.T_ARRIVED_HOLD * 1000),
+                because="no job",
+            )
+
+        now = now_ms()
+        observations = self._observations()
+        traffic = traffic_module.build(
+            self.graph, observations, now=now, config=self.planning,
+            kinematics=self.planner.kinematics,
+            hop_cost=self.planner.kinematics.cruise_ms(self.graph.node_spacing),
+            exclude_bot_id=self.bot_id,
+        )
+        plan = self.planner.plan(Request(
+            now=now,
+            self_state=SelfState(
+                node_id=query.node_id,
+                heading=heading_from_radians(query.heading_rad),
+                moving=self.state == "MOVING",
+                energy=self._energy_state(),
+            ),
+            goal=self.nav_goal,
+            # The same peers the traffic view is built from, so the search
+            # respects predicted occupancy and not just declared claims.
+            peers=traffic.peers,
+        ))
+        decision = decide_module.decide(
+            self.graph, self.topology, query,
+            plan=plan, traffic=traffic, observations=observations,
+            my_bot_id=self.bot_id, my_rank=self._yield_rank(),
+            config=self.planning, last_target=self._last_target,
+        )
+        if decision.turn:
+            self._last_target = decision.target_node_id
+        return decision
+
+    def _observations(self) -> tuple:
+        """What we currently know about the other robots, in one shape.
+
+        Declared claims come from our own ledger — announcements that actually
+        reached us — and positions from the roster the leader distributes. A
+        peer with no claims still contributes its trail, which is what tier 2
+        predicts from.
+        """
+        claims: dict[int, list] = {}
+        for claim in self.ledger.peer_claims():
+            claims.setdefault(claim.bot_id, []).append(
+                Reservation(node_id=claim.node_id, t_in=claim.start_ms, t_out=claim.end_ms)
+            )
+        return tuple(
+            traffic_module.Observation(
+                bot_id=peer.bot_id,
+                node_id=peer.latest_node_id or None,
+                trail=tuple(peer.node_trail),
+                reservations=tuple(claims.get(peer.bot_id, ())),
+                rank=prio.yield_priority(
+                    has_job=bool(peer.job_id),
+                    carrying=peer.cargo_state in (CS_EN_ROUTE, CS_DROPOFF),
+                ),
+            )
+            for peer in self.peer_table.all_peers()
+            if peer.bot_id != self.bot_id
+        )
+
+    def _yield_rank(self) -> int:
+        """Our own right of way — the same number the roster advertises."""
+        return prio.yield_priority(
+            has_job=self.current_job is not None,
+            carrying=self.cargo_state in (CS_EN_ROUTE, CS_DROPOFF),
+        )
+
+    def _energy_state(self):
+        """Map battery onto the planner's four states.
+
+        The robot reports a percentage; how much charge is "short" is a fleet
+        policy, so it lives with the other job/battery thresholds in config
+        rather than being invented inside the cost model.
+        """
+        from planning.cost import EnergyState
+
+        if self.mission == "CHARGE":
+            return EnergyState.RECOVERING
+        if self.battery <= config.BATTERY_CRITICAL:
+            return EnergyState.CRITICAL
+        if self.battery <= config.JOB_MIN_BATTERY:
+            return EnergyState.SHORT
+        return EnergyState.OK
+
+    def _tick_navigation(self) -> None:
+        """Notice a robot that has been told to move and has not (PROTOCOL.md §16).
+
+        Escalates rather than reacting all at once: the first suspicion is that
+        our route is stale, the second that something is in the way that will
+        not move for us, and only the third that a person needs to look. Each
+        rung is a whole `T_STALL`, so a robot pausing for traffic never trips it.
+        """
+        if self.nav_goal is None or not self.latest_node_id:
+            self._nav_node = self.latest_node_id
+            self._nav_since = time.monotonic()
+            self._nav_strikes = 0
+            return
+
+        if self.latest_node_id != self._nav_node:
+            self._nav_node = self.latest_node_id
+            self._nav_since = time.monotonic()
+            self._nav_strikes = 0
+            return
+
+        if time.monotonic() - self._nav_since < config.T_STALL:
+            return
+
+        self._nav_since = time.monotonic()
+        self._nav_strikes += 1
+        if self._nav_strikes == 1:
+            log.warning("bot-%d: stalled at node %d; dropping the route",
+                        self.bot_id, self.latest_node_id)
+            self.routes = None
+            self._last_target = None
+        elif self._nav_strikes == 2:
+            log.warning("bot-%d: still stalled at node %d; will stand aside",
+                        self.bot_id, self.latest_node_id)
+            self.ledger.withdraw()   # stop holding a lane we are not using
+        else:
+            log.error("bot-%d: stuck at node %d for %.0fs",
+                      self.bot_id, self.latest_node_id, self._nav_strikes * config.T_STALL)
+            self.control_plane({
+                "type": "NEEDS_ATTENTION",
+                "bot_id": self.bot_id,
+                "node_id": self.latest_node_id,
+                "job_id": self.current_job.job_id if self.current_job else "",
+                "reason": "stalled",
+            })
+            self._nav_strikes = 0
 
     def _tick_reservations(self) -> None:
         """Claim where we are and tell the neighbours (PROTOCOL.md §15).
@@ -613,6 +808,12 @@ class Bot:
         self.current_job = job
         self.cargo_state = CS_PICKUP
         self._delivered_reported = False
+        # Set a goal, do not command a destination. The robot cannot drive to a
+        # node seventy hops away -- it asks at every node it reaches, and
+        # `_route` answers with the next turn (PROTOCOL.md §16).
+        self.nav_goal = Goal.node(job.pickup_node)
+        self.routes = None
+        self._last_target = None
         self._robot_sink.send(RobotCommand(
             target_node_id=job.pickup_node,
             mission={"type": "CARGO", "cargo": {"cargo_id": job.job_id, "state": CS_PICKUP}},
@@ -635,6 +836,9 @@ class Bot:
         #    pickup from stale state would drop a job whose cargo is on board.
         if update.mission == "CARGO" and update.cargo_state:
             if update.cargo_state == CS_EN_ROUTE and self.cargo_state == CS_PICKUP:
+                self.nav_goal = Goal.node(job.dropoff_node)
+                self.routes = None
+                self._last_target = None
                 self._robot_sink.send(RobotCommand(
                     target_node_id=job.dropoff_node,
                     mission={"type": "CARGO", "cargo": {"cargo_id": job.job_id, "state": CS_EN_ROUTE}},
@@ -659,6 +863,8 @@ class Bot:
                         self.bot_id, job.job_id, update.state, update.fault or update.mission)
             self.current_job = None
             self.cargo_state = ""
+            self.nav_goal = None
+            self.routes = None
 
     def self_peer(self) -> Peer:
         """Ourselves as a roster record — what a leader would see if we were
@@ -782,6 +988,9 @@ class Bot:
         so we never leave a region mid-election, then hands off or departs."""
         log.info("bot-%d: shutting down gracefully", self.bot_id)
         self.election.departing = True
+        # Stop answering the robot first: a decision issued while we are leaving
+        # would send it somewhere nobody is left to coordinate.
+        self._robot_link.stop()
 
         deadline = time.monotonic() + config.T_SETTLE
         while not self.leader_settled() and time.monotonic() < deadline:
