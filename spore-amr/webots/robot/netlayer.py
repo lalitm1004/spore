@@ -12,6 +12,12 @@ changing what listens on the socket and nothing else.
 
 The companion talks to this; the firmware never does. The firmware's job is to
 drive, and it must not acquire a network dependency.
+
+It loads the warehouse map, because choosing where a robot goes next is what a
+network layer is for. The robot sends `latest_node_id` and gets back
+`target_node_id`; it never offers a menu of turns, so there is nothing to
+choose from except the map. Working out that the target is a left turn is the
+robot's own job -- it holds the map too, and can do it exactly.
 """
 
 import argparse
@@ -23,6 +29,7 @@ import sys
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
+from robot.navigator import load_map  # noqa: E402
 from robot.network import Query, RandomRouter  # noqa: E402
 
 
@@ -81,17 +88,17 @@ def handle(connection, router, verbose: bool) -> None:
 
             decision = router.route(query)
             if decision is None:
-                # Nothing legal to offer. Say nothing rather than invent a
-                # turn: the robot's own timeout is the right thing to fire.
+                # Nowhere legal to send it. Say nothing rather than invent a
+                # target: the robot's own timeout is the right thing to fire.
                 if verbose:
-                    print("netlayer: node {} is a dead end, no answer".format(
-                        query.node_id), flush=True)
+                    print("netlayer: node {} is not on the map, no answer"
+                          .format(query.latest_node_id), flush=True)
                 continue
 
             if verbose:
-                print("netlayer: node {} {} -> {} (node {})".format(
-                    query.node_id, sorted(query.available),
-                    decision.turn, decision.target_node_id), flush=True)
+                print("netlayer: bot {} at node {} -> node {}".format(
+                    query.bot_id, query.latest_node_id,
+                    decision.target_node_id), flush=True)
             try:
                 connection.sendall((decision.to_json() + "\n").encode("utf-8"))
             except OSError:
@@ -101,12 +108,16 @@ def handle(connection, router, verbose: bool) -> None:
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--socket", type=pathlib.Path, required=True)
+    parser.add_argument("--map", type=pathlib.Path,
+                        default=ROOT / "config" / "warehouse.json",
+                        help="the network layer routes, so it holds the map")
     parser.add_argument("--seed", type=int, default=0,
                         help="a run that cannot be reproduced cannot be debugged")
     parser.add_argument("--quiet", action="store_true")
     args = parser.parse_args(argv)
 
-    return serve(args.socket, RandomRouter(seed=args.seed), verbose=not args.quiet)
+    return serve(args.socket, RandomRouter(load_map(args.map), seed=args.seed),
+                 verbose=not args.quiet)
 
 
 if __name__ == "__main__":

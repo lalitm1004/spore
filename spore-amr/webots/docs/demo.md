@@ -1,8 +1,8 @@
 # Running the fleet demo
 
-Ten robots on a 32 x 16 m window of the real warehouse layout, spawning at
-charging bays, each with its own network layer handing it random turns at every
-junction. Every command runs from the repo root — the volume
+Ten robots on a 32 x 16 m window of the real warehouse layout, parked on
+charging bays and released one at a time, each with its own network layer
+handing it random turns at every junction. Every command runs from the repo root — the volume
 mount is `./:/project`, so `./` is your shell's directory, not the compose
 file's.
 
@@ -12,7 +12,7 @@ file's.
 
 ```bash
 uv run python -m tools.gen_fleet
-RENDERING=off MISSION_DURATION=600 \
+MODE=fast RENDERING=off MISSION_DURATION=600 \
   docker compose -f compose.yml -f compose.fleet.yml up -d
 ```
 
@@ -24,8 +24,20 @@ and no firewall change is needed.
 so server-side rendering is pure waste. It is the difference between 907% and
 5.65% simulator CPU.
 
-Ten robots run slower than real time — roughly 0.6× on a laptop. The clock in
-the viewer is simulation time.
+`MODE=fast` runs the world as fast as the machine allows; `MODE=realtime`
+(the default) paces it to the wall clock. Webots has no numeric multiplier --
+`fast` is the whole switch.
+
+Do not expect much from it at ten robots. Measured on a 16-core box with
+`RENDERING=off`: **1.12x real time**, with the simulator process at 270-460%
+CPU and every controller under 30% of one core. The bottleneck is the simulator
+itself -- physics plus one render pass per enabled sensor per tick, for ten
+robots -- so raising `defaults.resources.cpus` buys headroom against a stall
+during a QR decode, not speed. Getting materially past real time means fewer
+robots or fewer sensors, not a flag.
+
+The clock in the viewer is simulation time, and `MISSION_DURATION` is in
+simulation seconds, so neither depends on how fast the host runs.
 
 ## Stop
 
@@ -75,6 +87,7 @@ charging bays, so a layout change cannot leave stale coordinates behind:
 robots:
   count: 10
   spawn: charging
+  start_interval_s: 4.0
 ```
 
 To move the window, edit `track.warehouse.origin_cm` and `size_m`. The window
@@ -115,20 +128,22 @@ docker compose -f compose.yml -f compose.fleet.yml logs -f bot_01
 
 ```
 bot_01: node 113 PT charging/PT/097 at (1000.0, 400.0) cm  region 3
-netlayer: node 113 ['left', 'right', 'straight'] -> left (node 114)
+netlayer: bot 1 at node 113 -> node 114
 bot_01: turning to 90 deg for node 114
 ```
 
-Three processes speaking in turn: the firmware decodes a QR and stops; the
-companion looks the node up in `warehouse.json`, works out which turns exist,
-and asks this robot's network layer over a unix socket; the network layer picks
-one at random and answers. Note it offers only the turns that lead somewhere:
-at a charging bay, a degree-1 spur, the list is the single way back out.
+Three processes speaking in turn: the firmware decodes a QR and stops on the
+node; the companion reports **which node** the robot is at over a unix socket;
+this robot's network layer picks a neighbour and answers with **which node** to
+head for; the companion turns that into a bearing and the firmware rotates to
+it. Nothing on the wire says left or right — both ends hold the map, so the
+direction is derived rather than transmitted, and it is exact because lanes are
+straight.
 
 Fleet-wide:
 
 ```bash
-docker compose -f compose.yml -f compose.fleet.yml logs 2>&1 | grep -c "netlayer: node"
+docker compose -f compose.yml -f compose.fleet.yml logs 2>&1 | grep -c "netlayer: bot"
 docker compose -f compose.yml -f compose.fleet.yml logs 2>&1 | grep "turning to"
 ```
 
@@ -143,9 +158,13 @@ the crossing state, the obstacle state, lidar range, and the node last read.
 
 On the real layout this is sharper than on a lattice: charging bays are
 degree-1 spurs and they pair onto a single junction, so two robots leaving
-facing bays contend for the same node immediately. Spawns are staggered along
-their spurs so one arrives about fifteen seconds before the other, but the
-underlying contention is real and is exactly what coordination is for.
+facing bays would contend for the same node immediately. The fleet is released
+one robot every `start_interval_s`, ordered so bay-mates are a full pass
+through the junctions apart -- 20 s at the default interval, against the 16.7 s
+a robot needs to cover its 2 m spur -- so a pair never meets at its own
+junction. That buys the start; it buys nothing after it. The underlying
+contention is real everywhere else on the map and is exactly what coordination
+is for.
 
 Robots have no idea what any other robot intends. Their only defence is the
 forward lidar reflex, which stops and reverses to the previous marker. Two

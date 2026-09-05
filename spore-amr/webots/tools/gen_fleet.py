@@ -37,12 +37,19 @@ def viewpoint_height(plane_size, field_of_view: float = FIELD_OF_VIEW) -> float:
 
 
 def charging_spawns(manifest: dict, count: int) -> List[dict]:
-    """Poses on the lanes leaving each charging node.
+    """Poses at the charging nodes themselves, one robot per bay.
 
-    A robot placed exactly on a node sits on its marker tile, which its colour
-    sensor reads as a crossing before it has moved -- so each spawn is set a
-    little way down an outgoing lane, facing away from the bay. Spread across
-    distinct charging nodes so no two robots start pointed at each other.
+    A robot sits on its bay facing out along the lane leaving it -- the START
+    node is the bay, not a point part-way down its spur. Sitting on the node
+    does not trip the colour trigger: the tile is 100 mm long and centred on
+    the node, so its far edge is 50 mm out, while the colour sensor is mounted
+    125 mm forward of the wheel axle. The robot starts past the tile and drives
+    away from it.
+
+    Bays are degree-1 spurs that come in facing pairs sharing one junction, so
+    two robots leaving paired bays would reach that junction at the same
+    instant and deadlock. That is handled by releasing the fleet one robot at a
+    time (`robots.start_interval_s`), not by spreading the poses out.
     """
     track = TrackConfig.from_dict(manifest["track"])
     graph = track.build_graph()
@@ -52,42 +59,33 @@ def charging_spawns(manifest: dict, count: int) -> List[dict]:
     if not bays:
         raise ValueError("no CH nodes in this track to spawn at")
 
-    # Bays are degree-1 spurs and they come in facing pairs sharing one
-    # junction, so two robots leaving paired bays reach that junction at the
-    # same instant and deadlock there. Stagger them along their spurs instead:
-    # within each pair the second robot starts further back, so it arrives
-    # after the first has been routed away.
+    # Order the bays so that bay-mates are as far apart in the release
+    # sequence as the fleet allows: every junction's first bay goes out, then
+    # every junction's second. On the real window that is 5 junctions of 2
+    # bays, so a pair is 5 slots apart -- 20 s at a 4 s interval, against the
+    # 16.7 s a robot needs to cover its 2 m spur. The pair never meets.
     by_junction = {}
     for bay in bays:
         neighbours = graph.neighbours(bay.node_id)
         if not neighbours:
-            continue
+            raise ValueError(
+                "charging bay {} has no lane leaving it".format(bay.node_id))
         by_junction.setdefault(neighbours[0], []).append(bay)
 
     ordered = []
-    depth = 0
-    while len(ordered) < len(bays):
-        added = False
-        for junction, group in sorted(by_junction.items()):
-            if depth < len(group):
-                ordered.append((group[depth], junction, depth))
-                added = True
-        if not added:
-            break
-        depth += 1
+    for rank in range(max(len(g) for g in by_junction.values())):
+        for _, group in sorted(by_junction.items()):
+            if rank < len(group):
+                ordered.append(group[rank])
 
     poses = []
     for index in range(count):
-        bay, junction, rank = ordered[index % len(ordered)]
-        bearing = graph.bearing(bay.node_id, junction)
-        length = graph.length(bay.node_id, junction)
-        # Rank 0 sits close to the junction and leaves first; each later robot
-        # on the same junction starts further back down its own spur.
-        step = min(length * 0.75, 0.5 + rank * 0.9)
+        bay = ordered[index % len(ordered)]
+        neighbours = graph.neighbours(bay.node_id)
         poses.append({
-            "x": round(bay.x + step * math.cos(bearing), 3),
-            "y": round(bay.y + step * math.sin(bearing), 3),
-            "theta": round(bearing, 4),
+            "x": round(bay.x, 3),
+            "y": round(bay.y, 3),
+            "theta": round(graph.bearing(bay.node_id, neighbours[0]), 4),
             "from_node": bay.node_id,
         })
     return poses
@@ -107,8 +105,20 @@ def robot_configs(manifest: dict) -> List[dict]:
     if isinstance(entries, dict):
         count = int(entries.get("count", 1))
         poses = charging_spawns(manifest, count)
+        # `start_interval_s` releases the fleet one robot at a time. Bays are
+        # degree-1 spurs pairing onto one junction, so a simultaneous start
+        # puts two robots into that junction on the same tick.
+        interval = float(entries.get("start_interval_s", 0.0) or 0.0)
         entries = [
-            {"name": "bot_{:02d}".format(i + 1), "pose": poses[i]}
+            {
+                "name": "bot_{:02d}".format(i + 1),
+                "pose": poses[i],
+                "control": {"start_delay_s": round(i * interval, 3)},
+                # The firmware has no compass, so the frame its turns are
+                # absolute in has to be handed to it. Same number the world
+                # file places the robot on -- they cannot disagree.
+                "odometry": {"start_theta": poses[i]["theta"]},
+            }
             for i in range(min(count, len(poses)))
         ]
 

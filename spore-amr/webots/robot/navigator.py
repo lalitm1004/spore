@@ -16,7 +16,7 @@ import json
 import math
 import pathlib
 import socket
-from typing import Dict, Optional
+from typing import Optional
 
 from robot.network import Decision, Query
 from tools.track.graph import Edge, Graph, Node
@@ -51,12 +51,11 @@ def load_map(path: pathlib.Path) -> Graph:
 class Navigator:
     """Turns a marker arrival into a heading to turn to."""
 
-    def __init__(self, graph: Graph, turn_tolerance_deg: float = 45.0):
+    def __init__(self, graph: Graph):
         self.graph = graph
-        self.turn_tolerance_deg = turn_tolerance_deg
         self.query_id = 0
         self.last_node: Optional[int] = None
-        self.dead_ends = 0
+        self.bad_answers = 0
 
     def heading_into(self, node_id: int) -> Optional[float]:
         """The heading a robot must have had to arrive here from the last node.
@@ -73,31 +72,36 @@ class Navigator:
             return None
         return self.graph.bearing(self.last_node, node_id)
 
-    def build_query(self, node_id: int, heading_rad: float) -> Query:
-        """What to ask the network layer, with the legal turns resolved."""
+    def build_query(self, node_id: int, bot_id: int = 0,
+                    timestamp: int = 0) -> Query:
+        """What to ask the network layer: where this robot is, and no more.
+
+        It used to carry the legal turns as well, resolved here from the map.
+        That is not the contract -- `RobotToNetwork` sets
+        `additionalProperties: false` and has no such field -- and it put the
+        route choice on the wrong side of the wire. The network layer holds the
+        map; being handed a menu was it being told its own job.
+        """
         if node_id not in self.graph.nodes:
             raise KeyError("node {} is not in the map".format(node_id))
-
-        exact = self.heading_into(node_id)
-        heading = exact if exact is not None else heading_rad
-        available: Dict[str, int] = self.graph.turns_from(
-            node_id, heading, tolerance_deg=self.turn_tolerance_deg)
 
         node = self.graph.nodes[node_id]
         self.query_id += 1
         return Query(
-            query_id=self.query_id,
-            node_id=node_id,
-            node_type=node.kind,
+            bot_id=bot_id,
             region_id=node.region_id,
-            x_cm=round(node.x * 100, 1),
-            y_cm=round(node.y * 100, 1),
-            heading_rad=heading,
-            available=available,
+            latest_node_id=node_id,
+            timestamp=timestamp,
         )
 
     def bearing_for(self, node_id: int, decision: Decision) -> Optional[float]:
-        """Absolute heading the firmware should turn to, in radians."""
+        """Absolute heading the firmware should turn to, in radians.
+
+        This is where "go to node 70" becomes "turn to -90 degrees", and it is
+        the robot's own work: it holds the map, lanes are straight, so the
+        bearing between two nodes is exact. Nothing about left or right needs
+        to cross the wire to get here.
+        """
         if decision.target_node_id not in self.graph.neighbours(node_id):
             return None
         return self.graph.bearing(node_id, decision.target_node_id)
@@ -159,9 +163,11 @@ class NetworkLink:
         except (ValueError, KeyError):
             return None
 
-        if decision.query_id != query.query_id:
+        if decision.timestamp != query.timestamp:
             # A late answer to a previous junction. Two junctions can share a
-            # target, so the id is the only way to tell them apart.
+            # target -- a reroute to the same place -- so the echoed timestamp
+            # is the only thing that tells them apart. The schema carries no
+            # correlation id, and inventing one would not be the contract.
             return None
         return decision
 

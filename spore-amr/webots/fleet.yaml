@@ -13,7 +13,7 @@ track:
   # not rescale it. The window is centred on the charging strip, which runs
   # along y = 800-1200 cm in the real layout.
   warehouse:
-    source: ../spore/spore-warehouse-layout/output/warehouse.json
+    source: ../../spore-warehouse-layout/output/warehouse.json
     origin_cm: [8200, 600]
     size_m: [32, 16]
     pixels_per_metre: 256
@@ -58,7 +58,13 @@ defaults:
     pid: {kp: 150.0, ki: 0.0, kd: 4.0}
   resources:
     memory: 256m
-    cpus: "0.5"
+    # The simulator is synchronized: every tick waits on the slowest
+    # controller, so a throttled robot throttles the whole world. A controller
+    # idles around 1% of a core but spikes to ~30% while OpenCV decodes a QR,
+    # and a 0.5 cap is close enough to that spike to be worth avoiding. This
+    # is headroom against a stall, not a speed multiplier -- measured, the
+    # bottleneck is the simulator process (270-460% CPU) and not the robots.
+    cpus: "1.0"
 
 # Robots start at charging bays, which is where a fleet would be at the start
 # of a shift. Poses come from the track itself, so changing the window cannot
@@ -66,6 +72,16 @@ defaults:
 robots:
   count: 10
   spawn: charging
+  # Released one at a time rather than all on tick zero. Bays are degree-1
+  # spurs pairing onto a shared junction, and a simultaneous start puts both
+  # bay-mates into that junction together. Spawns are ordered so a pair is
+  # five slots apart -- 20 s here, against the 16.7 s a robot needs to cover
+  # its 2 m spur at cruise -- so the pair never meets.
+  #
+  # The last robot leaves at 36 s. MISSION_DURATION runs from t=0 for every
+  # robot, so allow for that when setting it: at the 120 s default bot_10 gets
+  # 84 s of driving.
+  start_interval_s: 4.0
 
 # Obstacles for the forward-lidar reflex. Unlike marker tiles these carry a
 # boundingObject, so a ray has something to hit.

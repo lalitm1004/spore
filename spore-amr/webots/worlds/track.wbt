@@ -39,7 +39,7 @@ DEF GROUND Solid {
         metalness 0
         baseColorMap ImageTexture {
           url [
-            "../textures/track-55a10acafc27.png"
+            "../textures/track-e29f85d5fcac.png"
           ]
         }
       }
@@ -1879,7 +1879,7 @@ DEF MARKER_252 Solid {
   name "marker_252"
 }
 DEF BOT_01 LineBot {
-  translation -14.0 -5.5 0.02
+  translation -14.0 -6.0 0.02
   rotation 0 0 1 1.5708
   name "bot_01"
   controller "<extern>"
@@ -1888,7 +1888,7 @@ DEF BOT_01 LineBot {
   sensorHeight 0.015
 }
 DEF BOT_02 LineBot {
-  translation -8.0 -5.5 0.02
+  translation -8.0 -6.0 0.02
   rotation 0 0 1 1.5708
   name "bot_02"
   controller "<extern>"
@@ -1897,7 +1897,7 @@ DEF BOT_02 LineBot {
   sensorHeight 0.015
 }
 DEF BOT_03 LineBot {
-  translation -2.0 -5.5 0.02
+  translation -2.0 -6.0 0.02
   rotation 0 0 1 1.5708
   name "bot_03"
   controller "<extern>"
@@ -1906,7 +1906,7 @@ DEF BOT_03 LineBot {
   sensorHeight 0.015
 }
 DEF BOT_04 LineBot {
-  translation 4.0 -5.5 0.02
+  translation 4.0 -6.0 0.02
   rotation 0 0 1 1.5708
   name "bot_04"
   controller "<extern>"
@@ -1915,7 +1915,7 @@ DEF BOT_04 LineBot {
   sensorHeight 0.015
 }
 DEF BOT_05 LineBot {
-  translation 10.0 -5.5 0.02
+  translation 10.0 -6.0 0.02
   rotation 0 0 1 1.5708
   name "bot_05"
   controller "<extern>"
@@ -1924,7 +1924,7 @@ DEF BOT_05 LineBot {
   sensorHeight 0.015
 }
 DEF BOT_06 LineBot {
-  translation -14.0 -3.4 0.02
+  translation -14.0 -2.0 0.02
   rotation 0 0 1 -1.5708
   name "bot_06"
   controller "<extern>"
@@ -1933,7 +1933,7 @@ DEF BOT_06 LineBot {
   sensorHeight 0.015
 }
 DEF BOT_07 LineBot {
-  translation -8.0 -3.4 0.02
+  translation -8.0 -2.0 0.02
   rotation 0 0 1 -1.5708
   name "bot_07"
   controller "<extern>"
@@ -1942,7 +1942,7 @@ DEF BOT_07 LineBot {
   sensorHeight 0.015
 }
 DEF BOT_08 LineBot {
-  translation -2.0 -3.4 0.02
+  translation -2.0 -2.0 0.02
   rotation 0 0 1 -1.5708
   name "bot_08"
   controller "<extern>"
@@ -1951,7 +1951,7 @@ DEF BOT_08 LineBot {
   sensorHeight 0.015
 }
 DEF BOT_09 LineBot {
-  translation 4.0 -3.4 0.02
+  translation 4.0 -2.0 0.02
   rotation 0 0 1 -1.5708
   name "bot_09"
   controller "<extern>"
@@ -1960,7 +1960,7 @@ DEF BOT_09 LineBot {
   sensorHeight 0.015
 }
 DEF BOT_10 LineBot {
-  translation 10.0 -3.4 0.02
+  translation 10.0 -2.0 0.02
   rotation 0 0 1 -1.5708
   name "bot_10"
   controller "<extern>"

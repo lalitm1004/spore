@@ -140,3 +140,111 @@ def test_viewpoint_height_frames_the_whole_plane():
 
     assert height >= 2.0 / math.tan(math.pi / 8)
     assert "position 0 0 {}".format(round(height, 3)) in world_source(MANIFEST)
+
+
+import pathlib
+
+import yaml
+
+from tools.gen_fleet import charging_spawns
+from tools.manifest import TrackConfig
+
+# A 4x4 lattice with three charging bays, enough to spawn a small fleet from.
+GRAPH_MANIFEST = {
+    "track": {
+        "graph": {
+            "rows": 4,
+            "columns": 4,
+            "spacing": 2.0,
+            "kinds": [
+                {"row": 0, "column": 0, "kind": "CH"},
+                {"row": 0, "column": 3, "kind": "CH"},
+                {"row": 3, "column": 0, "kind": "CH"},
+            ],
+        },
+        "line_width": 0.02,
+    },
+    "robot": {"sensor_count": 3, "sensor_spacing": 0.02, "sensor_height": 0.015},
+    "defaults": {"control": {"base_speed": 6.0}, "resources": {"cpus": "0.5"}},
+    "robots": {"count": 3, "spawn": "charging", "start_interval_s": 4.0},
+}
+
+
+def charging_nodes(manifest):
+    graph = TrackConfig.from_dict(manifest["track"]).build_graph()
+    return {n.node_id: n for n in graph.nodes.values() if n.kind == "CH"}
+
+
+def test_robots_start_on_the_charging_node_itself():
+    """The START node is the bay, not a point part-way down its lane. A robot
+    centred on the node still starts clear of the 100 mm tile, because the
+    colour sensor sits 125 mm forward of the wheel axle."""
+    bays = charging_nodes(GRAPH_MANIFEST)
+
+    for pose in charging_spawns(GRAPH_MANIFEST, count=3):
+        bay = bays[pose["from_node"]]
+        assert pose["x"] == pytest.approx(bay.x)
+        assert pose["y"] == pytest.approx(bay.y)
+
+
+def test_each_robot_starts_on_a_bay_of_its_own():
+    poses = charging_spawns(GRAPH_MANIFEST, count=3)
+
+    assert len({p["from_node"] for p in poses}) == 3
+
+
+def test_robots_face_out_along_a_lane_leaving_their_bay():
+    """Facing into open lane, not into the bay: the first thing a released
+    robot does is drive, and it must have a line under it to follow."""
+    graph = TrackConfig.from_dict(GRAPH_MANIFEST["track"]).build_graph()
+
+    for pose in charging_spawns(GRAPH_MANIFEST, count=3):
+        bearings = [graph.bearing(pose["from_node"], n)
+                    for n in graph.neighbours(pose["from_node"])]
+        # Poses are written to 4 dp, as the world file wants them.
+        assert any(abs(pose["theta"] - b) < 1e-4 for b in bearings)
+
+
+def test_start_delays_are_staggered_by_the_manifest_interval():
+    """Sequential release: one robot leaves every interval, so paired bays
+    never reach their shared junction at the same instant."""
+    configs = robot_configs(GRAPH_MANIFEST)
+
+    delays = [c["control"]["start_delay_s"] for c in configs]
+    assert delays == [0.0, 4.0, 8.0]
+
+
+def test_without_an_interval_the_whole_fleet_starts_together():
+    """The stagger is opt-in, so existing manifests behave as they did."""
+    manifest = dict(GRAPH_MANIFEST,
+                    robots={"count": 3, "spawn": "charging"})
+
+    assert [c["control"]["start_delay_s"] for c in robot_configs(manifest)] == [0.0] * 3
+
+
+def test_bay_mates_are_released_far_apart_in_the_sequence():
+    """Two bays sharing a junction are 2 m of spur from it -- about 16.7 s at
+    cruise. Releasing them back to back would put both into that junction at
+    once, which is the deadlock the stagger exists to prevent, so they must be
+    a full pass through the junctions apart."""
+    manifest = yaml.safe_load(pathlib.Path("fleet.yaml").read_text())
+    graph = TrackConfig.from_dict(manifest["track"]).build_graph()
+
+    order = [p["from_node"] for p in charging_spawns(manifest, count=10)]
+    junctions = [graph.neighbours(node)[0] for node in order]
+
+    # Every junction is visited once before any is visited twice.
+    assert len(set(junctions[:5])) == 5
+    for slot, node in enumerate(order):
+        mate = junctions.index(junctions[slot])
+        assert mate == slot or abs(mate - slot) >= 5
+
+
+def test_each_robot_is_told_the_heading_it_was_placed_on():
+    """The world file and the config must agree: a `TURN` is an absolute
+    bearing, and the firmware's only frame of reference is this number."""
+    poses = charging_spawns(GRAPH_MANIFEST, count=3)
+    configs = robot_configs(GRAPH_MANIFEST)
+
+    for pose, config in zip(poses, configs):
+        assert config["odometry"]["start_theta"] == pytest.approx(pose["theta"])

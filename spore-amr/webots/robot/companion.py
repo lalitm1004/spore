@@ -9,6 +9,7 @@ import argparse
 import pathlib
 import select
 import sys
+import time
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
 
@@ -19,31 +20,35 @@ from robot.policy import CompanionPolicy  # noqa: E402
 from robot.protocol import LineReader, Message, encode  # noqa: E402
 
 
-def answer_junction(navigator, network, event):
+def answer_junction(navigator, network, event, bot_id=0):
     """Turn a marker arrival into a TURN command, or into nothing.
 
-    Nothing is a legitimate answer. A robot with no network layer, or one at a
-    dead end nobody will route out of, should sit still rather than pick a
-    direction for itself -- inventing one here would be exactly the local
-    autonomy the architecture says the network layer owns.
+    Nothing is a legitimate answer. A robot nobody answers should sit still
+    rather than pick a direction for itself -- inventing one here would be
+    exactly the local autonomy the architecture says the network layer owns.
+    The firmware's own junction timeout is what stops it waiting forever.
+
+    A dead end is no longer one of those cases. The query names the node the
+    robot is at and the answer names the node to go to, so a charging bay's one
+    neighbour is simply the only answer available; there is no menu of turns
+    left for the way back out to fall off the end of.
     """
     node_id = int(event.fields.get("node", -1))
-    heading = float(event.fields.get("heading", 0.0))
     if node_id < 0:
         return []
 
     try:
-        query = navigator.build_query(node_id, heading)
+        query = navigator.build_query(
+            node_id, bot_id=bot_id,
+            timestamp=int(time.time() * 1000))
     except KeyError:
         print("node {} is not in the map".format(node_id), flush=True)
         return []
 
+    # Before `arrived` overwrites it: the heading the robot came in on, which
+    # is the lane bearing from the previous node and owes nothing to odometry.
+    arrived_on = navigator.heading_into(node_id)
     navigator.arrived(node_id)
-
-    if not query.available:
-        navigator.dead_ends += 1
-        print("node {}: nowhere to go from here".format(node_id), flush=True)
-        return []
 
     decision = network.ask(query) if network is not None else None
     if decision is None:
@@ -53,15 +58,23 @@ def answer_junction(navigator, network, event):
 
     bearing = navigator.bearing_for(node_id, decision)
     if bearing is None:
-        print("node {}: {} -> node {} is not a lane".format(
-            node_id, decision.turn, decision.target_node_id), flush=True)
+        # The network layer named somewhere this node has no lane to. Not a
+        # dead end -- a wrong answer, and the robot will not drive it.
+        navigator.bad_answers += 1
+        print("node {}: node {} is not a lane from here".format(
+            node_id, decision.target_node_id), flush=True)
         return []
 
-    return [Message(kind="CMD", name="TURN", fields={
+    fields = {
         "bearing": round(bearing, 5),
         "node": decision.target_node_id,
-        "turn": decision.turn,
-    })]
+    }
+    # The firmware turns to an absolute bearing, so without this it turns in a
+    # drifted frame and lands on a lane nobody chose.
+    if arrived_on is not None:
+        fields["heading"] = round(arrived_on, 5)
+
+    return [Message(kind="CMD", name="TURN", fields=fields)]
 
 
 def main(argv=None):
@@ -76,6 +89,9 @@ def main(argv=None):
     args = parser.parse_args(argv)
 
     document = yaml.safe_load(args.config.read_text())
+    # `bot_id` is an integer on the wire, and the fleet's names are bot_NN.
+    digits = "".join(c for c in str(document.get("name", "")) if c.isdigit())
+    bot_id = int(digits) if digits else 0
     control = document.get("control") or {}
     cruise = float(control.get("base_speed", 6.0))
 
@@ -84,6 +100,10 @@ def main(argv=None):
         min_speed=max(1.0, cruise * 0.25),
         slowdown=0.6,
         mission_duration_s=args.mission_duration,
+        # Symmetric with `slowdown`: what a loss takes off, a clean run of
+        # line puts back. Without this the throttle only ever went one way.
+        recover_after_s=float(control.get("speed_recover_after_s", 5.0)),
+        speedup=1.0 / 0.6,
     )
     reader = LineReader()
 
@@ -113,7 +133,8 @@ def main(argv=None):
                     print("<- {} {}".format(event.name, event.fields), flush=True)
 
                 if event.name == "MARKER" and navigator is not None:
-                    for command in answer_junction(navigator, network, event):
+                    for command in answer_junction(navigator, network, event,
+                                                  bot_id=bot_id):
                         link.write(encode(command))
                         print("-> {} {}".format(command.name, command.fields),
                               flush=True)

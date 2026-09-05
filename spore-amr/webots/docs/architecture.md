@@ -12,7 +12,7 @@ This is the **robot half** of an AMR fleet: perception, motion control, the
 physical layer, and a simulator faithful enough to develop them against. The
 distributed coordination the project is really about — task allocation,
 reservations, deadlock resolution — is somebody else's code. It is represented
-here by `robot/network.py`'s `RandomRouter`, which picks a legal turn uniformly
+here by `robot/network.py`'s `RandomRouter`, which picks a neighbour uniformly
 and knows nothing about tasks, congestion or other robots.
 
 That stand-in is not a placeholder to be embarrassed about. It is the interface
@@ -42,9 +42,27 @@ TypeScript layer means changing what listens on the socket and nothing else.
 **The split is a policy boundary, not just a process boundary.** The companion
 sets setpoints and can never command a wheel velocity. When it sees
 `LINE_LOST` it concludes the robot is going too fast and lowers the target
-speed — a decision with no business inside a control loop. The firmware has no
+speed, and when the line has been clean for `speed_recover_after_s` it gives
+the step back — a decision with no business inside a control loop. Both
+directions matter: while the throttle only went down, one transient early in a
+run left a robot at a quarter of cruise for the rest of it. The firmware has no
 network code at all: it reports "I am at node 7" and receives "turn to 90
 degrees".
+
+That exchange only works because both halves share a heading frame. `TURN`
+carries an *absolute* bearing off the map, and the firmware's only feedback is
+its odometry, so the companion sends the heading the robot arrived on — the
+bearing of the lane it came down, which is exact — and the firmware seeds the
+frame at boot from `odometry.start_theta`. Neither half owns the frame alone,
+which is why a mismatch was invisible in both.
+
+**The wire names nodes, never directions.** `RobotToNetwork` carries
+`latest_node_id` and `NetworkToRobot` carries `target_node_id`; both schemas
+set `additionalProperties: false`, so there is no room for a menu of turns
+going up or a `left`/`right` coming down. The network layer routes and holds
+the map for it; the robot holds the map as well and derives the bearing to the
+node it was named. That is exact — lanes are straight — so a direction on the
+wire would be a second, weaker description of geometry both ends already have.
 
 **One network layer per robot, not one shared service.** A single service
 answering every robot would be a control plane wearing a hat. Per-robot also
@@ -220,24 +238,33 @@ robot around. It costs nothing now that `track_width` is calibrated.
 firmware                companion                    netlayer
    |                        |                            |
    | EVT MARKER node=7 -->  |                            |
-   | (stops on the tile)    | turns_from(7, heading) --> |
-   |                        | {"available":{"left":9}}   |
-   |                        |                <-- {"turn":"left","target":9}
+   | (rolls onto the node)  | {"latest_node_id":7,...}-> |
+   |                        |                            | (holds the map,
+   |                        |                <-- {"target_node_id":9}  picks 9)
+   |                        | bearing(7 -> 9)            |
    |  <-- CMD TURN bearing  |                            |
    | (rotates, reacquires)  |                            |
 ```
 
-The robot sends **which turns exist**, not just where it is. A blind pick from
-left/straight/right names a lane that is not there — at a corner two of three
-answers are walls — and the retry loop that fixes that is more complicated than
-the field that avoids it.
+The robot sends **where it is**, and is told **where to go next**. It does not
+send the turns that exist and it is not answered with a direction: both fields
+are absent from `shared/schemas/`, which sets `additionalProperties: false` on
+each message. The network layer holds the map because routing is what it is
+for; the robot holds it too, so `bearing(7 -> 9)` is a local calculation and
+exact, because lanes are straight.
 
-`Graph.turns_from` is the load-bearing part. It excludes the lane the robot
-arrived on, matches each of left/straight/right to the closest lane within 45
-degrees, and refuses to offer one neighbour for two turns. One exception: at a
-**dead end** it offers the way back. Every charging bay in the real warehouse
-is a degree-1 spur, so excluding the arrival lane left nothing and a robot
-routed into a bay would have sat there for the rest of the run.
+That narrowness earned itself. While the robot resolved the turns, the menu it
+offered was filtered to within 45 degrees of left, straight and right — and the
+way back out of a degree-1 charging bay is 180 degrees, which matched none of
+them. The menu came back empty, the companion reported "nowhere to go from
+here", and a robot routed into a bay sat in it for the whole run: measured, 90%
+of one. Routing by node has no such case. A bay has one neighbour, it is the
+junction, and there is nothing to filter.
+
+`RandomRouter` still avoids sending a robot straight back the way it came, but
+that is now a routing preference on the routing side rather than a geometric
+filter on the robot's, and it is a preference rather than a rule — at a dead
+end the way back is the only answer there is.
 
 `query_id` is echoed back so a fresh answer is distinguishable from a late
 answer to the previous junction — two junctions can share a target, which is
@@ -316,12 +343,12 @@ using the two message schemas, and that gap is worth closing deliberately:
   {target_node_id, timestamp}` is enough — the robot knows its current node and
   derives the bearing from the map, so the `turn` field is redundant. It needs
   `query_id` added, or `timestamp` used for the same purpose.
-- **Their up-message is a different conversation.** `RobotToNetwork` is
-  periodic telemetry — battery, mission, faults, position. The junction query
-  is a blocking question with a list of legal exits. Those are not competing
-  designs; a real system needs both, but the schema has no field for available
-  turns, so somebody has to decide whether it gains one or whether junction
-  queries are a separate message type.
+- **Settled: the junction query *is* `RobotToNetwork`.** It used to be a
+  blocking question carrying a list of legal exits, which the schema has no
+  field for. Rather than add one, the query was narrowed to what the schema
+  already says — `latest_node_id` — and the answer to `target_node_id`. A real
+  system will still want periodic telemetry on the same message; that is a
+  cadence question now, not a shape one.
 
 ## 12. Open work, in dependency order
 

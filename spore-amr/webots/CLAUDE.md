@@ -4,11 +4,11 @@ A containerised Webots simulation of line-following warehouse robots, under
 `spore-amr/webots/`. It is the **robot half** of the system: perception, motion
 control, and the physical layer. The real network layer — task allocation,
 multi-robot coordination — is somebody else's code, and is represented here by
-a stand-in that hands out random turns.
+a stand-in that names a random neighbouring node.
 
-Ten robots run on a window of the real `warehouse.json`, spawning at charging
-bays, stopping at every QR marker to ask their own network-layer process which
-way to turn.
+Ten robots run on a window of the real `warehouse.json`, parked on charging
+bays and released one at a time, stopping at every QR marker to ask their own
+network-layer process which way to turn.
 
 Read this before changing anything. Most of what follows is a decision that
 cost measurement to reach, and several are things that look wrong until you
@@ -35,15 +35,26 @@ spore-warehouse-layout/output/
    └──────────────┬───────────────────┘     network-to-robot.schema.json
                   │ newline ASCII over a socat pty  (robot/protocol.py)
    ┌──────────────┴───────────────────┐
-   │ robot/companion.py  "the Pi"     │   holds the map, resolves which turns
-   │  sets speed, never wheel values  │   exist, asks the network layer
-   └──────────────┬───────────────────┘
+   │ robot/companion.py  "the Pi"     │   holds the map, reports which node
+   │  sets speed, never wheel values  │   it is at, turns the answer into a
+   └──────────────┬───────────────────┘   bearing
                   │ newline JSON over a unix socket  (robot/navigator.py)
+                  │   up:   latest_node_id   "I am at node 116"
+                  │   down: target_node_id   "go to node 70"
    ┌──────────────┴───────────────────┐
    │ robot/netlayer.py                │   one process per robot, not one
-   │  RandomRouter: a legal turn      │   shared service
+   │  RandomRouter: holds the map,    │   shared service
+   │  picks a neighbour               │
    └──────────────────────────────────┘
 ```
+
+**Left and right never cross the wire.** `RobotToNetwork` carries
+`latest_node_id`; `NetworkToRobot` carries `target_node_id`. Both schemas set
+`additionalProperties: false`, so a `turn` field or a menu of available turns
+is not an extension — it is a message the real network layer must reject. The
+network layer routes and therefore holds the map; the robot holds the map too
+and works out for itself that node 70 is a right turn, which it can do exactly,
+because lanes are straight and it knows where both nodes are.
 
 **The firmware has no network code.** Grep it: the only matches for
 `socket|network` are comments. It reports "I am at node 7" and receives "turn
@@ -52,7 +63,7 @@ stalls it keeps following the line on its last setpoint, and the junction wait
 is bounded by `junction_timeout_s`.
 
 **Only `robot/main.py` and `robot/supervisor.py` import the Webots API.**
-Everything else is pure and host-testable, which is why 167 tests run in about
+Everything else is pure and host-testable, which is why 196 tests run in about
 a second with no simulator. A new module that imports `controller` is a module
 nobody can test.
 
@@ -76,7 +87,16 @@ nobody can test.
    `compose.fleet.yml` and every per-robot config are generated from it by
    `tools/gen_fleet.py`. Edit the manifest, never the outputs.
 
-4. **The QR payload follows the shared schema exactly.** All 83 payloads
+4. **The wire format is the shared schema, not a superset.** The robot once
+   sent the legal turns and was answered with `left`/`straight`/`right`. Both
+   fields are absent from `shared/schemas/`, and putting the route choice on
+   the robot's side of the wire had a cost beyond tidiness: the turn menu was
+   filtered to ±45° of left, straight and right, so the way back out of a
+   degree-1 charging bay — 180° — matched nothing, the menu came back empty,
+   and a robot routed into a bay sat in it for the rest of the run. Node-based
+   routing has no such case: a bay's one neighbour is its junction.
+
+5. **The QR payload follows the shared schema exactly.** All 83 payloads
    validate against `qr-code.schema.json`. It carries no out-edges and no lane
    bearing and does not need to: both come from `config/warehouse.json`, which
    every robot holds. Adding fields costs QR modules, and modules are camera
@@ -123,6 +143,52 @@ renders as `(242,173,56)` under this world's lighting. The border classifier
 compares chromaticity, not RGB, so lighting changes need no retuning — but the
 threshold (0.30) was measured. Re-measure with `tools/spike_drive.py` after any
 lighting change.
+
+**`running` in `robot/main.py` means "the run is over", not "the wheels are
+stopped".** The bottom of the loop reads `not running` as the companion having
+called time: it closes the telemetry log and prints the run summary. Holding a
+robot at the start by clearing that same flag therefore ended its run on tick
+one — summary at zero steps — and the first row written after release raised
+`ValueError: I/O operation on closed file`. The sequential start carries its
+own `held` flag for exactly this reason. Two states that both stop the motors
+are not the same state.
+
+**A `TURN` is an absolute bearing, so the firmware's heading frame has to be
+right.** `robot/turn.py` says its estimate "was corrected by the marker the
+robot is standing on" — it never was. The marker supplies position only, and
+`Odometry` started at theta=0 however the robot was actually parked. On the
+warehouse window every charging bay faces ±90°, so all ten robots executed
+every turn 90° out: onto a perpendicular lane, or back the way they came.
+It reads from outside as bad line-following, because what you see is a robot
+leaving the node wrong and then hunting for a line that is not there.
+`odometry.start_theta` seeds the frame from the same pose the world file uses,
+and the companion now sends the exact arrival heading with each `TURN`.
+Score any change here with `tools/spike_truth.py`; a heading error above a few
+degrees means turns are landing on lanes nobody chose.
+
+**A turn must happen about the node, and the read does not happen there.**
+The colour trigger fires 175 mm before the node centre and the code decodes
+roughly 80 mm later, so when the robot stops to be routed its own origin is
+still about 95 mm short of the junction. Rotating there rotates about a point
+*beside* the lane it is turning onto: 95 mm off, against a 20 mm line under an
+array spanning ±40 mm, so the line is not merely hard to find, it is not under
+the robot at all. What follows looks like bad line-following — the robot drives
+parallel to the lane it wanted, spends the 0.15 m turn-recovery budget, then
+the lost-line search spins it at full lock onto whichever lane it happens to
+meet. Watched from above it drives *around* the node. `MarkerCrossing.lever_arm`
+already returns exactly the distance still to travel (it is what makes the
+position fix accurate to a millimetre); the firmware now rolls that last stretch
+on blind before starting the turn. A turn commanded but not yet begun is
+`pending_bearing`.
+
+**A one-tick line loss is noise, and the throttle must be able to go back up.**
+`EVT LINE_LOST` was edge-triggered with no debounce, and the companion answers
+every one by multiplying speed by 0.6 with nothing to raise it again. Three
+ticks after a crossing ends the array is not always back over the lane, so a
+single 16 ms dropout cost a permanent speed step: measured, robots sat at the
+1.5 rad/s floor — a quarter of cruise — for the rest of the run. Hence
+`lost_line_debounce_s` and `speed_recover_after_s`. A ratchet in a control
+loop is a bug even when every individual step is correct.
 
 **`x or default` is wrong when `0.0` is a legal value.** Written twice here, in
 `robot/marker.py` and `robot/obstacle.py`: a crossing beginning at distance 0.0
@@ -238,7 +304,7 @@ shell's directory, not the compose file's.
 
 ```bash
 uv run python -m tools.gen_fleet          # after ANY fleet.yaml edit
-RENDERING=off MISSION_DURATION=900 \
+MODE=fast RENDERING=off MISSION_DURATION=900 \
   docker compose -f compose.yml -f compose.fleet.yml up -d
 #   viewer: http://localhost:1234/index.html
 docker compose -f compose.yml -f compose.fleet.yml down --remove-orphans
@@ -248,21 +314,38 @@ docker compose -f compose.yml -f compose.fleet.yml down --remove-orphans
 against a world that no longer has them, and a synchronized robot with no
 controller freezes the simulation.
 
+`MODE=fast` runs the world as fast as the host allows; `realtime` is the
+default and paces it to the wall clock. Webots has no numeric multiplier, so
+`fast` is the whole switch — and at ten robots it is worth about **1.12x**,
+measured on 16 cores with `RENDERING=off`. The simulator process sits at
+270-460% CPU while every controller stays under 30% of one core, so the
+simulator is the constraint and `defaults.resources.cpus` buys headroom against
+a QR-decode stall rather than speed. Real speedup means fewer robots or fewer
+enabled sensors. Simulation time and `MISSION_DURATION` are unaffected either
+way.
+
 `docker/robot-entrypoint.sh` is `COPY`'d into the image, so editing it changes
 nothing until `docker build -f docker/controller.Dockerfile -t
 sih2026/controller:dev .`. Python is volume-mounted and needs no rebuild.
 
 ```bash
-uv run pytest -q                                    # 167 tests, no Webots
+uv run pytest -q                                    # 196 tests, no Webots
 docker compose ... logs bot_01 | grep "node "       # marker reads
-docker compose ... logs | grep "netlayer: node"     # routing decisions
+docker compose ... logs | grep "netlayer: bot"      # routing decisions
 docker compose ... logs supervisor | grep label:    # localisation error
+docker compose ... logs | uv run python -m tools.spike_truth   # score the run
 ```
 
 `tools/spike_*.py` are single-purpose diagnostics that each found a real bug —
 device inventory, camera frames under `--no-rendering`, what the ground sensors
 actually see, where marker solids really are, turn accuracy against ground
 truth. Reach for them before theorising.
+
+`tools/spike_truth.py` is the one to run after any change to steering, turning
+or odometry: it folds a run's supervisor output into fix error, heading error,
+turns, timeouts and halts per robot. Heading is the number that matters — the
+turn still completes when it is wrong, just onto the wrong lane, so nothing
+else in the system reports it.
 
 ---
 
@@ -274,18 +357,28 @@ Measured on the current warehouse window, ten robots:
 |---|---|
 | track | 32 x 16 m window of the real layout, 83 nodes, 10 charging bays |
 | markers | 83, all validating against the shared QR schema |
-| line tracking | 0.79 mm mean |
-| localisation fix error | 6-11 mm |
-| wheel heading drift | under 1.7 degrees per lap |
+| line tracking | 0.025-0.21 mm mean per robot |
+| localisation fix error | 5 mm median, 12 mm worst |
+| heading error against truth | 1.1 degrees median, 1.8 degrees worst |
+| turns | 44 of 44 executed, no timeouts, no halts |
+| line lost | 1.2 s of a 420 s run, fleet mean (0.3%) |
 | obstacle reflex | trips at 178 mm, retreats to the previous marker |
+
+Measured with `tools/spike_truth.py` over one 420 s run of ten robots. Before
+the heading frame was seeded and turns were made about the node rather than
+95 mm short of it, the same run scored 90 degrees of heading error, fix errors
+of 2-4.5 m on first reads, turns landing on lanes nobody chose, and two robots
+with the line lost for 78% and 90% of the run.
 
 **Known rough edges:** ten robots on random routes jam, which is the honest
 result rather than a bug — see `docs/demo.md`. Charging bays are degree-1
-spurs that pair onto one junction, so robots leaving them contend immediately.
+spurs that pair onto one junction; the sequential start keeps a pair from
+meeting there, but does nothing for the contention everywhere else.
 
-**Not built:** the real network layer (this has a random stand-in);
-`robot/turn.py`'s accuracy has never been measured against ground truth;
-`proto/firmware.proto` is a drafted gRPC schema no code references.
+**Not built:** the real network layer (this has a random stand-in, which now
+holds the map and picks a neighbour, so swapping it out means changing what
+listens on the socket and nothing else); `proto/firmware.proto` is a drafted
+gRPC schema no code references.
 
 Further reading: `docs/architecture.md` for the module map and the reasoning,
 `docs/demo.md` for running it, `docs/markers.md` for the marker subsystem.

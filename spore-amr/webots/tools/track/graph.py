@@ -19,7 +19,6 @@ from dataclasses import dataclass
 from typing import Dict, Iterable, List, Optional, Sequence, Tuple
 
 # Which way a robot turns, relative to the heading it arrived on.
-TURNS = ("left", "straight", "right")
 
 
 @dataclass(frozen=True)
@@ -106,70 +105,6 @@ class Graph:
         return sum(self.length(e.a, e.b) for e in self.edges)
 
     # ------------------------------------------------------------- turning --
-
-    def turns_from(self, node_id: int, heading: float,
-                   tolerance_deg: float = 45.0) -> Dict[str, int]:
-        """Which of left/straight/right lead somewhere, and to which node.
-
-        `heading` is how the robot arrived. The lane it came in on is excluded:
-        a robot that has just driven into a node has no business calling the
-        way it came a legal turn, and on a one-way lane it would be a wrong-way
-        entry.
-
-        Ambiguity is resolved by picking the closest lane to each ideal
-        bearing, so a node with two lanes 30 degrees apart does not report both
-        as "straight".
-        """
-        ideal = {"left": wrap_pi(heading + math.pi / 2),
-                 "straight": wrap_pi(heading),
-                 "right": wrap_pi(heading - math.pi / 2)}
-        back = wrap_pi(heading + math.pi)
-        tolerance = math.radians(tolerance_deg)
-
-        candidates = []
-        for neighbour in self._adjacency[node_id]:
-            lane = self.bearing(node_id, neighbour)
-            if abs(wrap_pi(lane - back)) < math.radians(1.0):
-                continue  # the lane we arrived on
-            candidates.append((neighbour, lane))
-
-        if not candidates:
-            # A dead end -- every charging bay in the real warehouse is one,
-            # a degree-1 spur off a corridor. Excluding the arrival lane leaves
-            # nothing, and a robot offered no turn sits in the bay for the rest
-            # of the run. Reversing out is the only way, so offer it.
-            candidates = [(n, self.bearing(node_id, n))
-                          for n in self._adjacency[node_id]]
-
-        result: Dict[str, int] = {}
-        for turn, target in ideal.items():
-            best, best_gap = None, tolerance
-            for neighbour, lane in candidates:
-                gap = abs(wrap_pi(lane - target))
-                if gap < best_gap:
-                    best, best_gap = neighbour, gap
-            if best is not None:
-                result[turn] = best
-
-        # A lane can be the closest match for two turns; keep the better fit so
-        # each neighbour is offered once.
-        claimed: Dict[int, str] = {}
-        for turn in TURNS:
-            neighbour = result.get(turn)
-            if neighbour is None:
-                continue
-            previous = claimed.get(neighbour)
-            if previous is None:
-                claimed[neighbour] = turn
-                continue
-            gap_now = abs(wrap_pi(self.bearing(node_id, neighbour) - ideal[turn]))
-            gap_was = abs(wrap_pi(self.bearing(node_id, neighbour) - ideal[previous]))
-            loser = turn if gap_now >= gap_was else previous
-            if loser != turn:
-                claimed[neighbour] = turn
-            result.pop(loser, None)
-
-        return result
 
     # -------------------------------------------------------- ground truth --
 

@@ -54,3 +54,53 @@ def test_status_carries_the_tracking_numbers():
     assert status.fields["err"] == pytest.approx(0.0025)
     assert status.fields["u"] == pytest.approx(0.4)
     assert status.fields["lost"] == 0
+
+
+# ------------------------------------------------------------- debouncing ----
+
+def test_a_single_tick_dropout_is_not_a_lost_line():
+    """Measured on a real run: the line blinked out for one 16 ms tick three
+    ticks after a marker crossing ended -- the recovery window closes a hair
+    before the array is properly back over the lane. Each blip cost the robot
+    a speed step it never got back, and four of them left it crawling at the
+    floor for the rest of the run."""
+    detector = EventDetector(status_period_s=100.0, lost_debounce_s=0.1)
+
+    assert edges(detector.update(t=0.000, lost=False, error=0.0, u=0.0)) == []
+    assert edges(detector.update(t=0.016, lost=True, error=0.0, u=0.0)) == []
+    assert edges(detector.update(t=0.032, lost=False, error=0.0, u=0.0)) == []
+
+
+def test_a_line_genuinely_absent_is_still_reported_once():
+    detector = EventDetector(status_period_s=100.0, lost_debounce_s=0.1)
+    detector.update(t=0.0, lost=False, error=0.0, u=0.0)
+
+    assert edges(detector.update(t=0.05, lost=True, error=0.0, u=0.0)) == []
+    assert edges(detector.update(t=0.20, lost=True, error=0.0, u=0.0)) == ["LINE_LOST"]
+    assert edges(detector.update(t=0.30, lost=True, error=0.0, u=0.0)) == []
+
+
+def test_line_found_only_follows_a_loss_that_was_reported():
+    """Otherwise a debounced blip produces a LINE_FOUND with no LINE_LOST, and
+    the companion sees the line being reacquired that it never lost."""
+    detector = EventDetector(status_period_s=100.0, lost_debounce_s=0.1)
+    detector.update(t=0.000, lost=False, error=0.0, u=0.0)
+    detector.update(t=0.016, lost=True, error=0.0, u=0.0)
+
+    assert edges(detector.update(t=0.032, lost=False, error=0.0, u=0.0)) == []
+
+
+def test_reacquiring_after_a_reported_loss_reports_found():
+    detector = EventDetector(status_period_s=100.0, lost_debounce_s=0.1)
+    detector.update(t=0.0, lost=False, error=0.0, u=0.0)
+    detector.update(t=0.2, lost=True, error=0.0, u=0.0)   # loss begins
+    detector.update(t=0.4, lost=True, error=0.0, u=0.0)   # debounce elapsed
+
+    assert edges(detector.update(t=0.5, lost=False, error=0.0, u=0.0)) == ["LINE_FOUND"]
+
+
+def test_the_debounce_is_off_by_default_so_existing_behaviour_is_unchanged():
+    detector = EventDetector(status_period_s=100.0)
+
+    detector.update(t=0.0, lost=False, error=0.0, u=0.0)
+    assert edges(detector.update(t=0.016, lost=True, error=0.0, u=0.0)) == ["LINE_LOST"]
