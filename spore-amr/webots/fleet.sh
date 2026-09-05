@@ -11,6 +11,8 @@
 #   ./fleet.sh status      what is running, and how far through the run
 #   ./fleet.sh score       score the run against the supervisor's ground truth
 #   ./fleet.sh logs [svc]  follow the logs (default: every robot, no STATUS spam)
+#   ./fleet.sh where       where the fleet thinks its robots are (roster + claims)
+#   ./fleet.sh dump [n]    print the last n log lines once and exit
 #   ./fleet.sh goals       what the network layer has told each robot to do
 #   ./fleet.sh robots      per-robot: distance, state, and whether it is moving
 #   ./fleet.sh fleet       leaders, jobs and claims -- the coordination layer
@@ -157,6 +159,49 @@ case "${1:-help}" in
   score)
     # The supervisor is the only thing that knows where the robots really are.
     "${COMPOSE[@]}" logs 2>&1 | uv run python -m tools.spike_truth
+    ;;
+
+  where)
+    # Where the *fleet* thinks its robots are, which is a different question
+    # from where they are: this is the roster every bot holds, built from QR
+    # reads that travelled the wire. `robots` reads telemetry and answers
+    # "which one is stuck"; this answers "does the coordination layer know".
+    #
+    # Asked of one bot over its own AdminService, from inside its container --
+    # the bot containers publish no ports, and nothing outside the fleet needs
+    # to reach them. `--json` for anything reading this rather than looking at
+    # it (the webots test tier).
+    shift
+    fmt="${1:-text}"
+    docker exec "webots-$(basename config/bot_01.yaml .yaml)-bot-1" sh -c \
+      "cd /app && .venv/bin/python -c \"
+import grpc, json, sys
+from proto import fleet_pb2, fleet_pb2_grpc
+from bus.policy import rpc_metadata
+s = fleet_pb2_grpc.AdminServiceStub(grpc.insecure_channel('localhost:50051'))
+st = s.GetState(fleet_pb2.Empty(), timeout=5, metadata=rpc_metadata(999,0,'admin'))
+state = {
+    'bot_id': st.bot_id, 'role': st.role, 'region': st.region_id,
+    'roster': [{'bot_id': p.bot_id, 'node': p.latest_node_id,
+                'trail': list(p.node_trail)} for p in st.roster],
+    'claims': [[c.bot_id, c.node_id] for c in st.reservations],
+}
+if '${fmt}' == 'json':
+    print(json.dumps(state))
+else:
+    print('asked bot-%d (%s of region %d)' % (state['bot_id'], state['role'], state['region']))
+    for p in sorted(state['roster'], key=lambda p: p['bot_id']):
+        print('   bot-%-2d node %-6s trail %s' % (p['bot_id'], p['node'] or '-', p['trail']))
+    print('claims:', state['claims'] or 'none')
+\""
+    ;;
+
+  dump)
+    # Logs once and exit, where `logs` follows. For anything reading the run
+    # rather than watching it -- the webots test tier, mostly -- so it does not
+    # have to rebuild the compose invocation and get the GPU overlay wrong.
+    shift
+    "${COMPOSE[@]}" logs --tail="${1:-2000}" 2>&1
     ;;
 
   logs)

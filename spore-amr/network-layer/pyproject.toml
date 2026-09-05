@@ -18,6 +18,9 @@ dev = [
 [tool.pytest.ini_options]
 markers = [
     "docker: scenario tests on real containers and a real Docker network (skipped without a daemon)",
+    "webots: the whole fleet in the real simulator, with real cameras reading real QR codes. Slow by nature and not on the container tier's five-minute budget, so it is opt-in: `-m webots`",
 ]
 # Docker tests run last so the fast in-process tiers report first.
-addopts = "-p no:cacheprovider"
+# The simulator tier is opt-in: it is minutes rather than seconds, and it needs
+# images the container tier does not. `-m webots` runs it.
+addopts = "-p no:cacheprovider -m 'not webots'"
