@@ -111,6 +111,65 @@ def test_mission_duration_can_be_overridden_per_run():
     assert environment["MISSION_DURATION"] == "${MISSION_DURATION:-120}"
 
 
+def test_compose_gives_every_robot_its_own_network_layer_bot():
+    """The wiring that was missing for the entire life of this fleet.
+
+    `compose.fleet.yml` is generated, and the generator could not run: its map
+    source path was one directory too high after the repo was restructured, so
+    the checked-in file went stale and kept a shape that predated the network
+    layer entirely -- no `/network-layer` mount, no identity, no peers. Every
+    robot therefore started a bot that had no code to run, waited twenty
+    seconds for a socket that never appeared, and drove with nothing answering
+    it. Nothing failed loudly, and nothing here would have noticed.
+
+    So this asserts the wiring, not just that a service exists. `ROBOT_NAME`
+    and `mem_limit` were the only things checked before, and both were true the
+    whole time the fleet was broken.
+    """
+    compose = compose_source(MANIFEST)
+    names = [n for n in compose["services"] if n not in ("sim", "supervisor")]
+    assert names, "a fleet with no robots is not a fleet"
+
+    for index, name in enumerate(names):
+        service = compose["services"][name]
+        environment = service["environment"]
+
+        # The bot runs from the sibling project, mounted read-only.
+        assert "../network-layer:/network-layer:ro" in service["volumes"], name
+
+        # Identity: without it a bot cannot elect, be assigned to, or be found.
+        assert environment["BOT_ID"] == str(index), name
+        assert environment["OWN_ADDRESS"] == "{}:50051".format(name), name
+        assert "REGION_ID" in environment, name
+
+        # Everyone else, so a bot with no leader yet has somewhere to ask.
+        peers = environment["PEER_LEADERS"].split(",")
+        assert "{}:50051".format(name) not in peers, "{} lists itself".format(name)
+        assert len(peers) == len(names) - 1, name
+
+        # The robot link, and the map both halves have to agree on.
+        assert environment["ROBOT_SOCKET"] == "/tmp/{}-robot.sock".format(name), name
+        assert environment["WAREHOUSE_MAP"] == "/project/config/warehouse.json", name
+
+
+def test_compose_does_not_point_at_a_fleet_wide_network_service():
+    """One bot per robot is the architecture, not an implementation detail.
+
+    `webots-implementation` wired every companion at a single `network:50051`
+    holding the whole fleet's state. That is a coherent design and it is not
+    this one -- see `spore-amr/network-layer/docs/boundary.md`. If it comes back
+    it should come back deliberately, with that document rewritten, rather than
+    by a merge nobody read closely.
+    """
+    compose = compose_source(MANIFEST)
+
+    for name, service in compose["services"].items():
+        environment = service.get("environment", {}) or {}
+        assert "NETWORK_ADDRESS" not in environment, name
+        assert "network" not in (service.get("depends_on") or []), name
+        assert not any("temp-network" in v for v in (service.get("volumes") or [])), name
+
+
 def test_world_and_compose_agree_on_the_robot_names():
     # The whole reason for generating both from one manifest.
     compose = compose_source(MANIFEST)
