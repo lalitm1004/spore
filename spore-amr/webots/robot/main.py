@@ -529,6 +529,17 @@ def main(argv=None):
                 recovery_from = distance
             if reading.lost and (distance - recovery_from) < RECOVERY_BUDGET_M:
                 crossing_blind = True
+            elif reading.lost:
+                # The budget is spent and the line is still missing, so this
+                # crossing is over -- the robot is simply lost now.
+                #
+                # Ending it matters because a crossing suppresses the lost-line
+                # timeout. Left in RECOVERING the robot falls into the
+                # full-lock search, which means it stops travelling, which
+                # means this distance budget never advances either. One robot
+                # span on the spot for 96 seconds that way.
+                optics.crossing.reset()
+                recovery_from = None
         else:
             recovery_from = None
 
@@ -553,6 +564,12 @@ def main(argv=None):
                 turns_done += 1
                 turn_recovering = True
                 turn_recovered_from = distance
+                # The robot is on a new lane facing a new way; the crossing it
+                # was part-way through describes none of that. Leaving it in
+                # place keeps line_is_trustworthy false and drives the robot
+                # off the grid on stale steering.
+                if optics is not None:
+                    optics.crossing.reset()
             error, output = 0.0, pid.update(error=0.0, dt=dt)
             steering, base = turn_steering, 0.0
             lost_since = None

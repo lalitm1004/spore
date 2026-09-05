@@ -11,6 +11,19 @@ from typing import Tuple
 WHITE = (255, 255, 255)
 BLACK = (0, 0, 0)
 
+# A wide light-grey band under each lane, purely so a viewer can see the layout.
+# The guide line itself is 20 mm, which on an 8 m floor is under two screen
+# pixels and mipmaps away to nothing -- the grid was invisible in the viewer
+# even though the sensors were tracking it perfectly.
+#
+# The IR array is unaffected. Its lookup table scales effective distance by a
+# surface's reflectance, so this grey reads 944 against white's 1000 and
+# black's 200 -- 0.10 normalised, below the 0.15 confidence floor, which means
+# "not the line". Warehouses mark aisles exactly this way: a broad painted
+# band for people, a thin guide line for the robots.
+AISLE = (200, 200, 200)
+AISLE_WIDTH_M = 0.20
+
 
 @dataclass(frozen=True)
 class TrackImageSpec:
@@ -46,17 +59,19 @@ def render_graph(graph, spec: "TrackImageSpec", line_width: float) -> "Image.Ima
 
     image = Image.new("RGB", (spec.width_px, spec.height_px), WHITE)
     draw = ImageDraw.Draw(image)
-    width = round(line_width * spec.pixels_per_metre)
 
-    for (ax, ay), (bx, by) in graph_lanes(graph):
-        draw.line([spec.world_to_pixel(ax, ay), spec.world_to_pixel(bx, by)],
-                  fill=BLACK, width=width)
-
-    # Discs at the nodes, so junctions have no notch between the strokes.
-    radius = width / 2.0
-    for node in graph.nodes.values():
-        x, y = spec.world_to_pixel(node.x, node.y)
-        draw.ellipse([x - radius, y - radius, x + radius, y + radius], fill=BLACK)
+    # Two passes: the wide aisle band first, then the guide line on top of it.
+    for colour, metres in ((AISLE, AISLE_WIDTH_M), (BLACK, line_width)):
+        width = max(1, round(metres * spec.pixels_per_metre))
+        for (ax, ay), (bx, by) in graph_lanes(graph):
+            draw.line([spec.world_to_pixel(ax, ay), spec.world_to_pixel(bx, by)],
+                      fill=colour, width=width)
+        # Discs at the nodes, so junctions have no notch between the strokes.
+        radius = width / 2.0
+        for node in graph.nodes.values():
+            x, y = spec.world_to_pixel(node.x, node.y)
+            draw.ellipse([x - radius, y - radius, x + radius, y + radius],
+                         fill=colour)
 
     return image
 

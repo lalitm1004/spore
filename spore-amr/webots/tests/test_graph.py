@@ -201,3 +201,21 @@ def test_wrap_keeps_angles_in_one_turn():
     assert abs(wrap_pi(-3 * math.pi)) == pytest.approx(math.pi)
     assert wrap_pi(0.5) == pytest.approx(0.5)
     assert wrap_pi(2 * math.pi + 0.5) == pytest.approx(0.5)
+
+
+def test_a_dead_end_offers_the_way_back():
+    """Every charging bay in the real warehouse is a degree-1 spur. Excluding
+    the lane the robot arrived on leaves nothing, and a robot offered no turn
+    sits in the bay for the rest of the run."""
+    graph = Graph([Node(0, 0.0, 0.0, kind="CH"), Node(1, 0.0, 2.0)], [Edge(0, 1)])
+
+    # Arrived heading north, into the bay. The only lane is back south.
+    turns = graph.turns_from(0, heading=math.pi / 2)
+    assert turns, "a dead end must still offer a way out"
+    assert set(turns.values()) == {1}
+
+
+def test_a_through_node_still_refuses_to_double_back():
+    """The dead-end allowance must not become a general licence to reverse."""
+    graph = lattice(rows=4, columns=4, spacing=2.0)
+    assert 4 not in graph.turns_from(5, heading=0.0).values()

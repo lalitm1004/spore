@@ -36,6 +36,63 @@ def viewpoint_height(plane_size, field_of_view: float = FIELD_OF_VIEW) -> float:
     return half / math.tan(field_of_view / 2) * VIEW_MARGIN
 
 
+def charging_spawns(manifest: dict, count: int) -> List[dict]:
+    """Poses on the lanes leaving each charging node.
+
+    A robot placed exactly on a node sits on its marker tile, which its colour
+    sensor reads as a crossing before it has moved -- so each spawn is set a
+    little way down an outgoing lane, facing away from the bay. Spread across
+    distinct charging nodes so no two robots start pointed at each other.
+    """
+    track = TrackConfig.from_dict(manifest["track"])
+    graph = track.build_graph()
+
+    bays = sorted((n for n in graph.nodes.values() if n.kind == "CH"),
+                  key=lambda n: n.node_id)
+    if not bays:
+        raise ValueError("no CH nodes in this track to spawn at")
+
+    # Bays are degree-1 spurs and they come in facing pairs sharing one
+    # junction, so two robots leaving paired bays reach that junction at the
+    # same instant and deadlock there. Stagger them along their spurs instead:
+    # within each pair the second robot starts further back, so it arrives
+    # after the first has been routed away.
+    by_junction = {}
+    for bay in bays:
+        neighbours = graph.neighbours(bay.node_id)
+        if not neighbours:
+            continue
+        by_junction.setdefault(neighbours[0], []).append(bay)
+
+    ordered = []
+    depth = 0
+    while len(ordered) < len(bays):
+        added = False
+        for junction, group in sorted(by_junction.items()):
+            if depth < len(group):
+                ordered.append((group[depth], junction, depth))
+                added = True
+        if not added:
+            break
+        depth += 1
+
+    poses = []
+    for index in range(count):
+        bay, junction, rank = ordered[index % len(ordered)]
+        bearing = graph.bearing(bay.node_id, junction)
+        length = graph.length(bay.node_id, junction)
+        # Rank 0 sits close to the junction and leaves first; each later robot
+        # on the same junction starts further back down its own spur.
+        step = min(length * 0.75, 0.5 + rank * 0.9)
+        poses.append({
+            "x": round(bay.x + step * math.cos(bearing), 3),
+            "y": round(bay.y + step * math.sin(bearing), 3),
+            "theta": round(bearing, 4),
+            "from_node": bay.node_id,
+        })
+    return poses
+
+
 def robot_configs(manifest: dict) -> List[dict]:
     defaults = manifest.get("defaults") or {}
     robot_block = manifest.get("robot") or {}
@@ -44,9 +101,20 @@ def robot_configs(manifest: dict) -> List[dict]:
         spacing=robot_block.get("sensor_spacing", 0.02),
     )
 
+    # `robots: {count: N, spawn: charging}` places the fleet from the track
+    # itself, so a layout change cannot leave the poses behind.
+    entries = manifest["robots"]
+    if isinstance(entries, dict):
+        count = int(entries.get("count", 1))
+        poses = charging_spawns(manifest, count)
+        entries = [
+            {"name": "bot_{:02d}".format(i + 1), "pose": poses[i]}
+            for i in range(min(count, len(poses)))
+        ]
+
     configs = []
     seen = set()
-    for entry in manifest["robots"]:
+    for entry in entries:
         name = entry["name"]
         if name in seen:
             raise ValueError("duplicate robot name {!r} in the manifest".format(name))
@@ -66,6 +134,12 @@ def robot_configs(manifest: dict) -> List[dict]:
 # Markers sit a hair above the ground plane. Coplanar faces z-fight and the
 # texture flickers between the two, which the colour sensor reads as noise.
 MARKER_LIFT = 0.001
+
+# Set by main() once the floor is rendered, so world_source names the same file
+# the browser will fetch. The streaming viewer caches the floor by URL, so a
+# regenerated track kept arriving in the browser as the previous one -- world
+# right, file on disk right, picture stale.
+TRACK_TEXTURE = ["track.png"]
 
 
 def graph_marker_source(manifest: dict, graph) -> str:
@@ -243,7 +317,7 @@ DEF GROUND Solid {{
         metalness 0
         baseColorMap ImageTexture {{
           url [
-            "../textures/track.png"
+            "../textures/{texture}"
           ]
         }}
       }}
@@ -256,7 +330,7 @@ DEF GROUND Solid {{
   boundingObject Plane {{
   }}
 }}
-'''.format(plane_x=plane_x, plane_y=plane_y,
+'''.format(plane_x=plane_x, plane_y=plane_y, texture=TRACK_TEXTURE[0],
            orientation=TOP_DOWN_ORIENTATION,
            height=round(viewpoint_height(track.plane_size), 3))
 
@@ -420,12 +494,37 @@ def main(argv=None) -> int:
         spec = TrackImageSpec(size=track.plane_size,
                               pixels_per_metre=track.pixels_per_metre)
         pathlib.Path("textures").mkdir(exist_ok=True)
-        render_graph(graph, spec, track.line_width).save("textures/track.png")
+
+        if track.warehouse is not None:
+            # Use the layout tool's own drawing as the floor, so the simulated
+            # warehouse looks like the warehouse rather than like something
+            # this project drew from the same data. The guide line is redrawn
+            # on top at its true width -- the map's hairlines are a diagram.
+            from tools.track.svgfloor import render_window_via_converter as render_window
+
+            svg_path = pathlib.Path(track.warehouse.source).with_name(
+                "warehouse_map.svg")
+            render_window(svg_path, track.warehouse.origin_cm,
+                          track.warehouse.size_m, track.pixels_per_metre,
+                          graph=graph, line_width_m=track.line_width
+                          ).save("textures/track.png")
+        else:
+            render_graph(graph, spec, track.line_width).save("textures/track.png")
+
+        import hashlib
+
+        source = pathlib.Path("textures/track.png")
+        digest = hashlib.sha1(source.read_bytes()).hexdigest()[:12]
+        for stale in pathlib.Path("textures").glob("track-*.png"):
+            stale.unlink()
+        name = "track-{}.png".format(digest)
+        (pathlib.Path("textures") / name).write_bytes(source.read_bytes())
+        TRACK_TEXTURE[0] = name
 
         pathlib.Path("config").mkdir(exist_ok=True)
         document = to_document(graph,
-                               node_spacing_cm=int(track.graph.spacing * 100),
-                               plane_m=track.plane_size[0])
+                               node_spacing_cm=track.node_spacing_cm,
+                               plane_m=track.plane_size)
         pathlib.Path("config/warehouse.json").write_text(
             json.dumps(document, indent=2) + "\n")
         print("textures/track.png ({}x{} px), config/warehouse.json "
@@ -465,7 +564,7 @@ def main(argv=None) -> int:
         )
 
     print("generated worlds/track.wbt, compose.fleet.yml, and {} config file(s)".format(
-        len(manifest["robots"])))
+        len(robot_configs(manifest))))
     return 0
 
 

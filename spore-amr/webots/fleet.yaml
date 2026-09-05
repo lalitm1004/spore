@@ -2,24 +2,22 @@
 # Regenerate with:  uv run python -m tools.make_track && uv run python -m tools.gen_fleet
 
 track:
-  # A 4x4 lattice at 2 m spacing -- the same node_spacing warehouse.json uses,
-  # so the simulated geometry is the real geometry. The plane follows from the
-  # lattice and is forced to a power of two in metres: Webots silently rescales
-  # a non-power-of-two texture, and rescaling resamples the exact lane edges
-  # the IR array reads.
-  graph:
-    rows: 4
-    columns: 4
-    spacing: 2.0
-    kinds:                      # everything else is PT, a plain waypoint
-      - {row: 0, column: 0, kind: PK}
-      - {row: 0, column: 3, kind: CH}
-      - {row: 3, column: 0, kind: TR}
-      - {row: 3, column: 3, kind: TR}
-      - {row: 1, column: 1, kind: YI}
-      - {row: 2, column: 2, kind: YI}
+  # A window of the real warehouse, not a generated lattice. The full
+  # 120 x 70 m layout cannot be simulated at line-following resolution: one
+  # texture would be 61440 x 35840 px against a GPU limit around 16384, and a
+  # QR tile for each of its 881 nodes would want roughly 3.7 GB of texture
+  # memory. This window keeps real node ids, names, types, regions and edges
+  # -- 83 nodes of which 10 are charging bays.
+  #
+  # 32 x 16 m at 256 px/m is 8192 x 4096, both powers of two, so Webots does
+  # not rescale it. The window is centred on the charging strip, which runs
+  # along y = 800-1200 cm in the real layout.
+  warehouse:
+    source: ../spore/spore-warehouse-layout/output/warehouse.json
+    origin_cm: [8200, 600]
+    size_m: [32, 16]
+    pixels_per_metre: 256
   line_width: 0.02
-  pixels_per_metre: 512
 
 robot:
   sensor_count: 3
@@ -62,27 +60,12 @@ defaults:
     memory: 256m
     cpus: "0.5"
 
+# Robots start at charging bays, which is where a fleet would be at the start
+# of a shift. Poses come from the track itself, so changing the window cannot
+# leave stale coordinates behind.
 robots:
-  - name: bot_01
-    pose: {x: -2.000, y: -3.000, theta: 0.0000}   # lane 0-1
-  - name: bot_02
-    pose: {x: 0.000, y: -3.000, theta: 0.0000}   # lane 1-2
-  - name: bot_03
-    pose: {x: 2.000, y: -3.000, theta: 0.0000}   # lane 2-3
-  - name: bot_04
-    pose: {x: 3.000, y: -2.000, theta: 1.5708}   # lane 3-7
-  - name: bot_05
-    pose: {x: -3.000, y: 0.000, theta: 1.5708}   # lane 4-8
-  - name: bot_06
-    pose: {x: -1.000, y: 0.000, theta: 1.5708}   # lane 5-9
-  - name: bot_07
-    pose: {x: 1.000, y: 0.000, theta: 1.5708}   # lane 6-10
-  - name: bot_08
-    pose: {x: -2.000, y: 1.000, theta: 0.0000}   # lane 8-9
-  - name: bot_09
-    pose: {x: 0.000, y: 1.000, theta: 0.0000}   # lane 9-10
-  - name: bot_10
-    pose: {x: 2.000, y: 1.000, theta: 0.0000}   # lane 10-11
+  count: 10
+  spawn: charging
 
 # Obstacles for the forward-lidar reflex. Unlike marker tiles these carry a
 # boundingObject, so a ray has something to hit.

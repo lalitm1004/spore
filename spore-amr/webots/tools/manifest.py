@@ -58,6 +58,37 @@ class GraphConfig:
 
 
 @dataclass(frozen=True)
+class WarehouseConfig:
+    """A window of a real warehouse.json, used as the track.
+
+    The full 120 x 70 m layout cannot be simulated at line-following
+    resolution -- see tools/track/warehouse.load_window for the arithmetic --
+    so a window of it is the faithful option: real ids, real types, real edges.
+    """
+
+    source: str
+    origin_cm: Tuple[float, float]
+    size_m: Tuple[float, float]
+    pixels_per_metre: int = 256
+
+    @classmethod
+    def from_dict(cls, data: Optional[dict]) -> Optional["WarehouseConfig"]:
+        if not data:
+            return None
+        return cls(
+            source=str(data["source"]),
+            origin_cm=tuple(float(v) for v in data["origin_cm"]),
+            size_m=tuple(float(v) for v in data["size_m"]),
+            pixels_per_metre=int(data.get("pixels_per_metre", 256)),
+        )
+
+    def build(self):
+        from tools.track.warehouse import load_window
+
+        return load_window(self.source, self.origin_cm, self.size_m)
+
+
+@dataclass(frozen=True)
 class TrackConfig:
     """Ground plane and the track drawn on it.
 
@@ -72,11 +103,22 @@ class TrackConfig:
     line_width: float = 0.02
     pixels_per_metre: int = 512
     graph: Optional[GraphConfig] = None
+    warehouse: Optional[WarehouseConfig] = None
 
     @classmethod
     def from_dict(cls, data: dict) -> "TrackConfig":
         known = {f: data[f] for f in cls.__dataclass_fields__
-                 if f in data and f != "graph"}
+                 if f in data and f not in ("graph", "warehouse")}
+        warehouse = WarehouseConfig.from_dict(data.get("warehouse"))
+        if warehouse is not None:
+            known["plane_size"] = warehouse.size_m
+            known["track_size"] = warehouse.size_m
+            known["shape"] = "warehouse"
+            known["pixels_per_metre"] = warehouse.pixels_per_metre
+            for key in ("plane_size", "track_size"):
+                known[key] = tuple(float(v) for v in known[key])
+            return cls(graph=None, warehouse=warehouse, **known)
+
         graph = GraphConfig.from_dict(data.get("graph"))
         if graph is not None:
             # The plane follows the lattice, not the other way round: it has to
@@ -88,16 +130,25 @@ class TrackConfig:
         for key in ("plane_size", "track_size"):
             if key in known:
                 known[key] = tuple(float(v) for v in known[key])
-        return cls(graph=graph, **known)
+        return cls(graph=graph, warehouse=None, **known)
 
     @property
     def is_graph(self) -> bool:
-        return self.graph is not None
+        """True for any node-and-lane track, lattice or real warehouse."""
+        return self.graph is not None or self.warehouse is not None
 
     def build_graph(self):
+        if self.warehouse is not None:
+            return self.warehouse.build()
         if self.graph is None:
             raise ValueError("this track has no graph; it is a {}".format(self.shape))
         return self.graph.build()
+
+    @property
+    def node_spacing_cm(self) -> int:
+        if self.warehouse is not None:
+            return 200
+        return int(self.graph.spacing * 100) if self.graph else 200
 
     def build_centerline(self):
         if self.is_graph:

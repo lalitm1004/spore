@@ -88,7 +88,7 @@ class LidarConfig:
     pause_s: float = 1.0
     accel_s: float = 0.6
     borders_to_pass: int = 2
-    max_backoff_m: float = 2.0
+    max_backoff_m: float = 0.45
     departed_m: float = 0.15
     hold_timeout_s: float = 8.0
     backoff_speed: float = 2.0
