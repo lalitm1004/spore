@@ -22,9 +22,9 @@ from __future__ import annotations
 from collections.abc import Iterable
 from dataclasses import dataclass, field
 
-from spore_planner.planner.types import Config, Obstruction, PeerView, RegionGossip
-from spore_planner.warehouse.graph import Graph
-from spore_planner.warehouse.map import Density
+from planning.geometry import Density
+from planning.graph import Graph
+from planning.types import Config, Obstruction, PeerView, RegionGossip
 
 DENSITY_FACTOR: dict[Density, float] = {
     Density.DENSE: 1.0,

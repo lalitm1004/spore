@@ -351,7 +351,6 @@ def test_claims_keep_flowing_when_the_leader_dies(fleet):
     leader.kill()
 
     # Move the survivor somewhere new; the claim its neighbour holds must follow.
-    moved_to = b_node if a_node != b_node else a_node
     _, elsewhere = _nearby_pair(PARK, max_hops=2)
     _park(fleet, survivors[0], elsewhere)
     assert wait_until(

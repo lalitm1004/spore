@@ -3,11 +3,11 @@
 from __future__ import annotations
 
 import pytest
-from conftest import line, make_graph, make_map
+from tests.planning_maps import line, make_graph, make_map
 
-from spore_planner.warehouse import Graph, Heading, NodeType, Topology, quarter_turns
-from spore_planner.warehouse.graph import UNREACHABLE
-from spore_planner.warehouse.map import Position, heading_between
+from planning import Graph, Heading, NodeType, Topology, quarter_turns
+from planning.graph import UNREACHABLE
+from planning.geometry import Position, heading_between
 
 
 def test_quarter_turns_is_symmetric_and_capped_at_a_reversal():

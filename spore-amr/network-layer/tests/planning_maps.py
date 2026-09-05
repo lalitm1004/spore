@@ -10,12 +10,13 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import pytest
+from planning.graph import Graph
+from planning.geometry import NodeType
+from warehouse.map import WarehouseMap
 
-from spore_planner.warehouse import Graph, Topology, WarehouseMap, load_map_file
-from spore_planner.warehouse.map import NodeType
-
-REPO_ROOT = Path(__file__).resolve().parents[2]
+#: The real 881-node layout, used wherever a test should run against the floor
+#: the fleet actually drives on rather than a synthetic stand-in.
+REPO_ROOT = Path(__file__).resolve().parents[3]
 REAL_MAP_PATH = REPO_ROOT / "spore-warehouse-layout" / "output" / "warehouse.json"
 
 SPACING = 200
@@ -70,9 +71,7 @@ def make_map_doc(
 
 
 def make_map(cells: dict[tuple[int, int], str], **kwargs) -> WarehouseMap:
-    from spore_planner.warehouse import parse_map
-
-    return parse_map(make_map_doc(cells, **kwargs))
+    return WarehouseMap(make_map_doc(cells, **kwargs))
 
 
 def make_graph(cells: dict[tuple[int, int], str], **kwargs) -> Graph:
@@ -82,18 +81,3 @@ def make_graph(cells: dict[tuple[int, int], str], **kwargs) -> Graph:
 def line(length: int, node_type: str = NodeType.PT.value) -> dict[tuple[int, int], str]:
     """A straight west-east corridor of `length` nodes."""
     return {(x, 0): node_type for x in range(length)}
-
-
-@pytest.fixture(scope="session")
-def real_map() -> WarehouseMap:
-    return load_map_file(REAL_MAP_PATH)
-
-
-@pytest.fixture(scope="session")
-def real_graph(real_map: WarehouseMap) -> Graph:
-    return Graph(real_map)
-
-
-@pytest.fixture(scope="session")
-def real_topology(real_graph: Graph) -> Topology:
-    return Topology(real_graph)

@@ -4,9 +4,9 @@ from __future__ import annotations
 
 from itertools import pairwise
 
-from conftest import make_graph, make_map_doc
+from tests.planning_maps import make_graph, make_map_doc
 
-from spore_planner.planner import (
+from planning import (
     Config,
     EnergyState,
     Goal,
@@ -19,9 +19,10 @@ from spore_planner.planner import (
     Reservation,
     SelfState,
 )
-from spore_planner.planner.kinematics import DEFAULT_KINEMATICS
-from spore_planner.warehouse import Graph, NodeType, parse_map
-from spore_planner.warehouse.map import Heading
+from planning.kinematics import DEFAULT_KINEMATICS
+from planning import Graph, NodeType
+from warehouse.map import WarehouseMap
+from planning.geometry import Heading
 
 TRAVERSE_MS = DEFAULT_KINEMATICS.cruise_ms(200)
 
@@ -166,7 +167,7 @@ def test_gossip_that_a_region_is_full_discriminates_when_chargers_span_regions()
     for node in doc["nodes"]:
         if node["position"]["x"] >= 600.0:
             node["region_id"] = 2
-    graph = Graph(parse_map(doc))
+    graph = Graph(WarehouseMap(doc))
     planner = Planner(graph, bot_id=1)
     start = graph.id_of(2)
 

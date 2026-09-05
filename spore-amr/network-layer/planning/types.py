@@ -17,8 +17,8 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from enum import StrEnum
 
-from spore_planner.planner.cost import EnergyState
-from spore_planner.warehouse.map import Heading
+from planning.cost import EnergyState
+from planning.geometry import Heading
 
 INF_MS = 1 << 62
 """Stands in for "forever" in interval arithmetic."""

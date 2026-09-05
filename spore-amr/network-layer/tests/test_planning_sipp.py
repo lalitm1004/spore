@@ -9,13 +9,13 @@ decide which.
 from __future__ import annotations
 
 import pytest
-from conftest import line, make_graph
+from tests.planning_maps import line, make_graph
 
-from spore_planner.planner.cost import CostModel, EnergyState
-from spore_planner.planner.intervals import ReservationTable
-from spore_planner.planner.sipp import search
-from spore_planner.planner.types import Config, PeerView, PlanStatus, Reservation
-from spore_planner.warehouse.map import Heading
+from planning.cost import CostModel, EnergyState
+from planning.intervals import ReservationTable
+from planning.sipp import search
+from planning.types import Config, PeerView, PlanStatus, Reservation
+from planning.geometry import Heading
 
 CFG = Config()
 SPACING = 200

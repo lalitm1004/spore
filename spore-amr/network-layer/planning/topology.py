@@ -24,7 +24,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from itertools import pairwise
 
-from spore_planner.warehouse.graph import Graph
+from planning.graph import Graph
 
 
 @dataclass(frozen=True, slots=True)

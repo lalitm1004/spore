@@ -164,3 +164,31 @@ def fleet():
 
 
 __all__ = ["Fleet", "Role", "fleet", "make_bot", "md", "next_port", "start_server", "wait_until"]
+
+
+# ---- Planning fixtures -------------------------------------------------------
+# Session-scoped: the real map is 881 nodes and building its graph and topology
+# is wasted work to repeat per test.
+
+@pytest.fixture(scope="session")
+def real_map():
+    from warehouse.map import WarehouseMap
+
+    from tests.planning_maps import REAL_MAP_PATH
+
+    return WarehouseMap.load(REAL_MAP_PATH)
+
+
+@pytest.fixture(scope="session")
+def real_graph(real_map):
+    from planning.graph import Graph
+
+    return Graph(real_map)
+
+
+@pytest.fixture(scope="session")
+def real_topology(real_graph):
+    from planning.topology import Topology
+
+    return Topology(real_graph)
+

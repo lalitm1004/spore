@@ -20,10 +20,10 @@ to give way -- is the business of the layer that owns the priority ordering.
 
 from __future__ import annotations
 
-from spore_planner.planner.types import YieldSuggestion
-from spore_planner.warehouse.graph import Graph
-from spore_planner.warehouse.map import NodeType
-from spore_planner.warehouse.topology import Topology
+from planning.geometry import NodeType
+from planning.graph import Graph
+from planning.topology import Topology
+from planning.types import YieldSuggestion
 
 SEARCH_RADIUS_HOPS = 8
 """How far to look before giving up. Beyond this the detour to reach the bay costs

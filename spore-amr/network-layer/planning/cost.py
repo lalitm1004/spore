@@ -26,7 +26,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from enum import StrEnum
 
-from spore_planner.planner.kinematics import DEFAULT_KINEMATICS, Kinematics
+from planning.kinematics import DEFAULT_KINEMATICS, Kinematics
 
 
 class EnergyState(StrEnum):

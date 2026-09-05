@@ -16,9 +16,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from spore_planner.planner.intervals import ReservationTable
-from spore_planner.planner.types import Config, Goal, GoalKind, Path
-from spore_planner.warehouse.graph import Graph
+from planning.graph import Graph
+from planning.intervals import ReservationTable
+from planning.types import Config, Goal, GoalKind, Path
 
 
 @dataclass(frozen=True, slots=True)

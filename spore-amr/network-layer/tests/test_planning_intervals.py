@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 import pytest
-from conftest import line, make_graph
+from tests.planning_maps import line, make_graph
 
-from spore_planner.planner.intervals import ReservationTable, _complement, _merge
-from spore_planner.planner.types import INF_MS, Config, PeerView, Reservation
+from planning.intervals import ReservationTable, _complement, _merge
+from planning.types import INF_MS, Config, PeerView, Reservation
 
 CFG = Config(safety_ms=0, skew_bound_ms=100, follow_gap_ms=0)
 

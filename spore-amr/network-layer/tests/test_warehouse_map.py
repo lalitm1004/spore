@@ -12,20 +12,21 @@ import json
 from itertools import pairwise
 
 import pytest
-from conftest import make_map_doc
+from tests.planning_maps import make_map_doc
 
-from spore_planner.warehouse import Graph, MapError, NodeType, parse_map
+from planning import Graph, NodeType
+from warehouse.map import MapError, WarehouseMap
 
 
 def test_real_map_counts(real_map, real_graph):
     assert real_graph.n == 881
-    assert len(real_map.edges) == 952
+    assert real_map.edge_count == 952
     assert real_map.node_spacing == 200
     assert real_map.units == "cm"
-    assert (real_map.dimensions.width, real_map.dimensions.height) == (12000, 7000)
+    assert real_map.dimensions == (12000, 7000)
     # Consolidated from 14 to 7 upstream; the graph itself was untouched, which is
     # why every other assertion in this file still holds.
-    assert len(real_map.regions) == 7
+    assert len(real_map.region_ids()) == 7
 
 
 def test_real_map_node_types(real_graph):
@@ -69,10 +70,9 @@ def test_corridor_decomposition_covers_every_edge(real_graph, real_topology):
         for u, v in pairwise(corridor.nodes):
             steps.add((u, v) if u < v else (v, u))
     expected = {
-        (real_graph.index(e.a), real_graph.index(e.b))
-        if real_graph.index(e.a) < real_graph.index(e.b)
-        else (real_graph.index(e.b), real_graph.index(e.a))
-        for e in real_graph.map.edges
+        (u, v) if u < v else (v, u)
+        for u in range(real_graph.n)
+        for v, _ in real_graph.neighbours(u)
     }
     assert steps == expected
 
@@ -85,7 +85,7 @@ def _doc() -> dict:
 
 
 def test_loader_accepts_a_well_formed_document():
-    assert parse_map(_doc()).node_spacing == 200
+    assert WarehouseMap(_doc()).node_spacing == 200
 
 
 @pytest.mark.parametrize(
@@ -113,24 +113,24 @@ def test_loader_rejects_malformed_documents(mutate, message):
     doc = _doc()
     mutate(doc)
     with pytest.raises(MapError, match=message):
-        parse_map(doc)
+        WarehouseMap(doc)
 
 
-def test_loader_rejects_non_json():
-    from spore_planner.warehouse import load_map
-
+def test_loader_rejects_non_json(tmp_path):
+    broken = tmp_path / "warehouse.json"
+    broken.write_text("{nope")
     with pytest.raises(MapError, match="not valid JSON"):
-        load_map("{nope")
+        WarehouseMap.load(broken)
 
 
 def test_loader_rejects_a_non_object_document():
     with pytest.raises(MapError, match="map must be an object"):
-        parse_map(json.loads("[]"))
+        WarehouseMap(json.loads("[]"))
 
 
 def test_graph_rejects_a_map_too_large_for_the_distance_cache(monkeypatch):
-    from spore_planner.warehouse import graph as graph_module
+    from warehouse import map as map_module
 
-    monkeypatch.setattr(graph_module, "UNREACHABLE", 2)
-    with pytest.raises(ValueError, match="exceeds"):
-        Graph(parse_map(_doc()))
+    monkeypatch.setattr(map_module, "UNREACHABLE", 2)
+    with pytest.raises(ValueError, match="addresses at most"):
+        WarehouseMap(_doc())

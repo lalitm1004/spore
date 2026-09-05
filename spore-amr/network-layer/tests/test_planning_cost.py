@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import pytest
 
-from spore_planner.planner.cost import (
+from planning.cost import (
     URGENT_TIME_BOOST,
     WEIGHTS_BY_ENERGY_STATE,
     CostModel,
@@ -18,7 +18,7 @@ from spore_planner.planner.cost import (
     EnergyState,
     HopCost,
 )
-from spore_planner.planner.kinematics import DEFAULT_KINEMATICS, RobotKinematics
+from planning.kinematics import DEFAULT_KINEMATICS, RobotKinematics
 
 SPACING = 200
 

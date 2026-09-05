@@ -15,14 +15,17 @@ interval overlap. Publish the windows any tighter and that guarantee is lost.
 
 from __future__ import annotations
 
-from spore_planner.planner import congestion as congestion_module
-from spore_planner.planner import goals as goals_module
-from spore_planner.planner import hysteresis, yielding
-from spore_planner.planner.cost import CostModel
-from spore_planner.planner.intervals import ReservationTable
-from spore_planner.planner.kinematics import DEFAULT_KINEMATICS, Kinematics
-from spore_planner.planner.sipp import SearchResult, search
-from spore_planner.planner.types import (
+from planning import congestion as congestion_module
+from planning import goals as goals_module
+from planning import hysteresis, yielding
+from planning.cost import CostModel
+from planning.geometry import Heading
+from planning.graph import Graph
+from planning.intervals import ReservationTable
+from planning.kinematics import DEFAULT_KINEMATICS, Kinematics
+from planning.sipp import SearchResult, search
+from planning.topology import Topology
+from planning.types import (
     DEFAULT_CONFIG,
     Config,
     Diagnostics,
@@ -32,9 +35,6 @@ from spore_planner.planner.types import (
     Request,
     Result,
 )
-from spore_planner.warehouse.graph import Graph
-from spore_planner.warehouse.map import Heading
-from spore_planner.warehouse.topology import Topology
 
 
 class Planner:

@@ -27,9 +27,9 @@ from __future__ import annotations
 
 from collections.abc import Iterable, Sequence
 
-from spore_planner.planner.types import INF_MS, Config, PeerView
-from spore_planner.warehouse.graph import Graph
-from spore_planner.warehouse.map import Heading
+from planning.geometry import Heading
+from planning.graph import Graph
+from planning.types import INF_MS, Config, PeerView
 
 Interval = tuple[int, int]
 

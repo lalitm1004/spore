@@ -22,9 +22,9 @@ from __future__ import annotations
 from collections.abc import Iterable
 from dataclasses import dataclass
 
-from spore_planner.planner.types import Goal, GoalKind, PeerView, RegionGossip
-from spore_planner.warehouse.graph import Graph
-from spore_planner.warehouse.map import NodeType
+from planning.geometry import NodeType
+from planning.graph import Graph
+from planning.types import Goal, GoalKind, PeerView, RegionGossip
 
 GOAL_NODE_TYPE: dict[GoalKind, NodeType] = {
     GoalKind.CHARGE: NodeType.CH,

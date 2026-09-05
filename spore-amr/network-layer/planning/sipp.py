@@ -30,11 +30,11 @@ from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from heapq import heappop, heappush
 
-from spore_planner.planner.cost import CostModel
-from spore_planner.planner.intervals import ReservationTable
-from spore_planner.planner.types import Config, PlanStatus
-from spore_planner.warehouse.graph import UNREACHABLE, Graph
-from spore_planner.warehouse.map import Heading, quarter_turns
+from planning.cost import CostModel
+from planning.geometry import Heading, quarter_turns
+from planning.graph import UNREACHABLE, Graph
+from planning.intervals import ReservationTable
+from planning.types import Config, PlanStatus
 
 NO_HEADING = -1
 """Sentinel for an unknown heading, kept an int so search keys stay comparable."""
