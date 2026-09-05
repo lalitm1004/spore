@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Spore Control Plane</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 640px; margin: 3rem auto; padding: 0 1rem; color: #1a202c; }
+    h1 { font-size: 1.4rem; }
+    label { display: block; margin-top: 1rem; font-weight: 600; }
+    input { width: 100%; padding: .5rem; margin-top: .25rem; font-size: 1rem; box-sizing: border-box; }
+    button { margin-top: 1.5rem; padding: .6rem 1.2rem; font-size: 1rem; cursor: pointer; }
+    .result { margin-top: 1.5rem; padding: 1rem; border-radius: 6px; }
+    .result.ok { background: #e6f6ec; border: 1px solid #b7e4c7; }
+    .result.err { background: #fdecea; border: 1px solid #f5c6cb; }
+    dl { display: grid; grid-template-columns: 10rem 1fr; gap: .25rem .5rem; }
+    dt { font-weight: 600; }
+  </style>
+</head>
+<body>
+  <h1>Spore Control Plane — create an order</h1>
+  <form method="post" action="/orders">
+    <label for="pickup_node">Pickup node</label>
+    <input id="pickup_node" name="pickup_node" type="number" min="0" required>
+
+    <label for="dropoff_node">Dropoff node</label>
+    <input id="dropoff_node" name="dropoff_node" type="number" min="0" required>
+
+    <label for="order_id">Order id (optional — a UUID is minted if blank)</label>
+    <input id="order_id" name="order_id" type="text" placeholder="leave blank to auto-generate">
+
+    <button type="submit">Dispatch order</button>
+  </form>
+
+  {% if result %}
+    {% if result.error %}
+      <div class="result err">
+        <strong>Error:</strong> {{ result.error }}
+      </div>
+    {% else %}
+      <div class="result ok">
+        <strong>Order dispatched</strong>
+        <dl>
+          <dt>order id</dt><dd>{{ result.order_id }}</dd>
+          <dt>pickup node</dt><dd>{{ result.pickup_node }}</dd>
+          <dt>dropoff node</dt><dd>{{ result.dropoff_node }}</dd>
+          <dt>accepted</dt><dd>{{ result.accepted }}</dd>
+          <dt>owner region</dt><dd>{{ result.owner_region }}</dd>
+          <dt>assignee</dt><dd>{{ result.assignee if result.assignee is not none else "—" }}</dd>
+          <dt>note</dt><dd>{{ result.note or "—" }}</dd>
+        </dl>
+      </div>
+    {% endif %}
+  {% endif %}
+</body>
+</html>

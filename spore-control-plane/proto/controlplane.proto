@@ -1,0 +1,52 @@
+syntax = "proto3";
+
+package controlplane;
+
+// A cargo order: move goods from one QR node to another.
+//
+// This proto is owned by the control plane. The network layer implements it;
+// the dependency is one-way and there is no import of (or coupling to) the
+// fleet's own wire schema.
+message Order {
+  // Cargo/order identifier. A UUID minted by the control plane — orders are
+  // minted by an external system, so the id cannot come from a central
+  // sequential allocator. Doubles as the idempotency key: re-submitting the
+  // same order_id is a no-op, which is what makes retries safe.
+  string order_id = 1;
+
+  // The QR node where the order starts / cargo is collected.
+  int32 pickup_node = 2;
+
+  // The QR node where cargo is delivered.
+  int32 dropoff_node = 3;
+
+  // Unix epoch millis, informational.
+  int64 timestamp = 4;
+}
+
+message DispatchAck {
+  // True iff the fleet accepted the order (not necessarily assigned yet —
+  // it may be queued for a later retry).
+  bool accepted = 1;
+
+  // The region whose leader now owns the order (reported back by the fleet —
+  // the control plane never computes this itself).
+  int32 owner_region = 2;
+
+  // Present iff a bot was assigned immediately. `optional` gives real
+  // presence because bot_id 0 is a valid bot.
+  optional int32 assignee = 3;
+
+  // Human-readable outcome: "queued", "forwarded", or an error detail.
+  string note = 4;
+}
+
+service ControlPlaneService {
+  // Submit an order to ANY bot.
+  //
+  // Routing is entirely the fleet's job: the control plane knows no regions
+  // and no leaders. A non-leader forwards to its leader; a leader resolves
+  // pickup_node's region from its own map and forwards to that region's
+  // leader. Idempotent on order_id.
+  rpc DispatchOrder(Order) returns (DispatchAck);
+}

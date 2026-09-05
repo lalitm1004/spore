@@ -1,0 +1,30 @@
+[project]
+name = "spore-control-plane"
+version = "0.1.0"
+description = "Central control plane: web UI to create cargo orders, dispatched over gRPC to the leader of the region where each order starts"
+readme = "README.md"
+authors = [
+    { name = "lalitm1004", email = "lalitm1004@gmail.com" }
+]
+requires-python = ">=3.13"
+dependencies = [
+    "fastapi>=0.141.1",
+    "grpcio>=1.83.1",
+    "grpcio-tools>=1.83.1",
+    "jinja2>=3.1.6",
+    "python-multipart>=0.0.32",
+    "uvicorn>=0.52.4",
+]
+
+[project.scripts]
+spore-control-plane = "spore_control_plane:main"
+
+[build-system]
+requires = ["uv_build>=0.12.3,<0.13.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "httpx>=0.28.1",
+    "pytest>=9.1.1",
+]
