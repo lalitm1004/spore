@@ -12,7 +12,7 @@ import pathlib
 import yaml
 
 from tools.manifest import MarkerConfig, TrackConfig
-from tools.track.marker import render_marker
+from tools.track.marker import encode_payload, render_marker
 
 DEFAULT_MANIFEST = pathlib.Path("fleet.yaml")
 DEFAULT_OUTPUT = pathlib.Path("textures/markers")
@@ -27,15 +27,33 @@ def main(argv=None) -> int:
     manifest = yaml.safe_load(args.manifest.read_text())
     track = TrackConfig.from_dict(manifest["track"])
     markers = MarkerConfig.from_dict(manifest.get("markers"))
+    args.output.mkdir(parents=True, exist_ok=True)
+    offset = track.plane_size[0] / 2.0
+
+    if track.is_graph:
+        graph = track.build_graph()
+        for node in sorted(graph.nodes.values(), key=lambda n: n.node_id):
+            payload = encode_payload(
+                node_id=node.node_id, kind=node.kind,
+                x_cm=round((node.x + offset) * 100, 1),
+                y_cm=round((node.y + offset) * 100, 1),
+                name=node.name, region_id=node.region_id,
+            )
+            render_marker(payload, markers.spec).save(
+                args.output / "node_{:03d}.png".format(node.node_id))
+        print("{} node markers".format(len(graph.nodes)))
+        spec = markers.spec
+        print("{} mm tile at {} px, {} mm QR".format(
+            spec.tile_mm, spec.size_px, spec.qr_mm))
+        return 0
 
     if not markers.nodes:
         print("no markers in {}".format(args.manifest))
         return 0
 
     centerline = track.build_centerline()
-    origin_offset = (track.plane_size[0] / 2.0, track.plane_size[1] / 2.0)
+    origin_offset = (offset, track.plane_size[1] / 2.0)
 
-    args.output.mkdir(parents=True, exist_ok=True)
     for node in markers.nodes:
         payload = node.payload(centerline, origin_offset)
         image = render_marker(payload, markers.spec)

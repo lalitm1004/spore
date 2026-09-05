@@ -35,6 +35,38 @@ class TrackImageSpec:
         )
 
 
+def render_graph(graph, spec: "TrackImageSpec", line_width: float) -> "Image.Image":
+    """Draw every lane of a graph as a dark line on a light background.
+
+    Lanes are straight, so each is one stroke. Round joints matter: a butt cap
+    leaves a notch at a junction where four lanes meet, and the IR array reads
+    that notch as the line vanishing.
+    """
+    from PIL import Image, ImageDraw
+
+    image = Image.new("RGB", (spec.width_px, spec.height_px), WHITE)
+    draw = ImageDraw.Draw(image)
+    width = round(line_width * spec.pixels_per_metre)
+
+    for (ax, ay), (bx, by) in graph_lanes(graph):
+        draw.line([spec.world_to_pixel(ax, ay), spec.world_to_pixel(bx, by)],
+                  fill=BLACK, width=width)
+
+    # Discs at the nodes, so junctions have no notch between the strokes.
+    radius = width / 2.0
+    for node in graph.nodes.values():
+        x, y = spec.world_to_pixel(node.x, node.y)
+        draw.ellipse([x - radius, y - radius, x + radius, y + radius], fill=BLACK)
+
+    return image
+
+
+def graph_lanes(graph):
+    for edge in graph.edges:
+        a, b = graph.nodes[edge.a], graph.nodes[edge.b]
+        yield (a.x, a.y), (b.x, b.y)
+
+
 def render_track(centerline, spec: TrackImageSpec, line_width: float) -> "Image.Image":
     """Draw `centerline` as a dark line on a light background.
 

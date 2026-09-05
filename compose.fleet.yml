@@ -7,9 +7,172 @@ services:
     environment:
       CONFIG: /project/config/bot_01.yaml
       MISSION_DURATION: ${MISSION_DURATION:-120}
+      NETLAYER_SEED: '0'
       ROBOT_NAME: bot_01
       SIM_HOST: sim
       TELEMETRY: /project/out/bot_01.csv
+    image: sih2026/controller:dev
+    init: true
+    mem_limit: 256m
+    user: ${DOCKER_USER:-1000:1000}
+    volumes:
+    - ./:/project
+    working_dir: /project
+  bot_02:
+    cpus: '0.5'
+    depends_on:
+    - sim
+    environment:
+      CONFIG: /project/config/bot_02.yaml
+      MISSION_DURATION: ${MISSION_DURATION:-120}
+      NETLAYER_SEED: '1'
+      ROBOT_NAME: bot_02
+      SIM_HOST: sim
+      TELEMETRY: /project/out/bot_02.csv
+    image: sih2026/controller:dev
+    init: true
+    mem_limit: 256m
+    user: ${DOCKER_USER:-1000:1000}
+    volumes:
+    - ./:/project
+    working_dir: /project
+  bot_03:
+    cpus: '0.5'
+    depends_on:
+    - sim
+    environment:
+      CONFIG: /project/config/bot_03.yaml
+      MISSION_DURATION: ${MISSION_DURATION:-120}
+      NETLAYER_SEED: '2'
+      ROBOT_NAME: bot_03
+      SIM_HOST: sim
+      TELEMETRY: /project/out/bot_03.csv
+    image: sih2026/controller:dev
+    init: true
+    mem_limit: 256m
+    user: ${DOCKER_USER:-1000:1000}
+    volumes:
+    - ./:/project
+    working_dir: /project
+  bot_04:
+    cpus: '0.5'
+    depends_on:
+    - sim
+    environment:
+      CONFIG: /project/config/bot_04.yaml
+      MISSION_DURATION: ${MISSION_DURATION:-120}
+      NETLAYER_SEED: '3'
+      ROBOT_NAME: bot_04
+      SIM_HOST: sim
+      TELEMETRY: /project/out/bot_04.csv
+    image: sih2026/controller:dev
+    init: true
+    mem_limit: 256m
+    user: ${DOCKER_USER:-1000:1000}
+    volumes:
+    - ./:/project
+    working_dir: /project
+  bot_05:
+    cpus: '0.5'
+    depends_on:
+    - sim
+    environment:
+      CONFIG: /project/config/bot_05.yaml
+      MISSION_DURATION: ${MISSION_DURATION:-120}
+      NETLAYER_SEED: '4'
+      ROBOT_NAME: bot_05
+      SIM_HOST: sim
+      TELEMETRY: /project/out/bot_05.csv
+    image: sih2026/controller:dev
+    init: true
+    mem_limit: 256m
+    user: ${DOCKER_USER:-1000:1000}
+    volumes:
+    - ./:/project
+    working_dir: /project
+  bot_06:
+    cpus: '0.5'
+    depends_on:
+    - sim
+    environment:
+      CONFIG: /project/config/bot_06.yaml
+      MISSION_DURATION: ${MISSION_DURATION:-120}
+      NETLAYER_SEED: '5'
+      ROBOT_NAME: bot_06
+      SIM_HOST: sim
+      TELEMETRY: /project/out/bot_06.csv
+    image: sih2026/controller:dev
+    init: true
+    mem_limit: 256m
+    user: ${DOCKER_USER:-1000:1000}
+    volumes:
+    - ./:/project
+    working_dir: /project
+  bot_07:
+    cpus: '0.5'
+    depends_on:
+    - sim
+    environment:
+      CONFIG: /project/config/bot_07.yaml
+      MISSION_DURATION: ${MISSION_DURATION:-120}
+      NETLAYER_SEED: '6'
+      ROBOT_NAME: bot_07
+      SIM_HOST: sim
+      TELEMETRY: /project/out/bot_07.csv
+    image: sih2026/controller:dev
+    init: true
+    mem_limit: 256m
+    user: ${DOCKER_USER:-1000:1000}
+    volumes:
+    - ./:/project
+    working_dir: /project
+  bot_08:
+    cpus: '0.5'
+    depends_on:
+    - sim
+    environment:
+      CONFIG: /project/config/bot_08.yaml
+      MISSION_DURATION: ${MISSION_DURATION:-120}
+      NETLAYER_SEED: '7'
+      ROBOT_NAME: bot_08
+      SIM_HOST: sim
+      TELEMETRY: /project/out/bot_08.csv
+    image: sih2026/controller:dev
+    init: true
+    mem_limit: 256m
+    user: ${DOCKER_USER:-1000:1000}
+    volumes:
+    - ./:/project
+    working_dir: /project
+  bot_09:
+    cpus: '0.5'
+    depends_on:
+    - sim
+    environment:
+      CONFIG: /project/config/bot_09.yaml
+      MISSION_DURATION: ${MISSION_DURATION:-120}
+      NETLAYER_SEED: '8'
+      ROBOT_NAME: bot_09
+      SIM_HOST: sim
+      TELEMETRY: /project/out/bot_09.csv
+    image: sih2026/controller:dev
+    init: true
+    mem_limit: 256m
+    user: ${DOCKER_USER:-1000:1000}
+    volumes:
+    - ./:/project
+    working_dir: /project
+  bot_10:
+    cpus: '0.5'
+    depends_on:
+    - sim
+    environment:
+      CONFIG: /project/config/bot_10.yaml
+      MISSION_DURATION: ${MISSION_DURATION:-120}
+      NETLAYER_SEED: '9'
+      ROBOT_NAME: bot_10
+      SIM_HOST: sim
+      TELEMETRY: /project/out/bot_10.csv
     image: sih2026/controller:dev
     init: true
     mem_limit: 256m

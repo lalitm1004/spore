@@ -41,6 +41,12 @@ class ControlConfig:
     max_speed: float = 20.0
     steering_limit: float = 6.0
     lost_line_timeout_s: float = 2.0
+    # How long to hold a junction waiting for the network layer before giving
+    # up and carrying straight on. A robot that is never answered must not
+    # block a lane for the rest of the run.
+    junction_timeout_s: float = 6.0
+    turn_tolerance_deg: float = 2.0
+    turn_rate: float = 4.0
     pid: PIDGains = field(default_factory=PIDGains)
 
 
@@ -84,6 +90,7 @@ class LidarConfig:
     borders_to_pass: int = 2
     max_backoff_m: float = 2.0
     departed_m: float = 0.15
+    hold_timeout_s: float = 8.0
     backoff_speed: float = 2.0
     max_range: float = 1.0
 

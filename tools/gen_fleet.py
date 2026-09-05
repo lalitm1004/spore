@@ -68,6 +68,55 @@ def robot_configs(manifest: dict) -> List[dict]:
 MARKER_LIFT = 0.001
 
 
+def graph_marker_source(manifest: dict, graph) -> str:
+    """One marker Solid per graph node.
+
+    Markers sit at nodes rather than at arclengths along a curve, because a
+    node is where a robot has a decision to make -- which is the only place a
+    marker earns the 155 mm of blind crossing it costs.
+    """
+    track = TrackConfig.from_dict(manifest["track"])
+    markers = MarkerConfig.from_dict(manifest.get("markers"))
+    side = markers.spec.tile_mm / 1000.0
+    plane = track.plane_size[0]
+
+    blocks = []
+    for node in sorted(graph.nodes.values(), key=lambda n: n.node_id):
+        # Align the tile with the first lane leaving the node, so it is square
+        # to at least one approach rather than to the world axes.
+        neighbours = graph.neighbours(node.node_id)
+        heading = graph.bearing(node.node_id, neighbours[0]) if neighbours else 0.0
+        blocks.append(MARKER_TEMPLATE.format(
+            node_id=node.node_id, x=node.x, y=node.y,
+            lift=MARKER_LIFT, heading=heading, side=side))
+    return "".join(blocks)
+
+
+MARKER_TEMPLATE = '''DEF MARKER_{node_id} Solid {{
+  translation {x:.4f} {y:.4f} {lift}
+  rotation 0 0 1 {heading:.4f}
+  children [
+    Shape {{
+      appearance PBRAppearance {{
+        baseColor 1 1 1
+        roughness 1
+        metalness 0
+        baseColorMap ImageTexture {{
+          url [
+            "../textures/markers/node_{node_id:03d}.png"
+          ]
+        }}
+      }}
+      geometry Plane {{
+        size {side} {side}
+      }}
+    }}
+  ]
+  name "marker_{node_id:03d}"
+}}
+'''
+
+
 def marker_source(manifest: dict) -> str:
     """Solids for every floor marker, each carrying its own texture.
 
@@ -211,7 +260,11 @@ DEF GROUND Solid {{
            orientation=TOP_DOWN_ORIENTATION,
            height=round(viewpoint_height(track.plane_size), 3))
 
-    body = [marker_source(manifest), obstacle_source(manifest)]
+    if track.is_graph:
+        body = [graph_marker_source(manifest, track.build_graph()),
+                obstacle_source(manifest)]
+    else:
+        body = [marker_source(manifest), obstacle_source(manifest)]
     for config in robot_configs(manifest):
         pose = config["pose"]
         body.append('''DEF {def_name} LineBot {{
@@ -269,12 +322,18 @@ def optics_config(manifest: dict) -> dict:
     overrides = robot_block.get("optics") or {}
     geometry = deep_merge(PROTO_OPTICS, overrides)
     markers = MarkerConfig.from_dict(manifest.get("markers"))
+    track = TrackConfig.from_dict(manifest["track"])
+    # A graph track puts a marker at every node, so its markers do not appear
+    # in the manifest's `markers.nodes` -- only the tile geometry does.
+    # Deriving "are there markers" from that list alone silently disabled the
+    # optics on every graph world.
+    has_markers = bool(markers.nodes) or track.is_graph
 
     height = geometry["camera_mast"] + WHEEL_RADIUS
     footprint = 2 * height * math.tan(geometry["camera_fov"] / 2)
 
     return {
-        "enabled": bool(markers.nodes),
+        "enabled": has_markers,
         "color_sensor_x": geometry["color_sensor_x"],
         "ir_array_x": 0.07,
         "camera_x": geometry["camera_x"],
@@ -288,7 +347,7 @@ def optics_config(manifest: dict) -> dict:
 
 def compose_source(manifest: dict) -> dict:
     services = {}
-    for config in robot_configs(manifest):
+    for index, config in enumerate(robot_configs(manifest)):
         name = config["name"]
         resources = config.get("resources") or {}
         services[name] = {
@@ -305,6 +364,10 @@ def compose_source(manifest: dict) -> dict:
                 "SIM_HOST": "sim",
                 "MISSION_DURATION": "${{MISSION_DURATION:-{}}}".format(
                     config.get("mission_duration_s", 120)),
+                # A distinct seed per robot: with one seed the whole fleet
+                # makes the same choice at the same junction, which is a very
+                # convincing-looking bug.
+                "NETLAYER_SEED": str(config.get("netlayer_seed", index)),
             },
             "mem_limit": resources.get("memory", "256m"),
             "cpus": resources.get("cpus", "0.5"),
@@ -343,6 +406,32 @@ def main(argv=None) -> int:
     # references a texture nobody rendered is a world that loads with white
     # squares where its codes should be, and nothing says so until a robot
     # drives over one and reads nothing.
+    track = TrackConfig.from_dict(manifest["track"])
+
+    if track.is_graph:
+        # The graph is the source for everything: the floor texture, the
+        # markers, and the map the robots read to know where lanes lead.
+        import json
+
+        from tools.track.raster import TrackImageSpec, render_graph
+        from tools.track.warehouse import to_document
+
+        graph = track.build_graph()
+        spec = TrackImageSpec(size=track.plane_size,
+                              pixels_per_metre=track.pixels_per_metre)
+        pathlib.Path("textures").mkdir(exist_ok=True)
+        render_graph(graph, spec, track.line_width).save("textures/track.png")
+
+        pathlib.Path("config").mkdir(exist_ok=True)
+        document = to_document(graph,
+                               node_spacing_cm=int(track.graph.spacing * 100),
+                               plane_m=track.plane_size[0])
+        pathlib.Path("config/warehouse.json").write_text(
+            json.dumps(document, indent=2) + "\n")
+        print("textures/track.png ({}x{} px), config/warehouse.json "
+              "({} nodes, {} edges)".format(spec.width_px, spec.height_px,
+                                            len(graph.nodes), len(graph.edges)))
+
     if not args.skip_markers:
         from tools.make_markers import main as make_markers
 

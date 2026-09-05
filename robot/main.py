@@ -30,6 +30,7 @@ from robot.marker import BorderDetector, Crossing, CrossingConfig, MarkerCrossin
 from robot.obstacle import Obstacle, ObstacleConfig, ObstacleGuard, nearest  # noqa: E402
 from robot.odometry import Odometry, Pose  # noqa: E402
 from robot.pid import PID  # noqa: E402
+from robot.turn import TurnConfig, TurnController  # noqa: E402
 from robot.protocol import LineReader, Message, encode  # noqa: E402
 from robot.telemetry import TelemetryLog  # noqa: E402
 
@@ -340,6 +341,7 @@ def main(argv=None):
         borders_to_pass=config.lidar.borders_to_pass,
         max_backoff_m=config.lidar.max_backoff_m,
         departed_m=config.lidar.departed_m,
+        hold_timeout_s=config.lidar.hold_timeout_s,
         backoff_speed=config.lidar.backoff_speed,
     )) if lidar is not None else None
 
@@ -372,6 +374,10 @@ def main(argv=None):
     reverse_pid = PID(kp=control.pid.kp * 0.4, ki=0.0, kd=control.pid.kd * 0.4,
                       output_limit=control.steering_limit)
     detector = EventDetector()
+    turner = TurnController(TurnConfig(
+        tolerance_rad=math.radians(control.turn_tolerance_deg),
+        max_rate=control.turn_rate,
+    ))
     link = SerialLink(args.link) if args.link else None
 
     status_path = args.status or ROOT / "out" / "{}.status.json".format(config.name)
@@ -388,6 +394,14 @@ def main(argv=None):
     last_steering = 0.0
     steering_average = 0.0
     border_now = False
+    awaiting_turn = False
+    awaiting_since = 0.0
+    turns_done = 0
+    degraded = False
+    turn_recovering = False
+    degraded = False
+    turn_recovered_from = 0.0
+    reading_lost_last = False
     recovery_from = None
     trip_distance = None
 
@@ -410,6 +424,15 @@ def main(argv=None):
                     running = False
                 elif command.name == "START":
                     running = True
+                elif command.name == "TURN":
+                    # The network layer has answered. Rotate in place to the
+                    # absolute heading it named, then pick the line back up.
+                    turner.start(float(command.fields.get("bearing", 0.0)), now)
+                    awaiting_turn = False
+                    print("{}: turning to {:.0f} deg for node {}".format(
+                        config.name,
+                        math.degrees(float(command.fields.get("bearing", 0.0))),
+                        command.fields.get("node")), flush=True)
 
         if have_encoders:
             odometry.update(encoders["left"].getValue(), encoders["right"].getValue())
@@ -456,6 +479,10 @@ def main(argv=None):
                 if guard is None or not guard.blocked:
                     trip_distance = None
             optics.previous_fix = (marker_read.x_mm, marker_read.y_mm)
+            # Stop and wait for a decision. Driving on and turning later would
+            # mean turning somewhere that is not the junction.
+            awaiting_turn = True
+            awaiting_since = now
             print("{}: {}".format(config.name, marker_read.summary), flush=True)
             write_status(status_path, config.name, now, distance, marker_read,
                          fix=fix, theta=heading, drifted_theta=drifted_theta)
@@ -467,6 +494,7 @@ def main(argv=None):
                     "x_cm": marker_read.x_cm,
                     "y_cm": marker_read.y_cm,
                     "region": marker_read.region_id,
+                    "heading": round(odometry.pose.theta, 5),
                 }))
 
         # A marker tile covers the line it was following, so for ~115 mm the
@@ -492,6 +520,10 @@ def main(argv=None):
         # Bounded, though: holding indefinitely just drives a circle back onto
         # the same tile, which is how this first presented -- the same marker
         # read over and over.
+        reading_lost_last = reading.lost
+        if turn_recovering and reading.lost:
+            crossing_blind = True
+
         if optics is not None and optics.crossing.state is Crossing.RECOVERING:
             if recovery_from is None:
                 recovery_from = distance
@@ -500,7 +532,46 @@ def main(argv=None):
         else:
             recovery_from = None
 
-        if guard is not None and guard.blocked:
+        # Reacquiring the new lane after a turn. The robot is pointed down it
+        # by construction, so hold course rather than running the lost-line
+        # search, which would immediately spin it back off.
+        if turn_recovering:
+            if not reading_lost_last:
+                turn_recovering = False
+            elif distance - turn_recovered_from > RECOVERY_BUDGET_M:
+                turn_recovering = False
+
+        if turner.active:
+            # Turning owns the motors. There is no line to follow mid-rotation,
+            # so the heading estimate is the only feedback -- which is why the
+            # turn happens immediately after a marker fix rather than before.
+            turn_steering, turn_done, turn_timeout = turner.update(
+                odometry.pose.theta, now)
+            if turn_timeout:
+                print("{}: turn timed out".format(config.name), flush=True)
+            if turn_done or turn_timeout:
+                turns_done += 1
+                turn_recovering = True
+                turn_recovered_from = distance
+            error, output = 0.0, pid.update(error=0.0, dt=dt)
+            steering, base = turn_steering, 0.0
+            lost_since = None
+            counts = front_end.update(now, [s.getValue() for s in sensors])
+            reading = estimator.estimate(counts)
+        elif awaiting_turn:
+            # Stopped on the node, waiting to be told where to go. The wait is
+            # bounded: a robot that is never answered should not hold a
+            # junction for the rest of the run.
+            if now - awaiting_since > control.junction_timeout_s:
+                print("{}: no decision after {:.0f}s, carrying on".format(
+                    config.name, control.junction_timeout_s), flush=True)
+                awaiting_turn = False
+            error, output = 0.0, pid.update(error=0.0, dt=dt)
+            steering, base = 0.0, 0.0
+            lost_since = None
+            counts = front_end.update(now, [s.getValue() for s in sensors])
+            reading = estimator.estimate(counts)
+        elif guard is not None and guard.blocked:
             # The reflex owns the motors. Retreating to a node means driving
             # each wheel back toward the rotation it had there: a differential
             # drive is path-reversible, so replaying both shafts retraces the
@@ -532,6 +603,16 @@ def main(argv=None):
         elif not running:
             error, steering, base = 0.0, 0.0, 0.0
             output = pid.update(error=0.0, dt=dt)
+        elif degraded:
+            # Halted after losing the line. Still stepping, still watching: if
+            # the line comes back -- another robot moves off it, or the reflex
+            # nudges us -- pick it up and carry on.
+            error, output = 0.0, pid.update(error=0.0, dt=dt)
+            steering, base = 0.0, 0.0
+            if not reading.lost:
+                print("{}: line found, resuming".format(config.name), flush=True)
+                degraded = False
+                lost_since = None
         elif crossing_blind:
             # Dead reckoning: keep the last good steering and keep moving. The
             # lost-line timer must not run here -- the line is absent by
@@ -558,9 +639,14 @@ def main(argv=None):
             else:
                 lost_since = now if lost_since is None else lost_since
             if lost_since is not None and now - lost_since >= control.lost_line_timeout_s:
-                print("{}: line lost for {:.1f}s, stopping".format(
-                    config.name, control.lost_line_timeout_s), flush=True)
-                break
+                # Halt, but keep stepping. Leaving the loop ends the controller
+                # process, and a `synchronization TRUE` robot whose controller
+                # exits stops Webots advancing -- for every other robot too.
+                # One robot losing the line must not freeze the fleet.
+                if not degraded:
+                    print("{}: line lost for {:.1f}s, halted".format(
+                        config.name, control.lost_line_timeout_s), flush=True)
+                    degraded = True
             error = last_position
             output = pid.update(error=error, dt=dt)
             steering = control.steering_limit * (1.0 if last_position >= 0 else -1.0)
@@ -591,9 +677,14 @@ def main(argv=None):
             # losses in a run were in RECOVERING -- past the tile, reacquiring
             # the line -- and those were enough to throttle the robot to a
             # crawl on their own.
+            # Turning and waiting at a junction are also expected absences.
+            # There is no line under the array mid-rotation, and reporting that
+            # made the companion throttle after every single turn -- the fleet
+            # ground down to 0.013 m/s.
             expected_absence = (
                 (optics is not None and optics.crossing.state is not Crossing.CLEAR)
                 or (guard is not None and guard.blocked)
+                or turner.active or awaiting_turn or turn_recovering
             )
             for event in detector.update(now, reading.lost and not expected_absence,
                                          error, steering):

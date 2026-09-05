@@ -150,3 +150,25 @@ def test_parked_robot_does_not_resume_on_its_own_retreat():
 def test_thresholds_that_would_chatter_are_rejected():
     with pytest.raises(ValueError, match="chatter"):
         ObstacleConfig(stop_m=0.30, clear_m=0.20)
+
+
+def test_holding_gives_up_eventually():
+    """Waiting for the obstacle to move works when it is a carton. It does not
+    when it is another robot that is also waiting -- neither moves, and the
+    pair is deadlocked. Measured with ten robots and no coordination: one spent
+    69% of a run parked behind another.
+    """
+    guard = ObstacleGuard(ObstacleConfig(decel_s=0.0, pause_s=0.0, accel_s=0.0,
+                                         hold_timeout_s=5.0))
+    guard.update(0.15, 0.0, False, 0.0, cruise_speed=6.0)   # STOPPING
+    guard.update(0.15, 0.1, False, 0.0)                     # PAUSED
+    guard.update(0.15, 0.2, False, 0.1)                     # BACKING
+    guard.update(0.15, 0.3, True, 0.2)
+    guard.update(0.15, 0.4, False, 0.3)
+    guard.update(0.15, 0.5, True, 0.4)                      # parked
+    assert guard.state is Obstacle.HOLDING
+
+    # The obstacle never moves -- range is unchanged throughout.
+    assert guard.update(0.15, 3.0, False, 0.4) is Obstacle.HOLDING
+    assert guard.update(0.15, 6.0, False, 0.4) is Obstacle.CLEAR
+    assert guard.timeouts == 1
