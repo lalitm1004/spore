@@ -1,0 +1,160 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://spore.dev/schemas/amr/robot-to-network.schema.json",
+  "title": "AMR Robot to Network Message",
+  "description": "Ground-truth interface for messages sent from a warehouse robot (AMR) to the network controller.",
+  "$ref": "#/$defs/RobotToNetwork",
+  "$defs": {
+    "Id": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "CargoId": {
+      "type": "string",
+      "format": "uuid",
+      "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+      "description": "Cargo/order identifier. Intentionally a UUID rather than Id: orders are minted by an external system, so IDs cannot come from a central sequential allocator."
+    },
+    "Timestamp": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "CargoState": {
+      "type": "string",
+      "enum": ["PICKUP", "DROPOFF", "EN_ROUTE"]
+    },
+    "Cargo": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["cargo_id", "state"],
+      "properties": {
+        "cargo_id": { "$ref": "#/$defs/CargoId" },
+        "state": { "$ref": "#/$defs/CargoState" }
+      }
+    },
+    "MissionPark": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type"],
+      "properties": {
+        "type": { "const": "PARK" }
+      }
+    },
+    "MissionCharge": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type"],
+      "properties": {
+        "type": { "const": "CHARGE" }
+      }
+    },
+    "MissionHold": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type"],
+      "properties": {
+        "type": { "const": "HOLD" }
+      }
+    },
+    "MissionIdle": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type"],
+      "properties": {
+        "type": { "const": "IDLE" }
+      }
+    },
+    "MissionCargo": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "cargo"],
+      "properties": {
+        "type": { "const": "CARGO" },
+        "cargo": { "$ref": "#/$defs/Cargo" }
+      }
+    },
+    "Mission": {
+      "oneOf": [
+        { "$ref": "#/$defs/MissionPark" },
+        { "$ref": "#/$defs/MissionCharge" },
+        { "$ref": "#/$defs/MissionHold" },
+        { "$ref": "#/$defs/MissionIdle" },
+        { "$ref": "#/$defs/MissionCargo" }
+      ]
+    },
+    "WarningLowBattery": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "percentage"],
+      "properties": {
+        "type": { "const": "LOW_BATTERY" },
+        "percentage": { "type": "number", "minimum": 0, "maximum": 100 }
+      }
+    },
+    "WarningObstacle": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "current_node_id"],
+      "properties": {
+        "type": { "const": "OBSTACLE" },
+        "current_node_id": { "$ref": "#/$defs/Id" }
+      }
+    },
+    "Warning": {
+      "oneOf": [
+        { "$ref": "#/$defs/WarningLowBattery" },
+        { "$ref": "#/$defs/WarningObstacle" }
+      ]
+    },
+    "ErrorType": {
+      "type": "string",
+      "enum": ["MOTOR_ERROR", "CAMERA_ERROR", "LIDAR_ERROR", "LOCATION_UNKNOWN", "MISC_ERROR"]
+    },
+    "Error": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type"],
+      "properties": {
+        "type": { "$ref": "#/$defs/ErrorType" }
+      }
+    },
+    "Fault": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "warning": { "$ref": "#/$defs/Warning" },
+        "error": { "$ref": "#/$defs/Error" }
+      }
+    },
+    "Battery": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["percentage"],
+      "properties": {
+        "percentage": { "type": "number", "minimum": 0, "maximum": 100 }
+      }
+    },
+    "Telemetry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["battery"],
+      "properties": {
+        "battery": { "$ref": "#/$defs/Battery" }
+      }
+    },
+    "RobotToNetwork": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["bot_id", "region_id", "latest_node_id", "mission", "telemetry", "timestamp"],
+      "properties": {
+        "bot_id": { "$ref": "#/$defs/Id" },
+        "region_id": { "$ref": "#/$defs/Id" },
+        "latest_node_id": { "$ref": "#/$defs/Id" },
+        "mission": { "$ref": "#/$defs/Mission" },
+        "telemetry": { "$ref": "#/$defs/Telemetry" },
+        "fault": { "$ref": "#/$defs/Fault" },
+        "timestamp": { "$ref": "#/$defs/Timestamp" }
+      }
+    }
+  }
+}
