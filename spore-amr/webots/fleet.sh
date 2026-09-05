@@ -90,7 +90,12 @@ case "${1:-help}" in
     # downloads no textures at all. It costs the simulator CPU that
     # RENDERING=off saves, which is the honest trade for being able to watch:
     # use this to look at the fleet, and plain `up` to measure it.
-    RENDERING=on STREAM_MODE=mjpeg exec "$0" up
+    RENDERING=on STREAM_MODE=mjpeg "$0" up
+    say ""
+    say "In the viewer, set Mode to MJPEG before connecting."
+    say "W3D renders in the browser and pulls every texture across: 83 marker"
+    say "tiles plus the floor is 482 MB decompressed, and the tab stalls at"
+    say "\"Downloading assets: 97%\". MJPEG renders here and sends frames."
     ;;
 
   down|stop)

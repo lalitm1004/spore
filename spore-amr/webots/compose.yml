@@ -41,6 +41,17 @@ services:
       TEMP_NETWORK_INTERFACE_SCHEMA_DIR: /schemas
   sim:
     image: sih2026/sim:dev
+    # The host has a GPU and the container was not being given it, so Webots
+    # fell back to software GL through Xvfb -- which cannot load this world at
+    # all with rendering on: 83 marker tiles at 1024x1024 plus an 8192x4096
+    # floor is 482 MB of texture. Handing over the render node is what makes
+    # `./fleet.sh view` (server-side mjpeg) possible without shrinking any
+    # texture, and so without touching the optics budget.
+    #
+    # Only the render nodes, not the card nodes: rendering needs no mode
+    # setting, and renderD* is world-accessible where card* is not.
+    devices:
+      - /dev/dri:/dev/dri
     build:
       context: .
       dockerfile: docker/sim.Dockerfile
