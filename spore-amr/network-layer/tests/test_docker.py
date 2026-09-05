@@ -170,11 +170,35 @@ class DockerFleet:
     def reset(self, cs, nodes=None) -> None:
         """Put shared bots back to a known state between scenarios.
 
-        Dropping a job uses the fleet's own rule rather than a back door: a bot
-        that reports a hard fault before pickup abandons its job (§14.4). So a
-        fault clears the job, and the second inject clears the fault.
+        A job in hand has to be **finished**, not dropped. Faulting a bot before
+        pickup makes the fleet requeue the job by its own rule (§14.4), which is
+        correct behaviour and exactly wrong here: the work comes straight back
+        and lands on the next scenario's bot. After a few of those nothing is
+        free and every routing scenario fails with "nobody took the job", which
+        is what happened the first time these shared fleets carried real jobs.
+        Delivering is the only exit that empties the queue.
+
+        `_advance_job` reads the cargo state the robot reports and not the node
+        it stands on, so this delivers wherever the bot happens to be. That is a
+        liberty a real robot could not take, and it is the last one left here --
+        the canonical driver removes it along with the rest of the injection.
+
+        The fault trick stays for what it is actually good at: clearing a goal
+        on a bot that never had a job, and clearing a fault a scenario injected.
         """
         nodes = nodes or _map_nodes(PARK, len(cs) * 4)[:: 4]
+        for c, node in zip(cs, nodes, strict=False):
+            held = self.state(c).current_job_id
+            if not held:
+                continue
+            self.inject(c, latest_node_id=node, region_id=PARK, battery=90.0,
+                        state="IDLE", mission="CARGO", job_id=held,
+                        cargo_state="DROPOFF")
+            self.inject(c, latest_node_id=node, region_id=PARK, battery=90.0,
+                        state="IDLE", mission="IDLE")
+            assert wait_until(lambda c=c: not self.state(c).current_job_id, 20,
+                              what=f"job {held} to be crossed off"), \
+                f"bot still holds {held}; the next scenario will find nobody free"
         for c, node in zip(cs, nodes, strict=False):
             self.inject(c, latest_node_id=node, region_id=PARK, battery=90.0,
                         state="IDLE", mission="IDLE", fault="MOTOR_ERROR")
@@ -289,6 +313,23 @@ FAST_TIMINGS = {
     "T_JOB_RETRY": 1.0,
 }
 
+#: The shared fleets get one change: a stall clock long enough to ignore.
+#:
+#: A bot on a shared fleet is put where a scenario wants it by injection and
+#: then stands there while the scenario asks its questions. The fleet is right
+#: to call that a stall -- a real robot given a goal and not moving for three
+#: seconds is stuck -- and rung 3 raises NEEDS_ATTENTION, which before pickup
+#: means the job is dropped and requeued (§14.4). So a routing scenario that
+#: pauses to wait for anything would be told `no job` by the bot it had just
+#: given one to, which is a true fact about a fleet nobody is driving and has
+#: nothing to do with what the scenario is asking.
+#:
+#: The scenarios that *are* about stalling (D1-D3) launch their own fleet on
+#: FAST_TIMINGS, so the short clock is still exercised where it means something.
+#: The canonical driver removes the need for this: a robot that really drives
+#: never looks stalled.
+SHARED_TIMINGS = dict(FAST_TIMINGS, T_STALL=30.0)
+
 
 def _shared(client, image, count: int, region: int):
     """A fleet several scenarios share, built once and reset between them.
@@ -299,7 +340,7 @@ def _shared(client, image, count: int, region: int):
     share one fleet per shape.
     """
     f = DockerFleet(client, image)
-    cs = f.launch(count, region, **FAST_TIMINGS)
+    cs = f.launch(count, region, **SHARED_TIMINGS)
     assert wait_until(lambda: f.converged(cs, region), 30, what="the shared fleet to converge")
     yield f, cs
     f.close()
@@ -318,6 +359,22 @@ def two_bots(client, image):
 @pytest.fixture(scope="module")
 def three_bots(client, image):
     yield from _shared(client, image, 3, PARK)
+
+
+def _hop_seconds() -> float:
+    """How long a robot really needs to move one node, plus a little.
+
+    Derived from the same numbers the claim window is, so the two cannot drift:
+    if a hop ever gets cheaper or a claim longer, this follows. A harness that
+    moves robots faster than this is teleporting them, and every invariant about
+    two robots and one node stops meaning anything.
+    """
+    from planning.kinematics import DEFAULT_KINEMATICS
+    from warehouse.map import WarehouseMap
+    import config
+
+    spacing = WarehouseMap.load(config.WAREHOUSE_MAP).node_spacing
+    return (DEFAULT_KINEMATICS.cruise_ms(spacing) + config.PLAN_SAFETY * 1000) / 1000 + 0.2
 
 
 def _map_nodes(region: int, n: int) -> list[int]:
@@ -601,20 +658,8 @@ def test_A1_a_bot_with_no_job_still_answers(one_bot):
 @pytest.mark.docker
 def test_A2_a_bot_given_a_job_is_routed_towards_it(fleet):
     """The whole point: a job becomes turns, one node at a time."""
-    cs = fleet.launch(2, PARK, **FAST_TIMINGS)
-    assert wait_until(lambda: fleet.converged(cs, PARK), 30, what="converge")
-    nodes = _map_nodes(PARK, 8)
-    start, pickup, dropoff = nodes[0], nodes[6], nodes[7]
-
-    for c in cs:
-        fleet.inject(c, latest_node_id=start, region_id=PARK, battery=90.0,
-                     state="IDLE", mission="IDLE")
-    assert wait_until(lambda: all(p.mission == "IDLE" for p in fleet.state(cs[0]).roster),
-                      20, what="the roster to catch up with the injected state")
-    assert fleet.submit_job(cs[0], "A2", pickup, dropoff).accepted
-
-    holder = _holder_of(fleet, cs, "A2")
-    assert holder is not None, "nobody took the job"
+    start = _map_nodes(PARK, 8)[0]
+    cs, holder = _routing_fleet(fleet, "A2", start)
     reply = fleet.ask(holder, _query(start, _neighbours(start)))
     assert reply["kind"] in ("PROCEED", "REROUTE", "WAIT", "YIELD"), reply
     if reply["kind"] in ("PROCEED", "REROUTE"):
@@ -793,48 +838,86 @@ def _corridor(min_hops: int = 6):
     raise AssertionError(f"no corridor of {min_hops}+ hops on this map")
 
 
-def _bot_with_a_goal(fleet, cs, job_id: str, at: int):
-    """Give one bot a real job, stand it on `at`, and return its container.
+def _move(fleet, c, node: int, region: int = PARK):
+    """Move a bot without clobbering everything else about it.
 
-    Every routing scenario has to do this first. A bot with no job answers
-    `WAIT "no job"` before the planner is ever consulted, so asking a jobless
-    bot for a turn proves the socket replies and nothing more -- and an
-    assertion written as `if kind in ("PROCEED", "REROUTE")` then never runs at
-    all. That is not hypothetical: it is how F2 passed for weeks while the bot
-    drove happily into nodes it had been told were impassable.
+    `InjectRobotState` replaces the whole state, and proto3 defaults make every
+    omitted field zero -- so injecting a node on its own reports a flat battery
+    and an empty mission, and a bot that was mid-job promptly abandons it as if
+    it had failed. Which is correct behaviour, and a trap: the scenario asks for
+    a turn and is told `no job` by a bot it had just given one to.
 
-    Hence `_planned()` below, which every one of these scenarios now calls on
-    the reply before trusting it.
-
-    The dispatcher chooses the holder, not the scenario, so the job goes out
-    first and the winner is placed afterwards.
+    Echo back what the bot already believes, with the node changed.
     """
-    far = _map_nodes(PARK, 40)
-    for c in cs:
-        fleet.inject(c, latest_node_id=at, region_id=PARK, battery=90.0,
-                     state="IDLE", mission="IDLE")
-    assert wait_until(lambda: all(p.mission == "IDLE" for p in fleet.state(cs[0]).roster),
+    st = fleet.state(c)
+    # Only a cargo state that is still *in flight* is worth echoing. A leftover
+    # DELIVERED from the previous scenario's job, replayed onto this one, tells
+    # the fleet the new job is already finished -- it gets crossed off, the goal
+    # goes with it, and the scenario is answered `no job` by a bot it had just
+    # given work to. Found exactly that way: F6 passed alone and failed after F3.
+    in_flight = st.cargo_state if st.cargo_state in ("PICKUP", "EN_ROUTE", "DROPOFF") else ""
+    fleet.inject(c, latest_node_id=node, region_id=region, battery=90.0,
+                 state="IDLE", mission="IDLE",
+                 job_id=st.current_job_id, cargo_state=in_flight)
+
+
+def _routing_fleet(fleet, job_id: str, at: int, count: int = 2, region: int = PARK):
+    """A fleet of this scenario's own, one bot holding a job and standing on `at`.
+
+    Two things every routing scenario needs, and one it must not have.
+
+    **A goal.** A bot with no job answers `WAIT "no job"` before the planner is
+    ever consulted, so asking a jobless bot for a turn proves the socket replies
+    and nothing more -- and an assertion written as
+    `if kind in ("PROCEED", "REROUTE")` then never runs at all. That is not
+    hypothetical: it is how F2 passed for weeks while the bot drove happily into
+    nodes it had been told were impassable. Hence `_planned()` below, which
+    every one of these scenarios calls on the reply before trusting it.
+
+    **A clear floor.** The bots start on distinct nodes, none of them `at`. Two
+    robots on one node is a state driving cannot produce; both claim it and the
+    no-overlap invariant fails, correctly.
+
+    **Not a shared fleet.** These scenarios were tried on one and it does not
+    hold: a job left outstanding is requeued onto the next scenario's bot, a
+    delivered cargo state replayed onto a fresh job closes it on arrival, and a
+    departed bot's claim outlives the move now that a claim covers a traversal.
+    Each of those is the fleet behaving correctly, and together they made a
+    suite that passed in isolation and failed in company -- which is worse than
+    one that takes an extra few seconds. The canonical driver removes the need
+    for the isolation by removing the teleporting that causes it.
+    """
+    cs = fleet.launch(count, region, **SHARED_TIMINGS)
+    assert wait_until(lambda: fleet.converged(cs, region), 30, what="converge")
+
+    far = _map_nodes(region, 40)
+    spare = [n for n in far if n not in (at, far[-2], far[-1])]
+    for i, c in enumerate(cs):
+        fleet.inject(c, latest_node_id=spare[-(i + 1)], region_id=region,
+                     battery=90.0, state="IDLE", mission="IDLE")
+    leader = fleet.leaders(cs)[0]
+    assert wait_until(lambda: all(p.mission == "IDLE" for p in fleet.state(leader).roster),
                       20, what="the roster to settle before dispatch")
-    assert fleet.submit_job(cs[0], job_id, far[-2], far[-1]).accepted
+
+    assert fleet.submit_job(leader, job_id, far[-2], far[-1]).accepted
     holder = _holder_of(fleet, cs, job_id)
     assert holder is not None, "nobody took the job, so no bot has a goal to plan toward"
-    fleet.inject(holder, latest_node_id=at, region_id=PARK)
-    # Park everyone else out of the way. They had to start beside the holder to
-    # be candidates for the job, but leaving them there makes every scenario a
-    # congestion scenario: their claims sit on the very lanes under test, and a
-    # test about obstructions would be measuring peer traffic instead. The
-    # scenarios that *want* a second bot in the way place it themselves.
-    for c in cs:
-        if c is not holder:
-            fleet.inject(c, latest_node_id=far[0], region_id=PARK, battery=90.0,
-                         state="IDLE", mission="IDLE")
-    return holder
+    _move(fleet, holder, at, region)
+
+    # A bot that has moved still holds its old node until the claim runs out,
+    # and that window is now a full traversal rather than two announce periods.
+    mine = fleet.state(holder).bot_id
+    assert wait_until(
+        lambda: not any(r.node_id == at and r.bot_id != mine
+                        for r in fleet.state(holder).reservations),
+        20, what=f"peer claims on node {at} to lapse")
+    return cs, holder
 
 
 def _planned(reply, where: str = ""):
     """Assert the planner actually ran, and hand the reply back.
 
-    Guards the vacuous-pass hole described in `_bot_with_a_goal`: a scenario
+    Guards the vacuous-pass hole described in `_routing_fleet`: a scenario
     that means to test routing must fail loudly if the bot never routed,
     rather than skipping its own assertion.
     """
@@ -847,19 +930,8 @@ def _planned(reply, where: str = ""):
 @pytest.mark.docker
 def test_C1_a_job_becomes_a_sequence_of_turns(fleet):
     """Every node on the way is answered, and each answer names a real lane."""
-    cs = fleet.launch(2, PARK, **FAST_TIMINGS)
-    assert wait_until(lambda: fleet.converged(cs, PARK), 30, what="converge")
-    nodes = _map_nodes(PARK, 12)
-
-    for c in cs:
-        fleet.inject(c, latest_node_id=nodes[0], region_id=PARK, battery=90.0,
-                     state="IDLE", mission="IDLE")
-    assert wait_until(lambda: all(p.mission == "IDLE" for p in fleet.state(cs[0]).roster), 20)
-    assert fleet.submit_job(cs[0], "C1", nodes[6], nodes[7]).accepted
-    holder = _holder_of(fleet, cs, "C1")
-    assert holder is not None
-
     route = _corridor(4)[:5]
+    cs, holder = _routing_fleet(fleet, "C1", route[0])
     answers = fleet.decisions(holder, route)
     assert all(a is not None for a in answers), "a node went unanswered"
     assert all(a["kind"] in ("PROCEED", "REROUTE", "WAIT", "YIELD") for a in answers)
@@ -896,14 +968,12 @@ def test_C2_the_goal_moves_to_the_dropoff_once_the_cargo_is_aboard(fleet):
 
 
 @pytest.mark.docker
-def test_C3_a_neighbours_claim_is_respected(two_bots):
+def test_C3_a_neighbours_claim_is_respected(fleet):
     """Tier 1: a declared claim is a promise, and the route honours it."""
-    fleet, cs = two_bots
-    fleet.reset(cs)
     corridor = _corridor(6)
     ours, theirs = corridor[0], corridor[1]
 
-    ours_c = _bot_with_a_goal(fleet, cs, "C3", ours)
+    cs, ours_c = _routing_fleet(fleet, "C3", ours)
     other_c = next(c for c in cs if c is not ours_c)
     fleet.inject(other_c, latest_node_id=theirs, region_id=PARK, battery=90.0,
                  state="IDLE", mission="IDLE")
@@ -1415,15 +1485,13 @@ def test_E2_three_bots_on_one_node_still_settle_on_one(three_bots):
 
 
 @pytest.mark.docker
-def test_E4_a_following_bot_does_not_close_up_on_the_one_ahead(two_bots):
+def test_E4_a_following_bot_does_not_close_up_on_the_one_ahead(fleet):
     """The overlapping-claim rule keeps a node held until the robot is fully
     inside the next one, so a follower cannot arrive early."""
-    fleet, cs = two_bots
-    fleet.reset(cs)
     corridor = _corridor(6)
     leader_node, follower_node = corridor[2], corridor[1]
     # The follower is the one doing the routing, so the job has to land on it.
-    follower_c = _bot_with_a_goal(fleet, cs, "E4", follower_node)
+    cs, follower_c = _routing_fleet(fleet, "E4", follower_node)
     ahead_c = next(c for c in cs if c is not follower_c)
     fleet.inject(ahead_c, latest_node_id=leader_node, region_id=PARK, battery=90.0,
                  state="IDLE", mission="IDLE")
@@ -1441,7 +1509,7 @@ def test_E4_a_following_bot_does_not_close_up_on_the_one_ahead(two_bots):
 # F. Redirections (docs/scenarios.md F)
 
 @pytest.mark.docker
-def test_F2_an_obstruction_is_routed_around(two_bots):
+def test_F2_an_obstruction_is_routed_around(fleet):
     """The planner has always supported obstructions; nothing fed it one until
     now. See ObstructionMsg in fleet.proto for what this shortcut skips.
 
@@ -1450,10 +1518,8 @@ def test_F2_an_obstruction_is_routed_around(two_bots):
     that wire is connected, so it takes the lane it is given rather than
     tolerating a bot that never planned.
     """
-    fleet, cs = two_bots
-    fleet.reset(cs)
     node = _map_nodes(PARK, 1)[0]
-    ours = _bot_with_a_goal(fleet, cs, "F2", node)
+    cs, ours = _routing_fleet(fleet, "F2", node)
 
     before = _planned(fleet.ask(ours, _query(node, _neighbours(node))), "before the block")
     assert before["kind"] in ("PROCEED", "REROUTE"), \
@@ -1471,13 +1537,11 @@ def test_F2_an_obstruction_is_routed_around(two_bots):
 
 
 @pytest.mark.docker
-def test_F3_clearing_an_obstruction_opens_the_lane_again(two_bots):
+def test_F3_clearing_an_obstruction_opens_the_lane_again(fleet):
     """A blockage that is gone must stop costing anything, or the fleet slowly
     forgets lanes it can use."""
-    fleet, cs = two_bots
-    fleet.reset(cs)
     node = _map_nodes(PARK, 1)[0]
-    ours = _bot_with_a_goal(fleet, cs, "F3", node)
+    cs, ours = _routing_fleet(fleet, "F3", node)
     lane = list(_neighbours(node).values())[0]
 
     fleet.obstruct(ours, lane, level=1.0)
@@ -1516,7 +1580,7 @@ def test_F4_a_bot_that_migrates_replans_on_arrival(fleet):
 
 
 @pytest.mark.docker
-def test_F6_a_peers_claim_between_two_questions_changes_the_answer(two_bots):
+def test_F6_a_peers_claim_between_two_questions_changes_the_answer(fleet):
     """Traffic is not static between one node and the next, and the answer has
     to move with it.
 
@@ -1527,11 +1591,9 @@ def test_F6_a_peers_claim_between_two_questions_changes_the_answer(two_bots):
     two seconds away could arrive. `ReservationSender._hold_ms` now covers a
     traversal, so the shared fleet is enough and this needs no clock of its own.
     """
-    fleet, cs = two_bots
-    fleet.reset(cs)
     corridor = _corridor(6)
     ours = corridor[0]
-    ours_c = _bot_with_a_goal(fleet, cs, "F6", ours)
+    cs, ours_c = _routing_fleet(fleet, "F6", ours)
     other_c = next(c for c in cs if c is not ours_c)
 
     first = _planned(fleet.ask(ours_c, _query(ours, _neighbours(ours))), "on the first ask")
@@ -1664,9 +1726,16 @@ def test_E6_no_node_is_ever_held_by_two_bots_at_once(three_bots):
 
     # Shuffle them along the corridor and re-check after every move: a single
     # snapshot could miss an overlap that existed only between two of them.
+    #
+    # One step per hop time, and that is not a tuned number. A robot holds the
+    # node it is on until it is fully inside the next, so a claim covers a whole
+    # traversal -- move a bot sooner than that and the previous occupant is
+    # still legitimately holding the node it just left. The overlap is then
+    # real, and caused entirely by the harness moving robots faster than robots
+    # move. Nothing about the fleet is being tested at 0.4 s.
     for step in range(3):
         for c, node in zip(cs, corridor[step:step + 3], strict=False):
             fleet.inject(c, latest_node_id=node, region_id=PARK, battery=90.0,
                          state="MOVING", mission="IDLE")
-        time.sleep(0.4)
+        time.sleep(_hop_seconds())
         fleet.assert_no_overlap(cs)
