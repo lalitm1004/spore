@@ -87,6 +87,19 @@ Node types: `PT` (pass-through), `TR` (transfer/pickup/dropoff), `CH` (charging)
 
 The `region_id` from the QR code is the ground truth for which region a bot belongs to. When a bot scans a QR code with a different `region_id` than its current one, it triggers automatic migration.
 
+**This is the fleet's location interface, and everything else is downstream of
+it.** A scan reaches the network layer as a `RobotToNetwork` on the robot link
+(§16.1), becomes `latest_node_id` and extends `node_trail`, and goes out in
+every heartbeat — so the leader's roster, and through it every bot in the
+region, is built on what the robots actually read off the floor.
+
+That path is worth reading once in full, because when it is broken nothing
+raises: node `0` is a legal-looking node, so a fleet with no position keeps
+running and keeps being wrong. Reservations quietly hold nothing, "nearest free
+bot" quietly becomes priority order, migration quietly never fires.
+[`docs/location.md`](docs/location.md) has the whole path and the table of what
+each failure looks like.
+
 ---
 
 ## 3. Services and RPCs
@@ -118,7 +131,7 @@ The workhorse. Bot sends its state every `T_HB`. Leader responds with the full r
 |---|---|---|
 | `bot_id` | int32 | Who's sending |
 | `region_id` | int32 | Which region |
-| `latest_node_id` | int32 | Last QR node scanned (ground-truth location) |
+| `latest_node_id` | int32 | Last QR node scanned (ground-truth location), as reported by the robot on the link in §16.1 — see §2 |
 | `node_trail` | repeated int32 | The last `NODE_TRAIL_LEN` (3) distinct nodes, newest first; `node_trail[0] == latest_node_id`. Two points give a heading, so every bot can see which way its region-mates are moving |
 | `state` | string | FSM state: IDLE, MOVING, FAULTED, COMMS_LONG, etc. |
 | `battery` | float | Current battery percentage (0–100) |
@@ -773,8 +786,7 @@ early; a successful `MigrationJoin` clears `pending_incoming` early.
 | `T_DEPARTURE` | 2s | How long a departing bot waits for its leader to ack |
 | `GRPC_WORKERS` | 32 | Server worker threads |
 | `T_STALL` | 6 × T_HB = 6s | Commanded but not moving for this long is a stall (§16) |
-| `ROBOT_SOCKET` | /tmp/spore-robot.sock | Unix socket the companion asks for turns on (§16) |
-| `ROBOT_SOCKET_TIMEOUT` | 5s | How long the robot blocks on a decision; every WAIT stays under it |
+| `ROBOT_PATIENCE` | 5s | How long a robot waits at a junction before driving on by itself. Its firmware owns this, not us; every WAIT stays under it, or a hold becomes a robot that leaves halfway through one (§16) |
 | `ROUTE_ALTERNATES` | 3 | Alternative routes kept per job, stored as diffs (§16) |
 | `HOPS_CACHE_SIZE` | 64 | Distance tables cached per source node; bounded on purpose (§16) |
 | `BATTERY_CRITICAL` | 15% | Below this the planner weights charge over speed (§16) |
@@ -980,43 +992,18 @@ service ReservationService {
 
 // --- Admin: introspection and robot-state injection ---
 // For operators and the Docker test harness. Only served when ADMIN_ENABLED=1
-// (the virtual network refuses it otherwise). InjectRobotState feeds the
-// bot's RobotSource exactly as a real robot bridge would.
+// (the virtual network refuses it otherwise).
+//
+// Read-only. It used to carry InjectRobotState and InjectObstruction, which put
+// a robot snapshot or a blockage straight into the bot around the QR read, the
+// companion and the wire. A robot reports over spore.network.v1.RobotNetwork
+// now, like a robot; see proto/robot.proto and §16.1.
 
 service AdminService {
   rpc GetState(Empty)                     returns (BotState);
-  rpc InjectRobotState(RobotStateMsg)     returns (Empty);
-  rpc InjectObstruction(ObstructionMsg)   returns (Empty);
-}
-
-// A blockage pushed straight into the planner, for tests and operators.
-//
-// Deliberately a shortcut, and worth being honest about: the real path does not
-// exist yet. `robot-to-network.schema.json` carries the node in its OBSTACLE
-// warning, but `RobotState.fault` is a flat string, so the node is lost on the
-// way in and nothing ever builds one of these from what a robot reported. This
-// exercises how the planner *responds* to a blockage, not how it hears about
-// one. Clearing is `level = 0`.
-message ObstructionMsg {
-  int32 node_id = 1;
-  // 0 clears; at or above `obstruction_block_level` the node is impassable;
-  // below it the node is merely expensive, so a robot still routes through a
-  // lightly obstructed lane when the alternative is much worse.
-  float level   = 2;
 }
 
 message Empty {}
-
-message RobotStateMsg {
-  int32  latest_node_id = 1;
-  int32  region_id      = 2;
-  float  battery        = 3;
-  string state          = 4;
-  string mission        = 5;
-  string fault          = 6;
-  string job_id         = 7;
-  string cargo_state    = 8;
-}
 
 message BotState {
   int32  bot_id             = 1;
@@ -1164,6 +1151,276 @@ message MigrationJoinAck {
   bool                   accepted       = 1;
   repeated PeerRecord    region_peers   = 2;
   repeated LeaderRecord  other_leaders  = 3;
+}
+```
+
+---
+
+### 11.1 The robot link — `proto/robot.proto`
+
+A second file, and deliberately so: `fleet.proto` is bot to bot, this is bot to
+*its own robot*. They have different callers, different lifetimes and different
+authorities, and the robot one is a rendering of the shared JSON schemas rather
+than a design of ours.
+
+```protobuf
+// The robot <-> network link.
+//
+// These messages are the shared JSON schemas expressed as protobuf, field for
+// field:
+//
+//   schemas/robot-to-network.schema.json   -- a robot reporting status upward
+//   schemas/network-to-robot.schema.json   -- the network commanding a robot
+//
+// The schemas remain the ground-truth contract; this file is a second
+// rendering of them for a typed, binary wire. Both directions share Id,
+// Timestamp, CargoId, CargoState, Cargo and Mission because both schemas
+// define them identically, so they are declared once here.
+//
+// **Left and right never cross this wire.** `RobotToNetwork` carries
+// `latest_node_id` and `NetworkToRobot` carries `target_node_id`. Neither has
+// a field for a turn. The network layer routes and holds the map; the robot
+// holds the map too and derives the bearing to the node it was named. That is
+// exact -- lanes are straight -- so a direction on the wire would be a second,
+// weaker description of geometry both ends already have. The firmware bears
+// this out: it reads `bearing` and `heading` off a TURN command and has never
+// read the turn name beside them.
+//
+// **Four fields are ours, and are not in the schemas.** `available`,
+// `heading_rad` and `query_id` going up, `kind`, `hold_ms`, `because` and
+// `query_id` coming down. They exist because this fleet answers a robot *at a
+// junction* as well as telling it where to go, and a destination alone cannot
+// say "hold 800 ms and ask again" or "stand aside at node 412". Silence is the
+// one answer a blind robot cannot recover from -- it only asks again on
+// reaching the next node, and it will not reach one -- so the ability to say
+// wait is not decoration. See PROTOCOL.md §16.2.
+//
+// A contract test asserts exactly these and no others are additions, so the
+// next field cannot be added to one side quietly.
+//
+// Two places where proto3 cannot say what JSON Schema says, both handled below
+// rather than left as traps:
+//
+//   `required`  proto3 has no such keyword, and every Id and Timestamp has
+//               `minimum: 0`, so zero is a legal value and an absent field is
+//               indistinguishable from a present zero. Required scalars are
+//               therefore declared `optional`, which buys explicit presence:
+//               a receiver can tell "bot 0" from "nobody said". This costs
+//               nothing on the wire.
+//
+//   `oneOf`     maps to `oneof`, which is exact. `Fault` is deliberately NOT a
+//               oneof: its schema requires nothing and forbids nothing, so a
+//               fault may carry a warning, an error, both, or neither.
+
+syntax = "proto3";
+
+package spore.network.v1;
+
+service RobotNetwork {
+  // One long-lived bidirectional stream per robot. The robot (the companion,
+  // acting for its robot) is the client; the network layer is the server --
+  // and the server is *this robot's own bot*, not a service for the fleet.
+  // Why: spore-amr/network-layer/docs/boundary.md.
+  //
+  // The stream types name the direction, so there is no envelope and no
+  // `schema` discriminator to get wrong: what a robot may send and what it may
+  // receive are different types, and the compiler enforces it.
+  //
+  // A stream is ordered and reliable, so no sequence numbers: a command and a
+  // status can never be reordered, and `timestamp` is a data value, not a
+  // transport concern.
+  rpc Session(stream RobotToNetwork) returns (stream NetworkToRobot);
+}
+
+// --- Shared types -----------------------------------------------------------
+
+// Schema `Mission`: one of five, exactly one set.
+//
+// Four variants carry no data -- the schema gives them a `type` const and
+// nothing else -- so they are empty messages. The variant is the field that is
+// set; there is no separate `type` string to keep in agreement with it.
+message Mission {
+  oneof kind {
+    Park park = 1;
+    Charge charge = 2;
+    Hold hold = 3;
+    Idle idle = 4;
+    Cargo cargo = 5;
+  }
+}
+
+message Park {}
+message Charge {}
+message Hold {}
+message Idle {}
+
+// Schema `MissionCargo` flattened: its `type` const is the `Mission.cargo`
+// case, leaving the cargo itself.
+message Cargo {
+  // Schema `CargoId`: a UUID, intentionally not an `Id`. Orders are minted by
+  // an external system, so their identifiers cannot come from a central
+  // sequential allocator. The UUID pattern stays the schema's to enforce;
+  // protobuf has no such type.
+  optional string cargo_id = 1;
+
+  optional CargoState state = 2;
+}
+
+enum CargoState {
+  // Not in the schema: proto3 requires a zero value, and it doubles as the
+  // "field absent or unrecognised" sentinel that `required` would otherwise
+  // have caught.
+  CARGO_STATE_UNSPECIFIED = 0;
+  CARGO_STATE_PICKUP = 1;
+  CARGO_STATE_DROPOFF = 2;
+  CARGO_STATE_EN_ROUTE = 3;
+}
+
+// --- robot -> network -------------------------------------------------------
+
+message RobotToNetwork {
+  // Schema `Id`: integer, minimum 0. Zero is a legal bot, region and node, so
+  // these are `optional` to keep "absent" distinguishable from "zero".
+  optional uint32 bot_id = 1;
+  optional uint32 region_id = 2;
+
+  // The last node whose marker this robot read. Its whole report of where it
+  // is: the network layer is told a node, never a pose.
+  optional uint32 latest_node_id = 3;
+
+  optional Mission mission = 4;
+  optional Telemetry telemetry = 5;
+
+  // Optional in the schema too: absent means nothing is wrong.
+  optional Fault fault = 6;
+
+  // Schema `Timestamp`: integer, minimum 0.
+  optional uint64 timestamp = 7;
+
+  // --- Not in the schema: asking, as opposed to reporting ------------------
+
+  // The nodes this robot can legally reach from where it stands, resolved by
+  // the robot from its own map against the heading it arrived on. It decides
+  // what is physically possible, not us: our map and its map can disagree, and
+  // when they do the robot is right about the floor it is on.
+  //
+  // **Its presence is the question.** A report with `available` populated is a
+  // robot stopped at a junction waiting to be told where to go, and is
+  // answered. A report without it is telemetry -- position, battery, a fault --
+  // and is not. That is what makes this one wire rather than two.
+  repeated uint32 available = 8;
+
+  // The heading the robot arrived on, in radians. Exact rather than odometric:
+  // lanes are straight, so the bearing from the previous node to this one *is*
+  // the direction of travel, with no drift in it.
+  optional double heading_rad = 9;
+
+  // Ties an answer to the question that asked it. Two junctions can share a
+  // destination -- a reroute to the same place -- so the id is the only way to
+  // tell a fresh answer from a late one. It matters more here than it looks: a
+  // `WAIT` meant for the previous node, applied at this one, stops a robot that
+  // had nothing wrong with it.
+  optional uint64 query_id = 10;
+}
+
+message Telemetry {
+  optional Battery battery = 1;
+}
+
+message Battery {
+  // Schema: `number`, 0 to 100 -- a JSON number, not an integer, so double.
+  optional double percentage = 1;
+}
+
+// Schema `Fault`: both members optional, neither required. Not a oneof --
+// a robot may report a warning and an error at once, and the schema allows an
+// empty fault.
+message Fault {
+  optional Warning warning = 1;
+  optional Error error = 2;
+}
+
+// Schema `Warning`: one of two, exactly one set.
+message Warning {
+  oneof kind {
+    LowBattery low_battery = 1;
+    Obstacle obstacle = 2;
+  }
+}
+
+message LowBattery {
+  // 0 to 100. Distinct from `Battery.percentage`: this one is the level that
+  // tripped the warning, at the moment it tripped.
+  optional double percentage = 1;
+}
+
+message Obstacle {
+  // Where the robot was when it saw the obstacle. A node, not a pose, for the
+  // same reason as `latest_node_id`.
+  optional uint32 current_node_id = 1;
+}
+
+// Schema `Error` is an object wrapping the enum rather than the bare enum. Kept
+// as a message so it matches the schema and has somewhere to grow -- a detail
+// string, a timestamp -- without changing `Fault`.
+message Error {
+  optional ErrorType type = 1;
+}
+
+enum ErrorType {
+  ERROR_TYPE_UNSPECIFIED = 0;
+  ERROR_TYPE_MOTOR_ERROR = 1;
+  ERROR_TYPE_CAMERA_ERROR = 2;
+  ERROR_TYPE_LIDAR_ERROR = 3;
+  ERROR_TYPE_LOCATION_UNKNOWN = 4;
+  ERROR_TYPE_MISC_ERROR = 5;
+}
+
+// --- network -> robot -------------------------------------------------------
+
+message NetworkToRobot {
+  // Where to go. Not how to get there, and not which way to turn: the robot
+  // derives the bearing from the map it already holds.
+  optional uint32 target_node_id = 1;
+
+  // Optional in the schema: absent leaves the robot's current mission alone.
+  optional Mission set_mission = 2;
+
+  optional uint64 timestamp = 3;
+
+  // --- Not in the schema: answering, as opposed to commanding --------------
+
+  // What kind of answer this is. Absent means PROCEED, so a robot that reads
+  // only `target_node_id` still behaves correctly for every moving kind; only
+  // WAIT needs the field understood.
+  optional Kind kind = 4;
+
+  // How long to stay put before asking again. Only meaningful with WAIT, and
+  // it must stay under the robot's own patience -- the firmware drives on when
+  // a junction goes unanswered for long enough, so a hold longer than that
+  // becomes a robot that leaves mid-hold.
+  optional uint32 hold_ms = 5;
+
+  // Why, in words, for the log. Never parsed. A robot that waited for a reason
+  // nobody recorded is a robot nobody can debug.
+  optional string because = 6;
+
+  // Echoes `RobotToNetwork.query_id`. See there.
+  optional uint64 query_id = 7;
+}
+
+enum Kind {
+  // Proto3 needs a zero value and it doubles as the sensible default: a
+  // decision that says nothing about its kind is an ordinary "take this lane".
+  KIND_UNSPECIFIED = 0;
+  // Take this lane; it is the route we were already on.
+  KIND_PROCEED = 1;
+  // Take this lane, but the route changed since we last answered.
+  KIND_REROUTE = 2;
+  // Stay put for `hold_ms`, then ask again.
+  KIND_WAIT = 3;
+  // Leave the route and stand aside at the node named.
+  KIND_YIELD = 4;
 }
 ```
 
@@ -1476,7 +1733,8 @@ yet. See `TODO.md`.
 
 The robot has no map of its own beyond adjacency and no idea where anything is.
 It arrives at a QR node, works out which turns physically exist, and asks. It
-then **blocks** — up to `ROBOT_SOCKET_TIMEOUT` — and if it hears nothing it sits
+then **blocks** — up to `ROBOT_PATIENCE`, its own firmware's limit — and if it
+hears nothing it sits
 there for the rest of its shift, because it only asks again on reaching the next
 node, and it will not reach one.
 
@@ -1484,20 +1742,43 @@ Everything below follows from that.
 
 ### 16.1 The link
 
-One unix socket per robot, newline-delimited JSON, one long-lived connection.
-`bot.Bot` serves it (`planning/server.py`); the companion dials `ROBOT_SOCKET`.
+One long-lived gRPC stream per robot: `spore.network.v1.RobotNetwork/Session`,
+defined in [`proto/robot.proto`](proto/robot.proto). Each bot serves it
+(`planning/robot_service.py`) for **its own robot** — not a service for the
+fleet, see [`docs/boundary.md`](docs/boundary.md) — and the companion dials
+`NETWORK_ADDRESS`.
 
 ```
-Query{query_id, node_id, node_type, region_id, x_cm, y_cm, heading_rad,
-      available: {"left": 412, "straight": 413, ...}}
-Decision{query_id, kind, turn, target_node_id, hold_ms, because}
+RobotToNetwork{bot_id, region_id, latest_node_id, mission, telemetry, fault,
+               timestamp, available[], heading_rad, query_id}
+NetworkToRobot{target_node_id, set_mission, timestamp,
+               kind, hold_ms, because, query_id}
 ```
+
+The messages are `spore-amr/shared/schemas/robot-to-network.schema.json` and
+`network-to-robot.schema.json` rendered field for field, plus the four fields
+this fleet adds for *asking* rather than reporting. `tests/test_proto_contract.py`
+fails if either side gains a field the other has not declared.
+
+**One message does both jobs.** A report carrying `available` is a robot stopped
+at a junction waiting to be told where to go, and is answered. One without it is
+telemetry, and is not. Both update position — which is the whole point, and is
+covered in [`docs/location.md`](docs/location.md): the fleet learns where its
+robots are from the same messages that ask it where to send them, so a robot
+that is driving is a robot that is reporting.
 
 Two things the robot gives us for free. `available` is resolved by the robot
 from its own copy of the map against the heading it arrived on — so **it**
 decides what is physically possible, not us. And `heading_rad` is exact: lanes
 are straight, so the bearing between the last two nodes *is* the direction of
 travel, with no odometry drift in it.
+
+**Left and right never cross this wire.** `available` and `target_node_id` name
+nodes; neither direction has a field for a turn. We route and hold the map, the
+robot holds the map too, and it derives the bearing to the node it was named —
+exact, where a turn name would be a second and weaker description of geometry
+both ends already have. The firmware settles the argument: it reads `bearing`
+and `heading` off a TURN command and has never read a turn name.
 
 `kind` is one of:
 

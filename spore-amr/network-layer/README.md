@@ -44,7 +44,7 @@ planning/
   traffic.py         what other robots are doing, in three tiers
   routes.py          alternative routes, kept as diffs
   decide.py          Query in, Decision out -- proceed, wait, yield, reroute
-  server.py          the unix socket the companion asks on
+  robot_service.py   the robot link: RobotNetwork.Session, one stream per robot
 reservations/
   claims.py          what a claim is, and who gives way when two collide
   ledger.py          one bot's record of who holds what
@@ -93,13 +93,13 @@ All via environment (see `config.py` for defaults and why):
 | `JOB_MIN_BATTERY`, `JOB_MAX_HOPS`, `T_JOB_RETRY` | job dispatch |
 | `NODE_TRAIL_LEN` | how many recent QR nodes a bot reports |
 | `T_LEADER_TENURE` | leadership rotates to a free follower after this (0 = never) |
-| `ROBOT_SOCKET`, `ROBOT_SOCKET_TIMEOUT` | where the companion asks for turns, and how long it blocks (`PROTOCOL.md` §16) |
+| `ROBOT_PATIENCE` | how long a robot waits at a junction before driving on by itself; every WAIT stays under it (`PROTOCOL.md` §16) |
 | `K_COMMIT`, `PLAN_HORIZON`, `MAX_WAIT`, `MAX_EXPANSIONS` | how far ahead the planner commits, plans, waits and searches |
 | `T_YIELD_THRESHOLD`, `YIELD_SEARCH_HOPS` | when a robot stands aside rather than waits, and how far it looks for somewhere to do it |
 | `T_STALL` | commanded but not moving for this long is a stall; escalates replan → yield → NEEDS_ATTENTION |
 | `ROUTE_ALTERNATES`, `HOPS_CACHE_SIZE`, `BATTERY_CRITICAL` | routes held per job, bounded distance cache, and where charge starts outweighing speed |
 | `T_ANNOUNCE`, `RESERVATION_TTL`, `RESERVATION_REACH_HOPS` | reservations: how often a bot tells its neighbours what it holds, how long their claims stay believable, and how far a claim reaches (`PROTOCOL.md` §15) |
-| `ADMIN_ENABLED` | serve `AdminService` (`GetState`, `InjectRobotState`); keep off in production |
+| `ADMIN_ENABLED` | serve `AdminService` (`GetState`, read-only); keep off in production |
 
 ## Plugging in a real robot
 

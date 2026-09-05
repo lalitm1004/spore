@@ -105,7 +105,7 @@ refer to `PROTOCOL.md`.
 
 ## Routing (§16) — the robot link
 
-- [x] The companion's `Query` is answered with a `Decision` over the unix socket
+- [x] The companion's question is answered over `RobotNetwork.Session`, and the same stream carries the position that answer is planned from
 - [x] `Decision` carries a kind, so WAIT is sayable rather than implied by silence
 - [x] Every query gets an answer — bad JSON, a planner error and a map disagreement all reply
 - [x] Jobs set a navigation goal; the robot is driven a node at a time, not sent a destination
