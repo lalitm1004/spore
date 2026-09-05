@@ -254,7 +254,12 @@ function buildLanes(LW){
     // Normal in the floor plane, to give the line width.
     const nx=-dy/len*LW/2, ny=dx/len*LW/2;
     const p=[[A.x+nx,A.y+ny],[B.x+nx,B.y+ny],[B.x-nx,B.y-ny],[A.x-nx,A.y-ny]];
-    for(const [i,j,k] of [[0,1,2],[0,2,3]])
+    // Wound backwards on purpose. `D` negates y into z, which flips
+    // handedness, so the winding that is counter-clockwise on the map is
+    // clockwise once it is in the scene -- the faces point at the floor and
+    // three.js culls every one of them. Reversing here puts the normals up,
+    // which is also what makes the lanes take light at all.
+    for(const [i,j,k] of [[0,2,1],[0,3,2]])
       for(const q of [p[i],p[j],p[k]]) pos.push(W(q[0]), 0.006, D(q[1]));
   }
   const g=new THREE.BufferGeometry();
