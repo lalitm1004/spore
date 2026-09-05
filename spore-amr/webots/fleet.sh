@@ -2,12 +2,14 @@
 # Run the fleet. One place for the flags that are easy to get wrong.
 #
 #   ./fleet.sh up          bring the fleet up (regenerates if fleet.yaml changed)
+#   ./fleet.sh view        same, but in a mode a browser can actually display
 #   ./fleet.sh down        tear it down, orphans and all
 #   ./fleet.sh restart     down then up
 #   ./fleet.sh status      what is running, and how far through the run
 #   ./fleet.sh score       score the run against the supervisor's ground truth
 #   ./fleet.sh logs [svc]  follow the logs (default: every robot, no STATUS spam)
 #   ./fleet.sh goals       what the network layer has told each robot to do
+#   ./fleet.sh robots      per-robot: distance, state, and whether it is moving
 #   ./fleet.sh journal     follow the network layer's durable state
 #   ./fleet.sh gen         regenerate the world from fleet.yaml
 #   ./fleet.sh build       rebuild the controller image
@@ -30,6 +32,7 @@ VIEWER="http://localhost:1234/index.html"
 
 export MODE="${MODE:-fast}"
 export RENDERING="${RENDERING:-off}"
+export STREAM_MODE="${STREAM_MODE:-w3d}"
 export MISSION_DURATION="${MISSION_DURATION:-3600}"
 
 say() { printf '\033[1m%s\033[0m\n' "$*"; }
@@ -71,8 +74,23 @@ case "${1:-help}" in
     # synchronized robot whose controller never attaches freezes the simulator
     # for everyone else.
     "${COMPOSE[@]}" up -d --remove-orphans
-    say "fleet up  --  MODE=$MODE RENDERING=$RENDERING MISSION_DURATION=${MISSION_DURATION}s"
+    say "fleet up  --  MODE=$MODE RENDERING=$RENDERING STREAM_MODE=$STREAM_MODE MISSION_DURATION=${MISSION_DURATION}s"
     say "viewer:   $VIEWER"
+    ;;
+
+  view)
+    # W3D streaming renders in the *browser*, so the browser downloads every
+    # texture in the world: 83 marker tiles at 1024x1024 plus an 8192x4096
+    # floor is 482 MB once decompressed, and a tab typically gives up part way
+    # through -- the loader sits at "Downloading assets: 97%" for ever. Those
+    # tiles are 1024x1024 so the simulator's camera never resamples a QR
+    # module, which is right for the robot and hopeless for a viewer.
+    #
+    # mjpeg renders server-side and streams frames instead, so the browser
+    # downloads no textures at all. It costs the simulator CPU that
+    # RENDERING=off saves, which is the honest trade for being able to watch:
+    # use this to look at the fleet, and plain `up` to measure it.
+    RENDERING=on STREAM_MODE=mjpeg exec "$0" up
     ;;
 
   down|stop)
@@ -117,6 +135,36 @@ case "${1:-help}" in
               | grep -oE "'goal': [0-9]+" | tail -1 | grep -oE '[0-9]+' || true)"
       printf '  %-8s -> %s\n' "$name" "${goal:-none yet}"
     done
+    ;;
+
+  robots)
+    # A robot jammed behind another logs nothing at all -- it is following its
+    # line perfectly, just not going anywhere -- so the log tells you less than
+    # the telemetry does. This is the view that answers "which one is stuck".
+    uv run python - <<'PYTHON'
+import csv, glob, os
+
+print("%-9s %8s %9s %-11s %-9s %-6s %s" % (
+    "robot", "t", "distance", "crossing", "obstacle", "lost", "moved recently"))
+print("-" * 74)
+for path in sorted(glob.glob("out/bot_*.csv")):
+    name = os.path.basename(path).split(".")[0]
+    try:
+        rows = list(csv.DictReader(open(path)))
+    except OSError:
+        rows = []
+    if not rows:
+        print("%-9s %8s" % (name, "no telemetry yet"))
+        continue
+    last = rows[-1]
+    # ~10 s of history at 62.5 Hz: enough to tell stopped from slow.
+    window = rows[-625:] if len(rows) > 625 else rows
+    travelled = float(last["distance"]) - float(window[0]["distance"])
+    print("%-9s %8.1f %8.2fm %-11s %-9s %-6s %s" % (
+        name, float(last["t"]), float(last["distance"]),
+        last["crossing"], last["obstacle"], last["lost"],
+        "yes  %.2f m" % travelled if travelled > 0.01 else "NO   held/stuck"))
+PYTHON
     ;;
 
   journal)
