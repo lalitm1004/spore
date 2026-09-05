@@ -19,7 +19,8 @@ if [ "${ROLE:-robot}" = "supervisor" ]; then
     --port=1234 \
     --robot-name=supervisor \
     /project/robot/supervisor.py \
-    --duration "${MISSION_DURATION}"
+    --duration "${MISSION_DURATION}" \
+    --replay "${REPLAY:-/project/out/replay.csv}"
 fi
 
 FIRMWARE_TTY="/tmp/${ROBOT_NAME}-firmware"

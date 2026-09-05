@@ -67,6 +67,10 @@ def main(argv=None):
     parser.add_argument("--duration", type=float, default=None)
     parser.add_argument("--calibrate", action="store_true",
                         help="log the raw heading terms for recalibration")
+    parser.add_argument("--replay", type=pathlib.Path, default=None,
+                        help="record ground-truth poses here for later replay")
+    parser.add_argument("--replay-hz", type=float, default=10.0,
+                        help="how often to sample poses for the replay")
     args = parser.parse_args(argv)
 
     # The generated map, not the manifest's track. Building the track would
@@ -108,6 +112,20 @@ def main(argv=None):
     heading_error = {}
     wheel_drift = {}
 
+    # Recording poses rather than pixels. Webots can export an animation or a
+    # movie, but the animation replays against the world -- the same 482 MB of
+    # marker and floor texture a browser cannot load -- and the movie needs
+    # live rendering, which is what makes a run slow in the first place. The
+    # true pose of every robot is a few numbers per sample, costs nothing to
+    # record with `--no-rendering`, and is enough to draw the run afterwards.
+    replay = None
+    if args.replay is not None:
+        args.replay.parent.mkdir(parents=True, exist_ok=True)
+        replay = args.replay.open("w")
+        replay.write("t,robot,x,y,theta\n")
+    replay_period = 1.0 / args.replay_hz if args.replay_hz > 0 else 0.0
+    next_replay_at = 0.0
+
     started = None
     while supervisor.step(timestep) != -1:
         now = supervisor.getTime()
@@ -115,6 +133,20 @@ def main(argv=None):
             started = now
         if args.duration is not None and now - started >= args.duration:
             break
+
+        if replay is not None and now >= next_replay_at:
+            next_replay_at = now + replay_period
+            for name in names:
+                node = nodes.get(name)
+                if node is None:
+                    continue
+                x, y, _ = node.getPosition()
+                m = node.getOrientation()
+                replay.write("{:.3f},{},{:.4f},{:.4f},{:.4f}\n".format(
+                    now, name, x, y, math.atan2(m[3], m[0])))
+            # Flushed per sample so a run killed part-way still replays up to
+            # the moment it stopped, which is exactly when you want to watch it.
+            replay.flush()
 
         for index, name in enumerate(names):
             status = read_status(args.out / "{}.status.json".format(name))

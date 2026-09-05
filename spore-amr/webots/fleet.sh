@@ -11,6 +11,7 @@
 #   ./fleet.sh goals       what the network layer has told each robot to do
 #   ./fleet.sh robots      per-robot: distance, state, and whether it is moving
 #   ./fleet.sh journal     follow the network layer's durable state
+#   ./fleet.sh replay      build a watchable replay of the run just recorded
 #   ./fleet.sh gen         regenerate the world from fleet.yaml
 #   ./fleet.sh build       rebuild the controller image
 #
@@ -68,7 +69,8 @@ case "${1:-help}" in
     # robot standing somewhere else entirely and reports metres of localisation
     # error that never happened. Measured once at 18 m, which looks exactly
     # like the fleet being broken.
-    rm -f out/*.csv out/*.status.json out/*.summary.json out/fleet.jsonl
+    rm -f out/*.csv out/*.status.json out/*.summary.json out/fleet.jsonl \
+          out/replay.html
     # --remove-orphans on the way up too: a previous run with more robots
     # leaves containers attached to a world that no longer has them, and a
     # synchronized robot whose controller never attaches freezes the simulator
@@ -170,6 +172,14 @@ for path in sorted(glob.glob("out/bot_*.csv")):
         last["crossing"], last["obstacle"], last["lost"],
         "yes  %.2f m" % travelled if travelled > 0.01 else "NO   held/stuck"))
 PYTHON
+    ;;
+
+  replay)
+    # Draws the run rather than replaying the world, so it needs none of the
+    # textures that stop a browser rendering the live stream. Ground truth
+    # from the supervisor: what you watch is what actually happened.
+    shift
+    uv run python -m tools.make_replay "$@"
     ;;
 
   journal)
