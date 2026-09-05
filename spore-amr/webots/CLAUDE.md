@@ -23,9 +23,10 @@ spore-warehouse-layout/output/
   warehouse.json ─┐   the real 120x70 m layout, 881 nodes
   warehouse_map.svg   the drawing of it
                   │
-                  ▼  a 32 x 16 m window, generated at build time
-     config/warehouse.json   83 real nodes, real ids, 10 charging bays
-     textures/track-<hash>.png   the floor
+                  ▼  the whole layout, generated at build time
+     config/warehouse.json   881 real nodes, real ids, 34 charging bays
+     textures/track-<hash>.png   the warehouse drawing -- decorative only
+     worlds/track.wbt            the lanes, as geometry rather than pixels
      textures/markers/*.png      one QR tile per node
                   │
    ┌──────────────┴───────────────────┐   shared schemas, do not diverge:
@@ -187,6 +188,28 @@ go, because the destination is standing: the robot re-approaches, re-reads the
 marker and is handed the same goal. That is only safe because the network layer
 names a place rather than a direction.
 
+**The floor is a picture; the lanes are geometry. Do not put them back
+together.** A 20 mm lane has to be several pixels wide for the IR array to find
+its centre, which pins a raster floor at 256 px/m — and over the whole
+warehouse that is a 32768 x 16384 texture, 2.1 GB of memory to express 952
+straight lines, nearly all of it white. Webots would not load a quarter of it:
+`Unable to read texture data`, the ground rendered untextured, and every robot
+sat reading blank white floor. Tiling it was treating the symptom.
+
+Lanes as geometry cost nothing and are *sharper* — a plane's edge is exact
+where a rasterised line is quantised to whole pixels and then mipmapped. It is
+safe because an infra-red `DistanceSensor` reads the surface it hits (the
+marker tiles have always been lifted planes doing exactly this) and because the
+sensor's lookup table is flat from 0 to its mounting height, so `LANE_LIFT` of
+half a millimetre changes the reading by nothing.
+
+What that buys is a floor nothing senses, so its resolution is a matter of
+taste rather than of line following: 64 px/m puts the whole warehouse in one
+7680x4224 texture. **Whole-world budget: 130 MB floor + 924 MB markers + 0 for
+1833 lane pieces = 1.05 GB, against 5.8 GB the old arrangement would have
+wanted.** If you ever find yourself raising `pixels_per_metre` to fix line
+following, you have reconnected the two and the next map will not load.
+
 **A stale `out/*.status.json` is scored as this run's first marker.** It is how
 a robot tells the supervisor what it last read, and the supervisor computes
 localisation error the moment a new `(node_id, t)` appears. A file left behind
@@ -276,9 +299,16 @@ L against 4 of 5 at M on identical renders. The recovery given up is bought
 back in time, since a marker is in view for roughly 22 frames.
 
 Marker tiles are separate textured planes, never pixels in the floor. Their
-texture is 1024x1024 by construction (100 mm at 10.24 px/mm): Webots silently
-rescales a non-power-of-two texture, and rescaling a QR resamples the very
-module edges the decoder reads.
+texture is 512x512 by construction (100 mm at 5.12 px/mm) and must stay a power
+of two: Webots silently rescales a non-power-of-two texture, and rescaling a QR
+resamples the very module edges the decoder reads.
+
+**512, not the 1024 it started at.** The camera resolves 5.52 px/mm, so a tile
+drawn at 10.24 px/mm carries about twice the detail the optics can ever sample
+— and 881 of those is 3.7 GB on a machine with 5 GB free. Measured through the
+camera's own crop-and-resample on 81 real node payloads: 1024 px decoded 80/81,
+768 px 81/81, 512 px 81/81, 384 px 79/81. A 4x saving that costs nothing, with
+the real floor between 384 and 512 rather than below it.
 
 ---
 
@@ -418,7 +448,7 @@ Measured on the current warehouse window, ten robots:
 
 | | |
 |---|---|
-| track | 32 x 16 m window of the real layout, 83 nodes, 10 charging bays |
+| track | the whole 114 x 60 m layout, 881 nodes, 952 lanes, 34 charging bays |
 | markers | 83, all validating against the shared QR schema |
 | line tracking | 0.025-0.21 mm mean per robot |
 | localisation fix error | 5 mm median, 12 mm worst |

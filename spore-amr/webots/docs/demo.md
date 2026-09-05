@@ -1,6 +1,6 @@
 # Running the fleet demo
 
-Ten robots on a 32 x 16 m window of the real warehouse layout, parked on
+Ten robots on the whole 114 x 60 m warehouse layout — 881 nodes — parked on
 charging bays and released one at a time, each with its own network layer
 handing it random turns at every junction. Every command runs from the repo root — the volume
 mount is `./:/project`, so `./` is your shell's directory, not the compose
@@ -105,7 +105,8 @@ robots:
 ```
 
 To move the window, edit `track.warehouse.origin_cm` and `size_m`. The window
-must stay a power of two in pixels (`size_m * pixels_per_metre`) or Webots
+need not be a power of two any more -- the lanes are geometry and nothing
+senses the floor -- but a marker tile must be, or Webots
 rescales the texture, which resamples the exact lane edges the IR array reads.
 This finds the charging-densest window of a given size:
 
@@ -129,7 +130,7 @@ print('origin_cm: [%d, %d]  -> %d charging bays' % (best[1], best[2], best[0]))
 
 **In the browser.** The floor is the warehouse's own `warehouse_map.svg` --
 region blocks in their own colours, the lane network as the layout tool draws
-it -- with an orange-bordered QR tile at each of the 83 nodes and the 20 mm
+it -- with an orange-bordered QR tile at each of the 881 nodes and the 20 mm
 guide line drawn on top at true width. Each robot carries a status LED that changes
 colour with the kind of node it last read: amber while searching, then green
 for pass-through, blue transfer, cyan charging, violet parking, red yield.

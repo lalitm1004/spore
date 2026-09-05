@@ -13,7 +13,7 @@ lidar:
   enabled: true
 name: bot_09
 odometry:
-  start_theta: -1.5708
+  start_theta: 1.5708
 optics:
   border_rgb:
   - 255

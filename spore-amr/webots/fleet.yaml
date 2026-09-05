@@ -14,8 +14,14 @@ track:
   # along y = 800-1200 cm in the real layout.
   warehouse:
     source: ../../spore-warehouse-layout/output/warehouse.json
-    origin_cm: [8200, 600]
-    size_m: [32, 16]
+    # The whole warehouse: all 881 nodes, 952 lanes, 34 charging bays. The
+    # window is the exact node span (x 400-11600, y 600-6400 cm) and the floor
+    # extends `margin_m` beyond it.
+    # A metre of slack around the node span (x 400-11600, y 600-6400 cm):
+    # `load_window` drops a node sitting exactly on the boundary, which cost
+    # 58 of the 881 when the window was the span exactly.
+    origin_cm: [300, 500]
+    size_m: [114, 60]
     # The floor texture is the warehouse *drawing* and nothing senses it: the
     # lanes are geometry, exact and free. So this sets how good the picture
     # looks, not how well a robot follows a line, and 64 px/m over the full
@@ -42,7 +48,16 @@ markers:
     tile_mm: 100.0        # 92.7 mm of this is inside the camera's footprint
     qr_mm: 60.0           # 49 modules -> 6.8 camera px per module at 512 px
     margin_mm: 5.0
-    pixels_per_mm: 10.24  # 100 mm -> exactly 1024 px, a power of two
+    # 5.12, not 10.24. The camera resolves 512 px over a 92.7 mm footprint --
+    # 5.52 px/mm -- so a tile drawn at 10.24 px/mm carries roughly twice the
+    # detail the optics can ever sample, and 881 of those is 3.7 GB against a
+    # machine with 5 GB free. Measured through the camera's own crop-and-
+    # resample on 81 real node payloads: 1024 px decoded 80/81, 768 px 81/81,
+    # 512 px 81/81, 384 px 79/81. So this is a 4x saving that costs nothing,
+    # and the floor is somewhere between 384 and 512 rather than below it.
+    # Re-measure with tests/test_marker.py::test_survives_the_camera_resolution
+    # after any change to the camera or the payload.
+    pixels_per_mm: 5.12   # 100 mm -> exactly 512 px, a power of two
     border_rgb: [255, 122, 0]
 
 defaults:

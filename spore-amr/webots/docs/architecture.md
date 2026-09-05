@@ -158,24 +158,39 @@ the world without running anything first.
 
 ## 5. The warehouse window
 
-The full layout is 120 x 70 m, 881 nodes, 952 edges. It cannot be simulated at
-line-following resolution, and the arithmetic is worth keeping because it is
-the first thing anyone will want to change:
+The whole layout runs: **881 nodes, 952 edges, 34 charging bays** over 114 x
+60 m. It did not always, and the arithmetic that used to forbid it is worth
+keeping, because it was wrong in an instructive way.
 
-- One floor texture at 512 px/m would be **61440 x 35840 px**, against a GPU
-  limit usually around 16384.
-- A 1024x1024 QR tile for each of 881 nodes is roughly **3.7 GB** of texture
-  memory.
+The old sums:
 
-So `tools/track/warehouse.load_window` takes a rectangle of it — real node ids,
-names, types, regions and edges, just fewer of them. Positions are rebased so
-the window's centre is the world origin. Edges with only one end inside are
-dropped, and nodes left with no lane are dropped with them: a marker tile no
-robot can reach is worse than no tile.
+- One floor texture at line-following resolution would be **32768 x 16384 px**
+  — 2.1 GB — against a texture limit Webots hits well before that.
+- A 1024x1024 QR tile for each of 881 nodes is another **3.7 GB**.
 
-The current window is 32 x 16 m at (8200, 600) cm, chosen by searching every
-2 m offset for the most charging bays: **83 nodes, 10 of them charging**, and
-8192 x 4096 px at 256 px/m — both powers of two, so Webots does not rescale it.
+Both numbers were real and both were self-inflicted. The floor was that big
+only because it carried the guide line, and a 20 mm line needs several pixels
+across to be followable; the lanes are geometry now, so the floor is a picture
+and 64 px/m is plenty. The tiles were that big only because nobody had measured
+what the camera can actually resolve — 5.52 px/mm, against tiles drawn at
+10.24.
+
+What it costs now:
+
+| | |
+|---|---|
+| floor, 7680 x 4224 at 64 px/m | 130 MB |
+| 881 marker tiles at 512 x 512 | 924 MB |
+| 1833 lane and node pieces, as geometry | 0 |
+| **total** | **1.05 GB** |
+
+`tools/track/warehouse.load_window` still takes a rectangle, because the window
+is also what gives the floor a margin: it is the node span plus a metre, and
+the plane is that plus `margin_m` again on every side. A node on the plane's
+edge is a robot that can drive off the world — see the trap in `CLAUDE.md`.
+Positions are rebased so the window's centre is the world origin. Edges with
+only one end inside are dropped, and nodes left with no lane go with them: a
+marker tile no robot can reach is worse than no tile.
 
 ## 6. The floor is the warehouse's own drawing
 
