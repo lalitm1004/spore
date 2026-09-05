@@ -1,15 +1,13 @@
-"""The obstacle reflex and the stand-in router.
+"""The obstacle reflex.
 
-Both are pure, so both are testable without Webots -- which matters most for
-the reflex, since the failure it guards against is one you cannot safely
-provoke on hardware.
+Pure, so testable without Webots -- which matters most here, since the failure
+it guards against is one you cannot safely provoke on hardware.
+
+The router that used to share this file now lives in tests/test_network.py.
 """
-
-import math
 
 import pytest
 
-from robot.network import Junction, RandomRouter
 from robot.obstacle import Obstacle, ObstacleConfig, ObstacleGuard, nearest
 
 
@@ -152,51 +150,3 @@ def test_parked_robot_does_not_resume_on_its_own_retreat():
 def test_thresholds_that_would_chatter_are_rejected():
     with pytest.raises(ValueError, match="chatter"):
         ObstacleConfig(stop_m=0.30, clear_m=0.20)
-
-
-# -------------------------------------------------------------- the router ---
-
-def junction(out_edges, heading_deg=0.0, query_id=1):
-    return Junction(query_id=query_id, node=30, kind="PT", x_mm=1000, y_mm=1000,
-                    out_edges=tuple(out_edges), heading_rad=math.radians(heading_deg))
-
-
-def test_router_only_ever_returns_a_legal_edge():
-    router = RandomRouter(seed=7)
-    edges = [(0, 40), (90, 50), (270, 60)]
-    for _ in range(200):
-        route = router.route(junction(edges))
-        assert (route.bearing_deg, route.to_node) in edges
-
-
-def test_router_echoes_the_query_id():
-    """Without it, a late answer to the previous junction is indistinguishable
-    from the answer to this one."""
-    route = RandomRouter(seed=1).route(junction([(0, 40)], query_id=99))
-    assert route.query_id == 99
-
-
-def test_router_is_reproducible_from_its_seed():
-    edges = [(0, 40), (90, 50), (180, 60), (270, 70)]
-    a = [RandomRouter(seed=3).route(junction(edges, query_id=i)).to_node for i in range(20)]
-    b = [RandomRouter(seed=3).route(junction(edges, query_id=i)).to_node for i in range(20)]
-    assert a == b
-
-
-def test_router_prefers_not_to_double_back():
-    """Arriving heading 0, the way back is bearing 180. With somewhere else to
-    go, take it -- on a one-way lane, reversing would be a wrong-way entry."""
-    router = RandomRouter(seed=0)
-    edges = [(0, 40), (180, 20)]
-    for _ in range(50):
-        assert router.route(junction(edges, heading_deg=0)).to_node == 40
-
-
-def test_router_will_double_back_at_a_dead_end():
-    """Preference, not prohibition: if reversing is the only way out, take it."""
-    route = RandomRouter(seed=0).route(junction([(180, 20)], heading_deg=0))
-    assert route.to_node == 20
-
-
-def test_router_declines_a_node_with_no_way_out():
-    assert RandomRouter(seed=0).route(junction([])) is None

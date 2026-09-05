@@ -25,7 +25,7 @@ markers:
     tile_mm: 100.0        # 92.7 mm of this is inside the camera's footprint
     qr_mm: 60.0           # 33 modules -> 5.0 camera px per module
     margin_mm: 5.0
-    pixels_per_mm: 10.0
+    pixels_per_mm: 10.24
     border_rgb: [255, 122, 0]
   nodes:
     - {id: 10, kind: PT, at: 0.00, region_id: 1}
