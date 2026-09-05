@@ -12,8 +12,6 @@ import sys
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
 
-import yaml  # noqa: E402
-
 from robot.navigator import Navigator, load_map  # noqa: E402
 from robot.uplink import Uplink  # noqa: E402
 from robot.policy import CompanionPolicy  # noqa: E402
@@ -43,8 +41,9 @@ def report_obstacle(navigator, network, event):
     blocked = event.fields.get("state", "CLEAR") != "CLEAR"
     node = navigator.last_node
     region = navigator.graph.nodes[node].region_id if node in navigator.graph.nodes else 0
+    # Zero is how the lane is given back: present, and not a node.
     network.report(node_id=node, region_id=region,
-                   obstacle_node=node if blocked else None)
+                   obstacle_node=node if blocked else 0)
     return []
 
 
@@ -120,6 +119,12 @@ def main(argv=None):
     parser.add_argument("--network", default=None,
                         help="host:port of this robot's own network-layer bot")
     args = parser.parse_args(argv)
+
+    # Imported here rather than at the top: `answer_junction` and
+    # `report_obstacle` are pure, and being able to import them without pulling
+    # in a YAML parser is what lets the integration test drive them from the
+    # network layer's side of the fence.
+    import yaml
 
     document = yaml.safe_load(args.config.read_text())
     control = document.get("control") or {}

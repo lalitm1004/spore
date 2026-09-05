@@ -167,9 +167,15 @@ class Uplink:
             telemetry=robot_pb2.Telemetry(battery=robot_pb2.Battery(
                 percentage=self.battery_percent if battery is None else battery)),
         )
-        if obstacle_node:
+        if obstacle_node is not None:
             # The field that makes a reported blockage real. The shared schema
             # has always carried it; nothing ever sent it, so the planner only
             # ever heard about obstructions through an admin back door.
+            #
+            # `is not None`, not truthiness: zero is how a robot says the lane is
+            # clear again, and it has to be *present and zero* rather than
+            # absent. A report that mentions no obstacle is saying nothing about
+            # obstacles -- which is almost every report -- and treating that as
+            # a clear would give every blocked lane back on the next marker.
             message.fault.warning.obstacle.current_node_id = obstacle_node
         return message

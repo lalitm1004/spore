@@ -208,7 +208,10 @@ def test_a_cleared_obstacle_gives_the_lane_back():
     report_obstacle(navigator, network, Event("OBSTACLE", state="CLEAR"))
 
     region = navigator.graph.nodes[4].region_id
-    assert network.reports == [(4, region, None)]
+    # Zero, not None: present-and-zero is how the lane is given back. A report
+    # that mentions no obstacle says nothing about obstacles, and almost every
+    # report is one of those.
+    assert network.reports == [(4, region, 0)]
 
 
 def test_an_obstacle_before_the_first_marker_is_not_reported():
