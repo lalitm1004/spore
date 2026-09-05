@@ -153,12 +153,20 @@ def state_of(message: robot_pb2.RobotToNetwork, state_factory) -> RobotState:
 
 
 def obstruction_in(message: robot_pb2.RobotToNetwork) -> int | None:
-    """The node a robot reported blocked, if it reported one.
+    """Whether this report is about something in the lane, and where from.
+
+    Returns the node the robot was standing at when it saw the obstacle, `0` if
+    it is saying the lane is clear again, or `None` if the report says nothing
+    about obstacles at all -- which is almost all of them.
 
     This is the field whose absence made the whole obstruction path synthetic:
     the shared schema has always carried `current_node_id` on an OBSTACLE
     warning, and the network layer's flat fault string dropped it on the way in,
     so nothing could ever build an obstruction from what a robot actually saw.
+
+    Note the three-way answer. "No obstacle mentioned" and "the obstacle has
+    gone" are different things, and conflating them would clear every blockage
+    on the next ordinary marker report -- which is every report.
     """
     if message.fault.warning.WhichOneof("kind") != "obstacle":
         return None
@@ -212,9 +220,9 @@ class RobotNetworkServicer(robot_pb2_grpc.RobotNetworkServicer):
             # A report we could not apply must not cost the robot its answer.
             log.exception("bot-%d: could not apply a robot report", self._bot_id)
 
-        blocked = obstruction_in(message)
-        if blocked:
-            self._obstruct(blocked, 1.0)
+        seen_at = obstruction_in(message)
+        if seen_at is not None:
+            self._obstruct(seen_at, 1.0 if seen_at else 0.0)
 
         if not message.available:
             return None  # telemetry: position noted, nothing asked

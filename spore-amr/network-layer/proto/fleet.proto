@@ -167,45 +167,20 @@ service ReservationService {
   rpc Announce(ReservationAnnounce) returns (ReservationAck);
 }
 
-// --- Admin: introspection and robot-state injection ---
+// --- Admin: introspection ---
 // For operators and the Docker test harness. Only served when ADMIN_ENABLED=1
-// (the virtual network refuses it otherwise). InjectRobotState feeds the
-// bot's RobotSource exactly as a real robot bridge would.
+// (the virtual network refuses it otherwise).
+//
+// Read-only. It used to carry InjectRobotState and InjectObstruction, which put
+// a robot snapshot or a blockage straight into the bot around the QR read, the
+// companion and the wire. A robot reports over spore.network.v1.RobotNetwork
+// now, like a robot; see proto/robot.proto.
 
 service AdminService {
-  rpc GetState(Empty)                     returns (BotState);
-  rpc InjectRobotState(RobotStateMsg)     returns (Empty);
-  rpc InjectObstruction(ObstructionMsg)   returns (Empty);
-}
-
-// A blockage pushed straight into the planner, for tests and operators.
-//
-// Deliberately a shortcut, and worth being honest about: the real path does not
-// exist yet. `robot-to-network.schema.json` carries the node in its OBSTACLE
-// warning, but `RobotState.fault` is a flat string, so the node is lost on the
-// way in and nothing ever builds one of these from what a robot reported. This
-// exercises how the planner *responds* to a blockage, not how it hears about
-// one. Clearing is `level = 0`.
-message ObstructionMsg {
-  int32 node_id = 1;
-  // 0 clears; at or above `obstruction_block_level` the node is impassable;
-  // below it the node is merely expensive, so a robot still routes through a
-  // lightly obstructed lane when the alternative is much worse.
-  float level   = 2;
+  rpc GetState(Empty) returns (BotState);
 }
 
 message Empty {}
-
-message RobotStateMsg {
-  int32  latest_node_id = 1;
-  int32  region_id      = 2;
-  float  battery        = 3;
-  string state          = 4;
-  string mission        = 5;
-  string fault          = 6;
-  string job_id         = 7;
-  string cargo_state    = 8;
-}
 
 message BotState {
   int32  bot_id             = 1;

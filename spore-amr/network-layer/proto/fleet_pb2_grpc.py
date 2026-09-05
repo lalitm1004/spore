@@ -3,7 +3,7 @@
 import grpc
 import warnings
 
-from proto import fleet_pb2 as fleet__pb2
+from proto import fleet_pb2 as proto_dot_fleet__pb2
 
 GRPC_GENERATED_VERSION = '1.83.1'
 GRPC_VERSION = grpc.__version__
@@ -18,7 +18,7 @@ except ImportError:
 if _version_not_supported:
     raise RuntimeError(
         f'The grpc package installed is at version {GRPC_VERSION},'
-        + ' but the generated code in fleet_pb2_grpc.py depends on'
+        + ' but the generated code in proto/fleet_pb2_grpc.py depends on'
         + f' grpcio>={GRPC_GENERATED_VERSION}.'
         + f' Please upgrade your grpc module to grpcio>={GRPC_GENERATED_VERSION}'
         + f' or downgrade your generated code using grpcio-tools<={GRPC_VERSION}.'
@@ -38,18 +38,18 @@ class RegionServiceStub:
         """
         self.Heartbeat = channel.unary_unary(
                 '/fleet.RegionService/Heartbeat',
-                request_serializer=fleet__pb2.HeartbeatRequest.SerializeToString,
-                response_deserializer=fleet__pb2.HeartbeatAck.FromString,
+                request_serializer=proto_dot_fleet__pb2.HeartbeatRequest.SerializeToString,
+                response_deserializer=proto_dot_fleet__pb2.HeartbeatAck.FromString,
                 _registered_method=True)
         self.Departure = channel.unary_unary(
                 '/fleet.RegionService/Departure',
-                request_serializer=fleet__pb2.DepartureRequest.SerializeToString,
-                response_deserializer=fleet__pb2.DepartureAck.FromString,
+                request_serializer=proto_dot_fleet__pb2.DepartureRequest.SerializeToString,
+                response_deserializer=proto_dot_fleet__pb2.DepartureAck.FromString,
                 _registered_method=True)
         self.MigrationRequest = channel.unary_unary(
                 '/fleet.RegionService/MigrationRequest',
-                request_serializer=fleet__pb2.MigrationReq.SerializeToString,
-                response_deserializer=fleet__pb2.MigrationReqAck.FromString,
+                request_serializer=proto_dot_fleet__pb2.MigrationReq.SerializeToString,
+                response_deserializer=proto_dot_fleet__pb2.MigrationReqAck.FromString,
                 _registered_method=True)
 
 
@@ -81,18 +81,18 @@ def add_RegionServiceServicer_to_server(servicer, server):
     rpc_method_handlers = {
             'Heartbeat': grpc.unary_unary_rpc_method_handler(
                     servicer.Heartbeat,
-                    request_deserializer=fleet__pb2.HeartbeatRequest.FromString,
-                    response_serializer=fleet__pb2.HeartbeatAck.SerializeToString,
+                    request_deserializer=proto_dot_fleet__pb2.HeartbeatRequest.FromString,
+                    response_serializer=proto_dot_fleet__pb2.HeartbeatAck.SerializeToString,
             ),
             'Departure': grpc.unary_unary_rpc_method_handler(
                     servicer.Departure,
-                    request_deserializer=fleet__pb2.DepartureRequest.FromString,
-                    response_serializer=fleet__pb2.DepartureAck.SerializeToString,
+                    request_deserializer=proto_dot_fleet__pb2.DepartureRequest.FromString,
+                    response_serializer=proto_dot_fleet__pb2.DepartureAck.SerializeToString,
             ),
             'MigrationRequest': grpc.unary_unary_rpc_method_handler(
                     servicer.MigrationRequest,
-                    request_deserializer=fleet__pb2.MigrationReq.FromString,
-                    response_serializer=fleet__pb2.MigrationReqAck.SerializeToString,
+                    request_deserializer=proto_dot_fleet__pb2.MigrationReq.FromString,
+                    response_serializer=proto_dot_fleet__pb2.MigrationReqAck.SerializeToString,
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
@@ -122,8 +122,8 @@ class RegionService:
             request,
             target,
             '/fleet.RegionService/Heartbeat',
-            fleet__pb2.HeartbeatRequest.SerializeToString,
-            fleet__pb2.HeartbeatAck.FromString,
+            proto_dot_fleet__pb2.HeartbeatRequest.SerializeToString,
+            proto_dot_fleet__pb2.HeartbeatAck.FromString,
             options,
             channel_credentials,
             insecure,
@@ -149,8 +149,8 @@ class RegionService:
             request,
             target,
             '/fleet.RegionService/Departure',
-            fleet__pb2.DepartureRequest.SerializeToString,
-            fleet__pb2.DepartureAck.FromString,
+            proto_dot_fleet__pb2.DepartureRequest.SerializeToString,
+            proto_dot_fleet__pb2.DepartureAck.FromString,
             options,
             channel_credentials,
             insecure,
@@ -176,8 +176,8 @@ class RegionService:
             request,
             target,
             '/fleet.RegionService/MigrationRequest',
-            fleet__pb2.MigrationReq.SerializeToString,
-            fleet__pb2.MigrationReqAck.FromString,
+            proto_dot_fleet__pb2.MigrationReq.SerializeToString,
+            proto_dot_fleet__pb2.MigrationReqAck.FromString,
             options,
             channel_credentials,
             insecure,
@@ -202,8 +202,8 @@ class JobServiceStub:
         """
         self.SubmitJob = channel.unary_unary(
                 '/fleet.JobService/SubmitJob',
-                request_serializer=fleet__pb2.Job.SerializeToString,
-                response_deserializer=fleet__pb2.JobAck.FromString,
+                request_serializer=proto_dot_fleet__pb2.Job.SerializeToString,
+                response_deserializer=proto_dot_fleet__pb2.JobAck.FromString,
                 _registered_method=True)
 
 
@@ -223,8 +223,8 @@ def add_JobServiceServicer_to_server(servicer, server):
     rpc_method_handlers = {
             'SubmitJob': grpc.unary_unary_rpc_method_handler(
                     servicer.SubmitJob,
-                    request_deserializer=fleet__pb2.Job.FromString,
-                    response_serializer=fleet__pb2.JobAck.SerializeToString,
+                    request_deserializer=proto_dot_fleet__pb2.Job.FromString,
+                    response_serializer=proto_dot_fleet__pb2.JobAck.SerializeToString,
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
@@ -254,8 +254,8 @@ class JobService:
             request,
             target,
             '/fleet.JobService/SubmitJob',
-            fleet__pb2.Job.SerializeToString,
-            fleet__pb2.JobAck.FromString,
+            proto_dot_fleet__pb2.Job.SerializeToString,
+            proto_dot_fleet__pb2.JobAck.FromString,
             options,
             channel_credentials,
             insecure,
@@ -279,8 +279,8 @@ class BotServiceStub:
         """
         self.AssignJob = channel.unary_unary(
                 '/fleet.BotService/AssignJob',
-                request_serializer=fleet__pb2.Job.SerializeToString,
-                response_deserializer=fleet__pb2.JobAck.FromString,
+                request_serializer=proto_dot_fleet__pb2.Job.SerializeToString,
+                response_deserializer=proto_dot_fleet__pb2.JobAck.FromString,
                 _registered_method=True)
 
 
@@ -299,8 +299,8 @@ def add_BotServiceServicer_to_server(servicer, server):
     rpc_method_handlers = {
             'AssignJob': grpc.unary_unary_rpc_method_handler(
                     servicer.AssignJob,
-                    request_deserializer=fleet__pb2.Job.FromString,
-                    response_serializer=fleet__pb2.JobAck.SerializeToString,
+                    request_deserializer=proto_dot_fleet__pb2.Job.FromString,
+                    response_serializer=proto_dot_fleet__pb2.JobAck.SerializeToString,
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
@@ -329,8 +329,8 @@ class BotService:
             request,
             target,
             '/fleet.BotService/AssignJob',
-            fleet__pb2.Job.SerializeToString,
-            fleet__pb2.JobAck.FromString,
+            proto_dot_fleet__pb2.Job.SerializeToString,
+            proto_dot_fleet__pb2.JobAck.FromString,
             options,
             channel_credentials,
             insecure,
@@ -355,8 +355,8 @@ class ReservationServiceStub:
         """
         self.Announce = channel.unary_unary(
                 '/fleet.ReservationService/Announce',
-                request_serializer=fleet__pb2.ReservationAnnounce.SerializeToString,
-                response_deserializer=fleet__pb2.ReservationAck.FromString,
+                request_serializer=proto_dot_fleet__pb2.ReservationAnnounce.SerializeToString,
+                response_deserializer=proto_dot_fleet__pb2.ReservationAck.FromString,
                 _registered_method=True)
 
 
@@ -376,8 +376,8 @@ def add_ReservationServiceServicer_to_server(servicer, server):
     rpc_method_handlers = {
             'Announce': grpc.unary_unary_rpc_method_handler(
                     servicer.Announce,
-                    request_deserializer=fleet__pb2.ReservationAnnounce.FromString,
-                    response_serializer=fleet__pb2.ReservationAck.SerializeToString,
+                    request_deserializer=proto_dot_fleet__pb2.ReservationAnnounce.FromString,
+                    response_serializer=proto_dot_fleet__pb2.ReservationAck.SerializeToString,
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
@@ -407,8 +407,8 @@ class ReservationService:
             request,
             target,
             '/fleet.ReservationService/Announce',
-            fleet__pb2.ReservationAnnounce.SerializeToString,
-            fleet__pb2.ReservationAck.FromString,
+            proto_dot_fleet__pb2.ReservationAnnounce.SerializeToString,
+            proto_dot_fleet__pb2.ReservationAck.FromString,
             options,
             channel_credentials,
             insecure,
@@ -421,10 +421,14 @@ class ReservationService:
 
 
 class AdminServiceStub:
-    """--- Admin: introspection and robot-state injection ---
+    """--- Admin: introspection ---
     For operators and the Docker test harness. Only served when ADMIN_ENABLED=1
-    (the virtual network refuses it otherwise). InjectRobotState feeds the
-    bot's RobotSource exactly as a real robot bridge would.
+    (the virtual network refuses it otherwise).
+
+    Read-only. It used to carry InjectRobotState and InjectObstruction, which put
+    a robot snapshot or a blockage straight into the bot around the QR read, the
+    companion and the wire. A robot reports over spore.network.v1.RobotNetwork
+    now, like a robot; see proto/robot.proto.
 
     """
 
@@ -436,42 +440,24 @@ class AdminServiceStub:
         """
         self.GetState = channel.unary_unary(
                 '/fleet.AdminService/GetState',
-                request_serializer=fleet__pb2.Empty.SerializeToString,
-                response_deserializer=fleet__pb2.BotState.FromString,
-                _registered_method=True)
-        self.InjectRobotState = channel.unary_unary(
-                '/fleet.AdminService/InjectRobotState',
-                request_serializer=fleet__pb2.RobotStateMsg.SerializeToString,
-                response_deserializer=fleet__pb2.Empty.FromString,
-                _registered_method=True)
-        self.InjectObstruction = channel.unary_unary(
-                '/fleet.AdminService/InjectObstruction',
-                request_serializer=fleet__pb2.ObstructionMsg.SerializeToString,
-                response_deserializer=fleet__pb2.Empty.FromString,
+                request_serializer=proto_dot_fleet__pb2.Empty.SerializeToString,
+                response_deserializer=proto_dot_fleet__pb2.BotState.FromString,
                 _registered_method=True)
 
 
 class AdminServiceServicer:
-    """--- Admin: introspection and robot-state injection ---
+    """--- Admin: introspection ---
     For operators and the Docker test harness. Only served when ADMIN_ENABLED=1
-    (the virtual network refuses it otherwise). InjectRobotState feeds the
-    bot's RobotSource exactly as a real robot bridge would.
+    (the virtual network refuses it otherwise).
+
+    Read-only. It used to carry InjectRobotState and InjectObstruction, which put
+    a robot snapshot or a blockage straight into the bot around the QR read, the
+    companion and the wire. A robot reports over spore.network.v1.RobotNetwork
+    now, like a robot; see proto/robot.proto.
 
     """
 
     def GetState(self, request, context):
-        """Missing associated documentation comment in .proto file."""
-        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
-        context.set_details('Method not implemented!')
-        raise NotImplementedError('Method not implemented!')
-
-    def InjectRobotState(self, request, context):
-        """Missing associated documentation comment in .proto file."""
-        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
-        context.set_details('Method not implemented!')
-        raise NotImplementedError('Method not implemented!')
-
-    def InjectObstruction(self, request, context):
         """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
@@ -482,18 +468,8 @@ def add_AdminServiceServicer_to_server(servicer, server):
     rpc_method_handlers = {
             'GetState': grpc.unary_unary_rpc_method_handler(
                     servicer.GetState,
-                    request_deserializer=fleet__pb2.Empty.FromString,
-                    response_serializer=fleet__pb2.BotState.SerializeToString,
-            ),
-            'InjectRobotState': grpc.unary_unary_rpc_method_handler(
-                    servicer.InjectRobotState,
-                    request_deserializer=fleet__pb2.RobotStateMsg.FromString,
-                    response_serializer=fleet__pb2.Empty.SerializeToString,
-            ),
-            'InjectObstruction': grpc.unary_unary_rpc_method_handler(
-                    servicer.InjectObstruction,
-                    request_deserializer=fleet__pb2.ObstructionMsg.FromString,
-                    response_serializer=fleet__pb2.Empty.SerializeToString,
+                    request_deserializer=proto_dot_fleet__pb2.Empty.FromString,
+                    response_serializer=proto_dot_fleet__pb2.BotState.SerializeToString,
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
@@ -504,10 +480,14 @@ def add_AdminServiceServicer_to_server(servicer, server):
 
  # This class is part of an EXPERIMENTAL API.
 class AdminService:
-    """--- Admin: introspection and robot-state injection ---
+    """--- Admin: introspection ---
     For operators and the Docker test harness. Only served when ADMIN_ENABLED=1
-    (the virtual network refuses it otherwise). InjectRobotState feeds the
-    bot's RobotSource exactly as a real robot bridge would.
+    (the virtual network refuses it otherwise).
+
+    Read-only. It used to carry InjectRobotState and InjectObstruction, which put
+    a robot snapshot or a blockage straight into the bot around the QR read, the
+    companion and the wire. A robot reports over spore.network.v1.RobotNetwork
+    now, like a robot; see proto/robot.proto.
 
     """
 
@@ -526,62 +506,8 @@ class AdminService:
             request,
             target,
             '/fleet.AdminService/GetState',
-            fleet__pb2.Empty.SerializeToString,
-            fleet__pb2.BotState.FromString,
-            options,
-            channel_credentials,
-            insecure,
-            call_credentials,
-            compression,
-            wait_for_ready,
-            timeout,
-            metadata,
-            _registered_method=True)
-
-    @staticmethod
-    def InjectRobotState(request,
-            target,
-            options=(),
-            channel_credentials=None,
-            call_credentials=None,
-            insecure=False,
-            compression=None,
-            wait_for_ready=None,
-            timeout=None,
-            metadata=None):
-        return grpc.experimental.unary_unary(
-            request,
-            target,
-            '/fleet.AdminService/InjectRobotState',
-            fleet__pb2.RobotStateMsg.SerializeToString,
-            fleet__pb2.Empty.FromString,
-            options,
-            channel_credentials,
-            insecure,
-            call_credentials,
-            compression,
-            wait_for_ready,
-            timeout,
-            metadata,
-            _registered_method=True)
-
-    @staticmethod
-    def InjectObstruction(request,
-            target,
-            options=(),
-            channel_credentials=None,
-            call_credentials=None,
-            insecure=False,
-            compression=None,
-            wait_for_ready=None,
-            timeout=None,
-            metadata=None):
-        return grpc.experimental.unary_unary(
-            request,
-            target,
-            '/fleet.AdminService/InjectObstruction',
-            fleet__pb2.ObstructionMsg.SerializeToString,
-            fleet__pb2.Empty.FromString,
+            proto_dot_fleet__pb2.Empty.SerializeToString,
+            proto_dot_fleet__pb2.BotState.FromString,
             options,
             channel_credentials,
             insecure,
@@ -606,23 +532,23 @@ class LeaderExchangeServiceStub:
         """
         self.LeaderHeartbeat = channel.unary_unary(
                 '/fleet.LeaderExchangeService/LeaderHeartbeat',
-                request_serializer=fleet__pb2.LeaderHBRequest.SerializeToString,
-                response_deserializer=fleet__pb2.LeaderHBAck.FromString,
+                request_serializer=proto_dot_fleet__pb2.LeaderHBRequest.SerializeToString,
+                response_deserializer=proto_dot_fleet__pb2.LeaderHBAck.FromString,
                 _registered_method=True)
         self.MigrationHandoff = channel.unary_unary(
                 '/fleet.LeaderExchangeService/MigrationHandoff',
-                request_serializer=fleet__pb2.MigrationHandoffReq.SerializeToString,
-                response_deserializer=fleet__pb2.MigrationHandoffAck.FromString,
+                request_serializer=proto_dot_fleet__pb2.MigrationHandoffReq.SerializeToString,
+                response_deserializer=proto_dot_fleet__pb2.MigrationHandoffAck.FromString,
                 _registered_method=True)
         self.ForwardJob = channel.unary_unary(
                 '/fleet.LeaderExchangeService/ForwardJob',
-                request_serializer=fleet__pb2.ForwardJobReq.SerializeToString,
-                response_deserializer=fleet__pb2.JobAck.FromString,
+                request_serializer=proto_dot_fleet__pb2.ForwardJobReq.SerializeToString,
+                response_deserializer=proto_dot_fleet__pb2.JobAck.FromString,
                 _registered_method=True)
         self.JobEvent = channel.unary_unary(
                 '/fleet.LeaderExchangeService/JobEvent',
-                request_serializer=fleet__pb2.Job.SerializeToString,
-                response_deserializer=fleet__pb2.JobEventAck.FromString,
+                request_serializer=proto_dot_fleet__pb2.Job.SerializeToString,
+                response_deserializer=proto_dot_fleet__pb2.JobEventAck.FromString,
                 _registered_method=True)
 
 
@@ -663,23 +589,23 @@ def add_LeaderExchangeServiceServicer_to_server(servicer, server):
     rpc_method_handlers = {
             'LeaderHeartbeat': grpc.unary_unary_rpc_method_handler(
                     servicer.LeaderHeartbeat,
-                    request_deserializer=fleet__pb2.LeaderHBRequest.FromString,
-                    response_serializer=fleet__pb2.LeaderHBAck.SerializeToString,
+                    request_deserializer=proto_dot_fleet__pb2.LeaderHBRequest.FromString,
+                    response_serializer=proto_dot_fleet__pb2.LeaderHBAck.SerializeToString,
             ),
             'MigrationHandoff': grpc.unary_unary_rpc_method_handler(
                     servicer.MigrationHandoff,
-                    request_deserializer=fleet__pb2.MigrationHandoffReq.FromString,
-                    response_serializer=fleet__pb2.MigrationHandoffAck.SerializeToString,
+                    request_deserializer=proto_dot_fleet__pb2.MigrationHandoffReq.FromString,
+                    response_serializer=proto_dot_fleet__pb2.MigrationHandoffAck.SerializeToString,
             ),
             'ForwardJob': grpc.unary_unary_rpc_method_handler(
                     servicer.ForwardJob,
-                    request_deserializer=fleet__pb2.ForwardJobReq.FromString,
-                    response_serializer=fleet__pb2.JobAck.SerializeToString,
+                    request_deserializer=proto_dot_fleet__pb2.ForwardJobReq.FromString,
+                    response_serializer=proto_dot_fleet__pb2.JobAck.SerializeToString,
             ),
             'JobEvent': grpc.unary_unary_rpc_method_handler(
                     servicer.JobEvent,
-                    request_deserializer=fleet__pb2.Job.FromString,
-                    response_serializer=fleet__pb2.JobEventAck.SerializeToString,
+                    request_deserializer=proto_dot_fleet__pb2.Job.FromString,
+                    response_serializer=proto_dot_fleet__pb2.JobEventAck.SerializeToString,
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
@@ -709,8 +635,8 @@ class LeaderExchangeService:
             request,
             target,
             '/fleet.LeaderExchangeService/LeaderHeartbeat',
-            fleet__pb2.LeaderHBRequest.SerializeToString,
-            fleet__pb2.LeaderHBAck.FromString,
+            proto_dot_fleet__pb2.LeaderHBRequest.SerializeToString,
+            proto_dot_fleet__pb2.LeaderHBAck.FromString,
             options,
             channel_credentials,
             insecure,
@@ -736,8 +662,8 @@ class LeaderExchangeService:
             request,
             target,
             '/fleet.LeaderExchangeService/MigrationHandoff',
-            fleet__pb2.MigrationHandoffReq.SerializeToString,
-            fleet__pb2.MigrationHandoffAck.FromString,
+            proto_dot_fleet__pb2.MigrationHandoffReq.SerializeToString,
+            proto_dot_fleet__pb2.MigrationHandoffAck.FromString,
             options,
             channel_credentials,
             insecure,
@@ -763,8 +689,8 @@ class LeaderExchangeService:
             request,
             target,
             '/fleet.LeaderExchangeService/ForwardJob',
-            fleet__pb2.ForwardJobReq.SerializeToString,
-            fleet__pb2.JobAck.FromString,
+            proto_dot_fleet__pb2.ForwardJobReq.SerializeToString,
+            proto_dot_fleet__pb2.JobAck.FromString,
             options,
             channel_credentials,
             insecure,
@@ -790,8 +716,8 @@ class LeaderExchangeService:
             request,
             target,
             '/fleet.LeaderExchangeService/JobEvent',
-            fleet__pb2.Job.SerializeToString,
-            fleet__pb2.JobEventAck.FromString,
+            proto_dot_fleet__pb2.Job.SerializeToString,
+            proto_dot_fleet__pb2.JobEventAck.FromString,
             options,
             channel_credentials,
             insecure,
@@ -816,13 +742,13 @@ class ElectionServiceStub:
         """
         self.Elect = channel.unary_unary(
                 '/fleet.ElectionService/Elect',
-                request_serializer=fleet__pb2.ElectRequest.SerializeToString,
-                response_deserializer=fleet__pb2.ElectResponse.FromString,
+                request_serializer=proto_dot_fleet__pb2.ElectRequest.SerializeToString,
+                response_deserializer=proto_dot_fleet__pb2.ElectResponse.FromString,
                 _registered_method=True)
         self.Coordinator = channel.unary_unary(
                 '/fleet.ElectionService/Coordinator',
-                request_serializer=fleet__pb2.CoordinatorRequest.SerializeToString,
-                response_deserializer=fleet__pb2.CoordinatorResponse.FromString,
+                request_serializer=proto_dot_fleet__pb2.CoordinatorRequest.SerializeToString,
+                response_deserializer=proto_dot_fleet__pb2.CoordinatorResponse.FromString,
                 _registered_method=True)
 
 
@@ -848,13 +774,13 @@ def add_ElectionServiceServicer_to_server(servicer, server):
     rpc_method_handlers = {
             'Elect': grpc.unary_unary_rpc_method_handler(
                     servicer.Elect,
-                    request_deserializer=fleet__pb2.ElectRequest.FromString,
-                    response_serializer=fleet__pb2.ElectResponse.SerializeToString,
+                    request_deserializer=proto_dot_fleet__pb2.ElectRequest.FromString,
+                    response_serializer=proto_dot_fleet__pb2.ElectResponse.SerializeToString,
             ),
             'Coordinator': grpc.unary_unary_rpc_method_handler(
                     servicer.Coordinator,
-                    request_deserializer=fleet__pb2.CoordinatorRequest.FromString,
-                    response_serializer=fleet__pb2.CoordinatorResponse.SerializeToString,
+                    request_deserializer=proto_dot_fleet__pb2.CoordinatorRequest.FromString,
+                    response_serializer=proto_dot_fleet__pb2.CoordinatorResponse.SerializeToString,
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
@@ -884,8 +810,8 @@ class ElectionService:
             request,
             target,
             '/fleet.ElectionService/Elect',
-            fleet__pb2.ElectRequest.SerializeToString,
-            fleet__pb2.ElectResponse.FromString,
+            proto_dot_fleet__pb2.ElectRequest.SerializeToString,
+            proto_dot_fleet__pb2.ElectResponse.FromString,
             options,
             channel_credentials,
             insecure,
@@ -911,8 +837,8 @@ class ElectionService:
             request,
             target,
             '/fleet.ElectionService/Coordinator',
-            fleet__pb2.CoordinatorRequest.SerializeToString,
-            fleet__pb2.CoordinatorResponse.FromString,
+            proto_dot_fleet__pb2.CoordinatorRequest.SerializeToString,
+            proto_dot_fleet__pb2.CoordinatorResponse.FromString,
             options,
             channel_credentials,
             insecure,
@@ -937,8 +863,8 @@ class MigrationJoinServiceStub:
         """
         self.MigrationJoin = channel.unary_unary(
                 '/fleet.MigrationJoinService/MigrationJoin',
-                request_serializer=fleet__pb2.MigrationJoinReq.SerializeToString,
-                response_deserializer=fleet__pb2.MigrationJoinAck.FromString,
+                request_serializer=proto_dot_fleet__pb2.MigrationJoinReq.SerializeToString,
+                response_deserializer=proto_dot_fleet__pb2.MigrationJoinAck.FromString,
                 _registered_method=True)
 
 
@@ -958,8 +884,8 @@ def add_MigrationJoinServiceServicer_to_server(servicer, server):
     rpc_method_handlers = {
             'MigrationJoin': grpc.unary_unary_rpc_method_handler(
                     servicer.MigrationJoin,
-                    request_deserializer=fleet__pb2.MigrationJoinReq.FromString,
-                    response_serializer=fleet__pb2.MigrationJoinAck.SerializeToString,
+                    request_deserializer=proto_dot_fleet__pb2.MigrationJoinReq.FromString,
+                    response_serializer=proto_dot_fleet__pb2.MigrationJoinAck.SerializeToString,
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
@@ -989,8 +915,8 @@ class MigrationJoinService:
             request,
             target,
             '/fleet.MigrationJoinService/MigrationJoin',
-            fleet__pb2.MigrationJoinReq.SerializeToString,
-            fleet__pb2.MigrationJoinAck.FromString,
+            proto_dot_fleet__pb2.MigrationJoinReq.SerializeToString,
+            proto_dot_fleet__pb2.MigrationJoinAck.FromString,
             options,
             channel_credentials,
             insecure,

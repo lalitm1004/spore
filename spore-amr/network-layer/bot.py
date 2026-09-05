@@ -176,6 +176,12 @@ class LatestRobotState:
     Nothing downstream wants the ones in between. `latest_node_id` is a
     position, not an event log, and the trail it feeds only records *distinct*
     nodes anyway. So a later report simply replaces an unread earlier one.
+
+    The one thing that buys is worth naming: a *level* survives collapsing and
+    an *edge* does not. A robot reports "carrying, at the dropoff" on every tick
+    until it is not, so the fleet sees it however often it reads. Something that
+    were true for a single report would be missed, which is why nothing on this
+    wire is shaped that way.
     """
 
     def __init__(self) -> None:
@@ -295,9 +301,10 @@ class Bot:
         #: the route to it is worked out per query, not stored as a command.
         self.nav_goal: Goal | None = None
         self._last_target: int | None = None
-        #: Blockages the planner routes around, keyed by node. Reported ones
-        #: would land here too, once the robot link carries the node id -- today
-        #: only AdminService fills it (see ObstructionMsg in fleet.proto).
+        #: Blockages the planner routes around, keyed by node. Filled from what
+        #: a robot actually reports -- `Fault.warning.obstacle` on the robot
+        #: link -- rather than pushed in by an operator, which is how it worked
+        #: until the wire carried the node.
         self.obstructions: dict[int, float] = {}
         self._nav_node: int = 0
         self._nav_since: float = time.monotonic()
@@ -661,6 +668,37 @@ class Bot:
         """
         self._robot_source.push(state)
 
+    def report_obstacle(self, seen_at: int, level: float) -> None:
+        """A robot has something in its way, or has stopped having it.
+
+        `seen_at` is where the *robot* was, which is what the shared schema
+        carries and all a robot can honestly say -- it saw something ahead, and
+        it knows which node it was standing on. What has to be blocked is the
+        node it was heading for, and that is ours to know: we told it to go
+        there one answer ago.
+
+        Blocking `seen_at` instead would block the ground under the robot's own
+        wheels, and the next question from it would come back
+        `no route (start_blocked)` -- a robot walled in by its own report.
+
+        A clear (`seen_at` of 0) drops everything this robot was routing
+        around. It only knows about blockages it reported, so there is nothing
+        else to drop, and leaving them would mean a lane lost for the shift
+        because nothing ever says a second time that it is fine.
+        """
+        if level <= 0:
+            if self.obstructions:
+                log.info("bot-%d: lanes clear again (%d were blocked)",
+                         self.bot_id, len(self.obstructions))
+            self.obstructions.clear()
+            self._last_target = None
+            return
+
+        blocked = self._last_target or seen_at
+        log.info("bot-%d: obstacle reported at node %d, blocking node %d",
+                 self.bot_id, seen_at, blocked)
+        self.set_obstruction(blocked, level)
+
     def set_obstruction(self, node_id: int, level: float) -> None:
         """Mark a node blocked, or clear it with a level of zero."""
         if level <= 0:
@@ -978,7 +1016,7 @@ class Bot:
         self._robot_service = RobotNetworkServicer(
             router=self._route,
             report=self.report_robot_state,
-            obstruct=self.set_obstruction,
+            obstruct=self.report_obstacle,
             state_factory=RobotState,
             bot_id=self.bot_id,
         )

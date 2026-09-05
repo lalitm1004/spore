@@ -138,8 +138,44 @@ class DockerFleet:
     def state(self, c) -> fleet_pb2.BotState:
         return self.admin(c).GetState(fleet_pb2.Empty(), timeout=2, metadata=ADMIN_MD)
 
-    def inject(self, c, **fields) -> None:
-        self.admin(c).InjectRobotState(fleet_pb2.RobotStateMsg(**fields), timeout=2, metadata=ADMIN_MD)
+    def place(self, c, latest_node_id: int, region_id: int = PARK, *,
+              battery: float = 90.0, mission: str = "IDLE", fault: str = "",
+              job_id: str = "", cargo_state: str = "", state: str = "IDLE",
+              obstacle_node: int = 0) -> None:
+        """Put a robot at a node by *telling the truth about where it is*.
+
+        This used to be `inject`, and it was the last back door: an admin RPC
+        pushing a whole `RobotState` straight into the bot, bypassing the QR
+        read, the companion and the wire. It was also the reason the container
+        suite could not see that production never fed position at all -- it
+        supplied by hand the one thing nothing else supplied.
+
+        Now it is a `RobotToNetwork` on the real stream, which is what a
+        companion sends and all a companion can send. Two consequences worth
+        knowing:
+
+        `state` is accepted and ignored. The wire has no field for a robot's
+        FSM state, deliberately -- a robot reporting at a node is standing at
+        it, and anything it does between nodes is not something this link
+        describes. It stays in the signature so scenarios read the way they did.
+
+        A report is applied on the run loop's next tick, not on return. That was
+        true of injection too; it is why every scenario here waits for what it
+        asked for rather than assuming it.
+        """
+        message = robot_pb2.RobotToNetwork(
+            latest_node_id=latest_node_id,
+            region_id=region_id,
+            telemetry=robot_pb2.Telemetry(
+                battery=robot_pb2.Battery(percentage=battery)),
+            mission=_mission(mission, job_id, cargo_state),
+        )
+        if fault:
+            message.fault.error.type = _ERROR_TYPE.get(
+                fault, robot_pb2.ERROR_TYPE_MISC_ERROR)
+        if obstacle_node:
+            message.fault.warning.obstacle.current_node_id = obstacle_node
+        self.report(c, message)
 
     def submit_job(self, c, job_id: str, pickup: int, dropoff: int) -> fleet_pb2.JobAck:
         stub = fleet_pb2_grpc.JobServiceStub(grpc.insecure_channel(self.endpoint(c)))
@@ -207,31 +243,51 @@ class DockerFleet:
             held = self.state(c).current_job_id
             if not held:
                 continue
-            self.inject(c, latest_node_id=node, region_id=PARK, battery=90.0,
+            self.place(c, latest_node_id=node, region_id=PARK, battery=90.0,
                         state="IDLE", mission="CARGO", job_id=held,
                         cargo_state="DROPOFF")
-            self.inject(c, latest_node_id=node, region_id=PARK, battery=90.0,
+            self.place(c, latest_node_id=node, region_id=PARK, battery=90.0,
                         state="IDLE", mission="IDLE")
             assert wait_until(lambda c=c: not self.state(c).current_job_id, 20,
                               what=f"job {held} to be crossed off"), \
                 f"bot still holds {held}; the next scenario will find nobody free"
         for c, node in zip(cs, nodes, strict=False):
-            self.inject(c, latest_node_id=node, region_id=PARK, battery=90.0,
+            self.place(c, latest_node_id=node, region_id=PARK, battery=90.0,
                         state="IDLE", mission="IDLE", fault="MOTOR_ERROR")
         for c, node in zip(cs, nodes, strict=False):
-            self.inject(c, latest_node_id=node, region_id=PARK, battery=90.0,
+            self.place(c, latest_node_id=node, region_id=PARK, battery=90.0,
                         state="IDLE", mission="IDLE", fault="")
 
-    def obstruct(self, c, node_id: int, level: float = 1.0) -> None:
-        """Block a node for this bot, or clear it with level 0."""
-        self.admin(c).InjectObstruction(
-            fleet_pb2.ObstructionMsg(node_id=node_id, level=level),
-            timeout=2, metadata=ADMIN_MD)
+    def obstruct(self, c, at_node: int, level: float = 1.0) -> None:
+        """Report something in the lane, the way a robot reports it.
+
+        `at_node` is where the *robot* is, not what gets blocked. A robot can
+        only honestly say "I am here and something is in front of me"; which
+        node that makes unusable is the network layer's to work out, because it
+        is the one that told the robot where to go. So a scenario asks first,
+        and what gets blocked is the lane it was answered with.
+
+        `level` survives as a parameter but only zero-or-not reaches the wire: a
+        robot sees something or it does not, and has no way to say how much. The
+        planner's graded levels are for a sensor that can.
+        """
+        message = robot_pb2.RobotToNetwork(
+            latest_node_id=at_node,
+            region_id=PARK,
+            telemetry=robot_pb2.Telemetry(
+                battery=robot_pb2.Battery(percentage=90.0)),
+            mission=robot_pb2.Mission(idle=robot_pb2.Idle()),
+        )
+        # Present-and-zero is how a robot says the lane is clear again, which is
+        # a different thing from a report that mentions no obstacle at all --
+        # and almost every report mentions none.
+        message.fault.warning.obstacle.current_node_id = at_node if level > 0 else 0
+        self.report(c, message)
 
     def drive(self, c, nodes, region: int = PARK, **fields) -> None:
         """Walk a robot along a route, one QR scan at a time."""
         for node in nodes:
-            self.inject(c, latest_node_id=node, region_id=region, **fields)
+            self.place(c, latest_node_id=node, region_id=region, **fields)
             time.sleep(0.05)
 
     def decisions(self, c, nodes, region: int = PARK, **fields) -> list:
@@ -242,7 +298,7 @@ class DockerFleet:
         """
         out = []
         for i, node in enumerate(nodes):
-            self.inject(c, latest_node_id=node, region_id=region, **fields)
+            self.place(c, latest_node_id=node, region_id=region, **fields)
             out.append(self.ask(c, _query(node, _neighbours(node), query_id=i + 1, region=region)))
         return out
 
@@ -471,7 +527,7 @@ def test_two_regions_and_a_migration_over_real_containers(fleet):
     mover = next(c for c in park if c is not park_leader)
     mover_id = fleet.state(mover).bot_id
     grid_node = _map_nodes(GRID, 1)[0]
-    fleet.inject(mover, latest_node_id=grid_node, region_id=GRID, battery=90.0, state="IDLE", mission="IDLE")
+    fleet.place(mover, latest_node_id=grid_node, region_id=GRID, battery=90.0, state="IDLE", mission="IDLE")
 
     assert wait_until(lambda: fleet.state(mover).region_id == GRID and fleet.state(mover).role == "follower", 40,
                       what="migrate")
@@ -492,12 +548,17 @@ def test_job_dispatched_and_completed_over_real_containers(fleet):
     assert fleet.state(assignee).current_job_id == "job-docker-1"
 
     # Drive the assignee's "robot" through the job.
-    fleet.inject(assignee, latest_node_id=pickup, region_id=PARK, battery=90.0, state="MOVING",
+    fleet.place(assignee, latest_node_id=pickup, region_id=PARK, battery=90.0, state="MOVING",
                  mission="CARGO", job_id="job-docker-1", cargo_state="EN_ROUTE")
     assert wait_until(lambda: any(j.job_id == "job-docker-1" and j.status == "PICKED_UP" for j in fleet.state(leader).jobs), 15)
-    fleet.inject(assignee, latest_node_id=dropoff, region_id=PARK, battery=88.0, state="MOVING",
+    fleet.place(assignee, latest_node_id=dropoff, region_id=PARK, battery=88.0, state="MOVING",
                  mission="CARGO", job_id="job-docker-1", cargo_state="DROPOFF")
-    fleet.inject(assignee, latest_node_id=dropoff, region_id=PARK, battery=88.0, state="IDLE", mission="IDLE")
+    # Wait for it to land before saying the cargo is down. A robot reports its
+    # state for many ticks; two reports a millisecond apart is not something one
+    # does, and the newest simply replaces the unread older one.
+    assert wait_until(lambda: fleet.state(assignee).cargo_state == "DROPOFF", 15,
+                      what="the dropoff to be reported")
+    fleet.place(assignee, latest_node_id=dropoff, region_id=PARK, battery=88.0, state="IDLE", mission="IDLE")
     assert wait_until(lambda: not any(j.job_id == "job-docker-1" for j in fleet.state(leader).jobs), 15,
                       what="crossed off")
     assert wait_until(lambda: fleet.state(assignee).current_job_id == "", 10, what="assignee free again")
@@ -529,7 +590,7 @@ def _claims_of(fleet, container, bot_id: int) -> list:
 
 
 def _park(fleet, container, node: int) -> None:
-    fleet.inject(container, latest_node_id=node, region_id=PARK,
+    fleet.place(container, latest_node_id=node, region_id=PARK,
                  battery=90.0, state="IDLE", mission="IDLE")
 
 
@@ -627,6 +688,34 @@ def test_two_bots_on_one_node_settle_on_a_single_holder(fleet):
 # container, which is the same link a real robot uses. What they exercise is the
 # whole path -- query in, plan against live traffic, decision out.
 
+_ERROR_TYPE = {
+    "MOTOR_ERROR": robot_pb2.ERROR_TYPE_MOTOR_ERROR,
+    "CAMERA_ERROR": robot_pb2.ERROR_TYPE_CAMERA_ERROR,
+    "LIDAR_ERROR": robot_pb2.ERROR_TYPE_LIDAR_ERROR,
+    "LOCATION_UNKNOWN": robot_pb2.ERROR_TYPE_LOCATION_UNKNOWN,
+    "MISC_ERROR": robot_pb2.ERROR_TYPE_MISC_ERROR,
+}
+
+_CARGO_STATE = {
+    "PICKUP": robot_pb2.CARGO_STATE_PICKUP,
+    "DROPOFF": robot_pb2.CARGO_STATE_DROPOFF,
+    "EN_ROUTE": robot_pb2.CARGO_STATE_EN_ROUTE,
+}
+
+
+def _mission(mission: str, job_id: str, cargo_state: str):
+    """A mission on the wire: which `oneof` case is set *is* the value."""
+    if mission == "CARGO" or cargo_state:
+        return robot_pb2.Mission(cargo=robot_pb2.Cargo(
+            cargo_id=job_id,
+            state=_CARGO_STATE.get(cargo_state, robot_pb2.CARGO_STATE_UNSPECIFIED)))
+    return {
+        "PARK": robot_pb2.Mission(park=robot_pb2.Park()),
+        "CHARGE": robot_pb2.Mission(charge=robot_pb2.Charge()),
+        "HOLD": robot_pb2.Mission(hold=robot_pb2.Hold()),
+    }.get(mission, robot_pb2.Mission(idle=robot_pb2.Idle()))
+
+
 _KIND_NAME = {
     # UNSPECIFIED reads as PROCEED on purpose: the wire lets a decision leave
     # the field unset, and a robot that sees nothing there takes the lane.
@@ -687,7 +776,7 @@ def _neighbours(node_id: int):
 def test_A1_a_bot_with_no_job_still_answers(one_bot):
     fleet, cs = one_bot
     node = _map_nodes(PARK, 1)[0]
-    fleet.inject(cs[0], latest_node_id=node, region_id=PARK, battery=90.0,
+    fleet.place(cs[0], latest_node_id=node, region_id=PARK, battery=90.0,
                  state="IDLE", mission="IDLE")
 
     reply = fleet.ask(cs[0], _query(node, _neighbours(node)))
@@ -704,7 +793,7 @@ def test_A2_a_bot_given_a_job_is_routed_towards_it(fleet):
     reply = fleet.ask(holder, _query(start, _neighbours(start)))
     assert _kind(reply) in ("PROCEED", "REROUTE", "WAIT", "YIELD"), reply
     if _kind(reply) in ("PROCEED", "REROUTE"):
-        assert reply.target_node_id in _neighbours(start).values(), \
+        assert reply.target_node_id in _neighbours(start), \
             "it must name a lane the robot said exists"
     fleet.assert_no_overlap(cs)
 
@@ -719,7 +808,7 @@ def test_A4_a_changed_route_is_announced_as_a_reroute(fleet):
     start = nodes[0]
 
     for c in cs:
-        fleet.inject(c, latest_node_id=start, region_id=PARK, battery=90.0,
+        fleet.place(c, latest_node_id=start, region_id=PARK, battery=90.0,
                      state="IDLE", mission="IDLE")
     assert wait_until(lambda: all(p.mission == "IDLE" for p in fleet.state(cs[0]).roster), 20)
     assert fleet.submit_job(cs[0], "A4-a", nodes[6], nodes[7]).accepted
@@ -744,7 +833,7 @@ def test_A3_a_bot_standing_on_its_goal_is_told_to_wait(fleet):
     goal = nodes[6]
 
     for c in cs:
-        fleet.inject(c, latest_node_id=goal, region_id=PARK, battery=90.0,
+        fleet.place(c, latest_node_id=goal, region_id=PARK, battery=90.0,
                      state="IDLE", mission="IDLE")
     assert wait_until(lambda: all(p.mission == "IDLE" for p in fleet.state(cs[0]).roster),
                       20, what="the roster to catch up")
@@ -816,7 +905,7 @@ def test_A9_the_query_id_comes_back_exactly(one_bot):
     fleet, cs = one_bot
     node = _map_nodes(PARK, 1)[0]
     for query_id in (1, 7, 4242):
-        assert fleet.ask(cs[0], _query(node, _neighbours(node), query_id=query_id))["query_id"] == query_id
+        assert fleet.ask(cs[0], _query(node, _neighbours(node), query_id=query_id)).query_id == query_id
 
 
 @pytest.mark.docker
@@ -873,7 +962,7 @@ def _corridor(min_hops: int = 6):
 def _move(fleet, c, node: int, region: int = PARK):
     """Move a bot without clobbering everything else about it.
 
-    `InjectRobotState` replaces the whole state, and proto3 defaults make every
+    A report replaces the whole state, and proto3 defaults make every
     omitted field zero -- so injecting a node on its own reports a flat battery
     and an empty mission, and a bot that was mid-job promptly abandons it as if
     it had failed. Which is correct behaviour, and a trap: the scenario asks for
@@ -888,7 +977,7 @@ def _move(fleet, c, node: int, region: int = PARK):
     # goes with it, and the scenario is answered `no job` by a bot it had just
     # given work to. Found exactly that way: F6 passed alone and failed after F3.
     in_flight = st.cargo_state if st.cargo_state in ("PICKUP", "EN_ROUTE", "DROPOFF") else ""
-    fleet.inject(c, latest_node_id=node, region_id=region, battery=90.0,
+    fleet.place(c, latest_node_id=node, region_id=region, battery=90.0,
                  state="IDLE", mission="IDLE",
                  job_id=st.current_job_id, cargo_state=in_flight)
 
@@ -925,7 +1014,7 @@ def _routing_fleet(fleet, job_id: str, at: int, count: int = 2, region: int = PA
     far = _map_nodes(region, 40)
     spare = [n for n in far if n not in (at, far[-2], far[-1])]
     for i, c in enumerate(cs):
-        fleet.inject(c, latest_node_id=spare[-(i + 1)], region_id=region,
+        fleet.place(c, latest_node_id=spare[-(i + 1)], region_id=region,
                      battery=90.0, state="IDLE", mission="IDLE")
     leader = fleet.leaders(cs)[0]
     assert wait_until(lambda: all(p.mission == "IDLE" for p in fleet.state(leader).roster),
@@ -980,7 +1069,7 @@ def test_C2_the_goal_moves_to_the_dropoff_once_the_cargo_is_aboard(fleet):
     pickup, dropoff = nodes[6], nodes[10]
 
     for c in cs:
-        fleet.inject(c, latest_node_id=nodes[0], region_id=PARK, battery=90.0,
+        fleet.place(c, latest_node_id=nodes[0], region_id=PARK, battery=90.0,
                      state="IDLE", mission="IDLE")
     assert wait_until(lambda: all(p.mission == "IDLE" for p in fleet.state(cs[0]).roster), 20)
     assert fleet.submit_job(cs[0], "C2", pickup, dropoff).accepted
@@ -988,7 +1077,7 @@ def test_C2_the_goal_moves_to_the_dropoff_once_the_cargo_is_aboard(fleet):
     assert holder is not None
 
     # Arrive and report the cargo aboard, exactly as a robot would.
-    fleet.inject(holder, latest_node_id=pickup, region_id=PARK, battery=90.0,
+    fleet.place(holder, latest_node_id=pickup, region_id=PARK, battery=90.0,
                  state="IDLE", mission="CARGO", job_id="C2", cargo_state="EN_ROUTE")
     assert wait_until(lambda: fleet.state(holder).cargo_state == "EN_ROUTE", 20,
                       what="the pickup to register")
@@ -1007,7 +1096,7 @@ def test_C3_a_neighbours_claim_is_respected(fleet):
 
     cs, ours_c = _routing_fleet(fleet, "C3", ours)
     other_c = next(c for c in cs if c is not ours_c)
-    fleet.inject(other_c, latest_node_id=theirs, region_id=PARK, battery=90.0,
+    fleet.place(other_c, latest_node_id=theirs, region_id=PARK, battery=90.0,
                  state="IDLE", mission="IDLE")
     other_id = fleet.state(other_c).bot_id
     assert wait_until(lambda: any(r.bot_id == other_id and r.node_id == theirs
@@ -1048,9 +1137,9 @@ def test_C6_a_flat_battery_waits_where_a_charged_one_would_go_round(two_bots):
     corridor = _corridor(8)
     ours, ahead = corridor[3], corridor[4]
 
-    fleet.inject(cs[1], latest_node_id=ahead, region_id=PARK, battery=90.0,
+    fleet.place(cs[1], latest_node_id=ahead, region_id=PARK, battery=90.0,
                  state="IDLE", mission="IDLE")
-    fleet.inject(cs[0], latest_node_id=ours, region_id=PARK, battery=8.0,
+    fleet.place(cs[0], latest_node_id=ours, region_id=PARK, battery=8.0,
                  state="IDLE", mission="IDLE")
     assert wait_until(lambda: len(fleet.state(cs[0]).reservations) > 1, 20,
                       what="claims to be exchanged")
@@ -1086,7 +1175,7 @@ def test_C8_an_unreachable_goal_is_said_out_loud(fleet):
     cs = fleet.launch(1, PARK, **FAST_TIMINGS)
     assert wait_until(lambda: fleet.converged(cs, PARK), 30, what="converge")
     node = _map_nodes(PARK, 1)[0]
-    fleet.inject(cs[0], latest_node_id=node, region_id=PARK, battery=90.0,
+    fleet.place(cs[0], latest_node_id=node, region_id=PARK, battery=90.0,
                  state="IDLE", mission="IDLE")
 
     reply = fleet.ask(cs[0], _query(node, _neighbours(node)))
@@ -1128,7 +1217,7 @@ def _free_fleet(fleet, count: int, region: int = PARK, node=None):
     assert wait_until(lambda: fleet.converged(cs, region), 30, what="converge")
     node = node or _map_nodes(region, 1)[0]
     for c in cs:
-        fleet.inject(c, latest_node_id=node, region_id=region, battery=90.0,
+        fleet.place(c, latest_node_id=node, region_id=region, battery=90.0,
                      state="IDLE", mission="IDLE")
     leader = fleet.leaders(cs)[0]
     assert wait_until(lambda: all(p.mission == "IDLE" for p in fleet.state(leader).roster),
@@ -1143,9 +1232,9 @@ def test_B1_the_nearest_free_follower_is_assigned(fleet):
     pickup = nodes[0]
     followers = [c for c in cs if c.id != leader.id]
     near, far = _near_and_far(PARK, pickup)
-    fleet.inject(followers[0], latest_node_id=near, region_id=PARK, battery=90.0,
+    fleet.place(followers[0], latest_node_id=near, region_id=PARK, battery=90.0,
                  state="IDLE", mission="IDLE")
-    fleet.inject(followers[1], latest_node_id=far, region_id=PARK, battery=90.0,
+    fleet.place(followers[1], latest_node_id=far, region_id=PARK, battery=90.0,
                  state="IDLE", mission="IDLE")
     assert wait_until(lambda: {p.latest_node_id for p in fleet.state(leader).roster} >= {near, far},
                       20, what="both positions to reach the roster")
@@ -1164,9 +1253,9 @@ def test_B2_the_charge_bucket_beats_distance(fleet):
     pickup = nodes[0]
     followers = [c for c in cs if c.id != leader.id]
     near, far = _near_and_far(PARK, pickup)
-    fleet.inject(followers[0], latest_node_id=near, region_id=PARK, battery=35.0,
+    fleet.place(followers[0], latest_node_id=near, region_id=PARK, battery=35.0,
                  state="IDLE", mission="IDLE")
-    fleet.inject(followers[1], latest_node_id=far, region_id=PARK, battery=95.0,
+    fleet.place(followers[1], latest_node_id=far, region_id=PARK, battery=95.0,
                  state="IDLE", mission="IDLE")
     assert wait_until(lambda: {round(p.battery) for p in fleet.state(leader).roster} >= {35, 95},
                       20, what="both batteries to reach the roster")
@@ -1195,7 +1284,7 @@ def test_B4_a_flat_bot_is_never_assigned(fleet):
     nodes = _map_nodes(PARK, 12)
     follower = [c for c in cs if c.id != leader.id][0]
     flat = fleet.state(follower).bot_id
-    fleet.inject(follower, latest_node_id=nodes[1], region_id=PARK, battery=5.0,
+    fleet.place(follower, latest_node_id=nodes[1], region_id=PARK, battery=5.0,
                  state="IDLE", mission="IDLE")
     assert wait_until(lambda: any(p.bot_id == flat and p.battery < 10
                                   for p in fleet.state(leader).roster), 20)
@@ -1211,7 +1300,7 @@ def test_B5_a_faulted_bot_is_never_assigned(fleet):
     nodes = _map_nodes(PARK, 12)
     follower = [c for c in cs if c.id != leader.id][0]
     broken = fleet.state(follower).bot_id
-    fleet.inject(follower, latest_node_id=nodes[1], region_id=PARK, battery=90.0,
+    fleet.place(follower, latest_node_id=nodes[1], region_id=PARK, battery=90.0,
                  state="FAULTED", mission="IDLE", fault="MOTOR_ERROR")
     assert wait_until(lambda: any(p.bot_id == broken and p.fault
                                   for p in fleet.state(leader).roster), 20)
@@ -1228,7 +1317,7 @@ def test_B6_the_leader_takes_a_job_only_when_nobody_else_can(fleet):
     cs, leader = _free_fleet(fleet, 2)
     nodes = _map_nodes(PARK, 12)
     follower = [c for c in cs if c.id != leader.id][0]
-    fleet.inject(follower, latest_node_id=nodes[1], region_id=PARK, battery=5.0,
+    fleet.place(follower, latest_node_id=nodes[1], region_id=PARK, battery=5.0,
                  state="IDLE", mission="IDLE")
     assert wait_until(lambda: any(p.battery < 10 for p in fleet.state(leader).roster), 20)
 
@@ -1287,16 +1376,16 @@ def test_B12_a_job_runs_from_pickup_to_delivered(fleet):
     holder = _holder_of(fleet, cs, "B12")
     assert holder is not None
 
-    fleet.inject(holder, latest_node_id=pickup, region_id=PARK, battery=90.0,
+    fleet.place(holder, latest_node_id=pickup, region_id=PARK, battery=90.0,
                  state="IDLE", mission="CARGO", job_id="B12", cargo_state="EN_ROUTE")
     assert wait_until(lambda: fleet.state(holder).cargo_state == "EN_ROUTE", 20, what="pickup")
 
-    fleet.inject(holder, latest_node_id=dropoff, region_id=PARK, battery=90.0,
+    fleet.place(holder, latest_node_id=dropoff, region_id=PARK, battery=90.0,
                  state="IDLE", mission="CARGO", job_id="B12", cargo_state="DROPOFF")
     assert wait_until(lambda: fleet.state(holder).cargo_state == "DROPOFF", 20, what="dropoff")
 
     # Mission leaves CARGO: the robot has set the cargo down.
-    fleet.inject(holder, latest_node_id=dropoff, region_id=PARK, battery=90.0,
+    fleet.place(holder, latest_node_id=dropoff, region_id=PARK, battery=90.0,
                  state="IDLE", mission="IDLE")
     assert wait_until(lambda: fleet.state(holder).current_job_id == "", 30,
                       what="the job to be crossed off")
@@ -1314,7 +1403,7 @@ def test_B10_a_job_for_another_region_is_forwarded_to_its_leader(fleet):
     grid = fleet.launch(1, GRID, start_id=10, **FAST_TIMINGS)
     assert wait_until(lambda: fleet.converged(grid, GRID), 30, what="the second region")
     grid_node = _map_nodes(GRID, 4)[0]
-    fleet.inject(grid[0], latest_node_id=grid_node, region_id=GRID, battery=90.0,
+    fleet.place(grid[0], latest_node_id=grid_node, region_id=GRID, battery=90.0,
                  state="IDLE", mission="IDLE")
     assert wait_until(
         lambda: {ld.region_id for ld in fleet.state(park_leader).other_leaders} >= {GRID},
@@ -1333,7 +1422,7 @@ def test_B11_a_job_nobody_can_take_is_queued_and_retried(fleet):
     nodes = _map_nodes(PARK, 12)
     follower = [c for c in cs if c.id != leader.id][0]
     for c in cs:
-        fleet.inject(c, latest_node_id=nodes[1], region_id=PARK, battery=5.0,
+        fleet.place(c, latest_node_id=nodes[1], region_id=PARK, battery=5.0,
                      state="IDLE", mission="IDLE")
     assert wait_until(lambda: all(p.battery < 10 for p in fleet.state(leader).roster), 20,
                       what="everyone to look too flat to work")
@@ -1344,7 +1433,7 @@ def test_B11_a_job_nobody_can_take_is_queued_and_retried(fleet):
                       what="the job to be queued")
 
     # Charge one up; the retry should find it.
-    fleet.inject(follower, latest_node_id=nodes[1], region_id=PARK, battery=95.0,
+    fleet.place(follower, latest_node_id=nodes[1], region_id=PARK, battery=95.0,
                  state="IDLE", mission="IDLE")
     assert wait_until(lambda: _holder_of(fleet, cs, "B11") is not None, 40,
                       what="the queued job to be picked up once a bot was free")
@@ -1377,7 +1466,7 @@ def test_D1_D2_D3_a_stalled_bot_escalates_through_its_rungs(fleet):
     # Stop reporting movement: same node, over and over.
     stuck_at = nodes[0]
     for _ in range(20):
-        fleet.inject(holder, latest_node_id=stuck_at, region_id=PARK, battery=90.0,
+        fleet.place(holder, latest_node_id=stuck_at, region_id=PARK, battery=90.0,
                      state="MOVING", mission="CARGO", job_id="D1", cargo_state="PICKUP")
         time.sleep(0.3)
 
@@ -1397,7 +1486,7 @@ def test_D4_a_fault_before_pickup_gives_the_job_back(fleet):
     holder = _holder_of(fleet, cs, "D4")
     assert holder is not None
 
-    fleet.inject(holder, latest_node_id=nodes[1], region_id=PARK, battery=90.0,
+    fleet.place(holder, latest_node_id=nodes[1], region_id=PARK, battery=90.0,
                  state="FAULTED", mission="CARGO", fault="MOTOR_ERROR",
                  job_id="D4", cargo_state="PICKUP")
     assert wait_until(lambda: fleet.state(holder).current_job_id == "", 20,
@@ -1414,11 +1503,11 @@ def test_D5_a_fault_after_pickup_keeps_the_job_and_raises_it(fleet):
     holder = _holder_of(fleet, cs, "D5")
     assert holder is not None
 
-    fleet.inject(holder, latest_node_id=nodes[6], region_id=PARK, battery=90.0,
+    fleet.place(holder, latest_node_id=nodes[6], region_id=PARK, battery=90.0,
                  state="IDLE", mission="CARGO", job_id="D5", cargo_state="EN_ROUTE")
     assert wait_until(lambda: fleet.state(holder).cargo_state == "EN_ROUTE", 20)
 
-    fleet.inject(holder, latest_node_id=nodes[6], region_id=PARK, battery=90.0,
+    fleet.place(holder, latest_node_id=nodes[6], region_id=PARK, battery=90.0,
                  state="FAULTED", mission="CARGO", fault="MOTOR_ERROR",
                  job_id="D5", cargo_state="EN_ROUTE")
     assert wait_until(lambda: fleet.state(holder).current_job_id == "D5", 10), \
@@ -1435,7 +1524,7 @@ def test_D6_the_link_survives_a_companion_that_goes_away(one_bot):
     to the same listener."""
     fleet, cs = one_bot
     node = _map_nodes(PARK, 1)[0]
-    fleet.inject(cs[0], latest_node_id=node, region_id=PARK, battery=90.0,
+    fleet.place(cs[0], latest_node_id=node, region_id=PARK, battery=90.0,
                  state="IDLE", mission="IDLE")
 
     first = fleet.ask(cs[0], _query(node, _neighbours(node), query_id=1))
@@ -1455,7 +1544,7 @@ def test_D7_a_killed_bot_stops_blocking_the_lane_it_held(fleet):
     assert wait_until(lambda: fleet.converged(cs, PARK), 30, what="converge")
     corridor = _corridor(6)
     for c, node in zip(cs, corridor[:3], strict=False):
-        fleet.inject(c, latest_node_id=node, region_id=PARK, battery=90.0,
+        fleet.place(c, latest_node_id=node, region_id=PARK, battery=90.0,
                      state="IDLE", mission="IDLE")
 
     victim, watcher = cs[0], cs[1]
@@ -1479,7 +1568,7 @@ def test_E1_two_bots_on_one_node_settle_on_a_single_holder(two_bots):
     fleet.reset(cs)
     node = _map_nodes(PARK, 1)[0]
     for c in cs:
-        fleet.inject(c, latest_node_id=node, region_id=PARK, battery=90.0,
+        fleet.place(c, latest_node_id=node, region_id=PARK, battery=90.0,
                      state="IDLE", mission="IDLE")
 
     def one_holder() -> bool:
@@ -1498,7 +1587,7 @@ def test_E2_three_bots_on_one_node_still_settle_on_one(three_bots):
     fleet.reset(cs)
     node = _map_nodes(PARK, 1)[0]
     for c in cs:
-        fleet.inject(c, latest_node_id=node, region_id=PARK, battery=90.0,
+        fleet.place(c, latest_node_id=node, region_id=PARK, battery=90.0,
                      state="IDLE", mission="IDLE")
 
     def one_holder() -> bool:
@@ -1520,7 +1609,7 @@ def test_E4_a_following_bot_does_not_close_up_on_the_one_ahead(fleet):
     # The follower is the one doing the routing, so the job has to land on it.
     cs, follower_c = _routing_fleet(fleet, "E4", follower_node)
     ahead_c = next(c for c in cs if c is not follower_c)
-    fleet.inject(ahead_c, latest_node_id=leader_node, region_id=PARK, battery=90.0,
+    fleet.place(ahead_c, latest_node_id=leader_node, region_id=PARK, battery=90.0,
                  state="IDLE", mission="IDLE")
     ahead_id = fleet.state(ahead_c).bot_id
     assert wait_until(lambda: any(r.bot_id == ahead_id for r in fleet.state(follower_c).reservations),
@@ -1538,7 +1627,8 @@ def test_E4_a_following_bot_does_not_close_up_on_the_one_ahead(fleet):
 @pytest.mark.docker
 def test_F2_an_obstruction_is_routed_around(fleet):
     """The planner has always supported obstructions; nothing fed it one until
-    now. See ObstructionMsg in fleet.proto for what this shortcut skips.
+    now, because the node in a robot's OBSTACLE warning was dropped on the way
+    in. It is not any more, so this drives the real path.
 
     Obstructions ride on the planning `Request`, not on the traffic view -- the
     search is the only thing that prices them. This scenario is what proves
@@ -1569,7 +1659,7 @@ def test_F3_clearing_an_obstruction_opens_the_lane_again(fleet):
     forgets lanes it can use."""
     node = _map_nodes(PARK, 1)[0]
     cs, ours = _routing_fleet(fleet, "F3", node)
-    lane = list(_neighbours(node).values())[0]
+    lane = _neighbours(node)[0]
 
     fleet.obstruct(ours, lane, level=1.0)
     blocked = _planned(fleet.ask(ours, _query(node, _neighbours(node), query_id=1)),
@@ -1598,7 +1688,7 @@ def test_F4_a_bot_that_migrates_replans_on_arrival(fleet):
 
     mover = [c for c in park if c.id != park_leader.id][0]
     grid_node = _map_nodes(GRID, 4)[0]
-    fleet.inject(mover, latest_node_id=grid_node, region_id=GRID, battery=90.0,
+    fleet.place(mover, latest_node_id=grid_node, region_id=GRID, battery=90.0,
                  state="IDLE", mission="IDLE")
     assert wait_until(lambda: fleet.state(mover).region_id == GRID, 40, what="the migration")
 
@@ -1628,7 +1718,7 @@ def test_F6_a_peers_claim_between_two_questions_changes_the_answer(fleet):
         f"nothing was in the way, so there is a lane to contest; got {first}"
     contested = first.target_node_id
 
-    fleet.inject(other_c, latest_node_id=contested, region_id=PARK, battery=90.0,
+    fleet.place(other_c, latest_node_id=contested, region_id=PARK, battery=90.0,
                  state="IDLE", mission="IDLE")
     other = fleet.state(other_c).bot_id
     assert wait_until(
@@ -1665,7 +1755,7 @@ def test_G1_the_free_bot_gives_way_to_the_one_carrying_cargo(fleet):
 
     nodes = _map_nodes(PARK, 12)
     for c in cs:
-        fleet.inject(c, latest_node_id=nodes[0], region_id=PARK, battery=90.0,
+        fleet.place(c, latest_node_id=nodes[0], region_id=PARK, battery=90.0,
                      state="IDLE", mission="IDLE")
     leader = fleet.leaders(cs)[0]
     assert wait_until(lambda: all(p.mission == "IDLE" for p in fleet.state(leader).roster), 20)
@@ -1674,10 +1764,10 @@ def test_G1_the_free_bot_gives_way_to_the_one_carrying_cargo(fleet):
     assert carrier is not None
     free = [c for c in cs if c.id != carrier.id][0]
 
-    fleet.inject(carrier, latest_node_id=theirs, region_id=PARK, battery=90.0,
+    fleet.place(carrier, latest_node_id=theirs, region_id=PARK, battery=90.0,
                  state="IDLE", mission="CARGO", job_id="G1", cargo_state="EN_ROUTE")
     assert wait_until(lambda: fleet.state(carrier).cargo_state == "EN_ROUTE", 20)
-    fleet.inject(free, latest_node_id=ours, region_id=PARK, battery=90.0,
+    fleet.place(free, latest_node_id=ours, region_id=PARK, battery=90.0,
                  state="IDLE", mission="IDLE")
     carrier_id = fleet.state(carrier).bot_id
     assert wait_until(lambda: any(r.bot_id == carrier_id for r in fleet.state(free).reservations),
@@ -1698,9 +1788,9 @@ def test_G2_the_lower_bot_id_holds_when_ranks_are_equal(fleet):
     corridor = _corridor(8)
     by_id = sorted(cs, key=lambda c: fleet.state(c).bot_id)
     lower, higher = by_id[0], by_id[1]
-    fleet.inject(lower, latest_node_id=corridor[3], region_id=PARK, battery=90.0,
+    fleet.place(lower, latest_node_id=corridor[3], region_id=PARK, battery=90.0,
                  state="IDLE", mission="IDLE")
-    fleet.inject(higher, latest_node_id=corridor[4], region_id=PARK, battery=90.0,
+    fleet.place(higher, latest_node_id=corridor[4], region_id=PARK, battery=90.0,
                  state="IDLE", mission="IDLE")
     higher_id = fleet.state(higher).bot_id
     assert wait_until(lambda: any(r.bot_id == higher_id for r in fleet.state(lower).reservations),
@@ -1718,9 +1808,9 @@ def test_G7_exactly_one_side_of_a_contest_gives_way(fleet):
     cs = fleet.launch(2, PARK, **YIELD_TIMINGS)
     assert wait_until(lambda: fleet.converged(cs, PARK), 30, what="converge")
     corridor = _corridor(8)
-    fleet.inject(cs[0], latest_node_id=corridor[3], region_id=PARK, battery=90.0,
+    fleet.place(cs[0], latest_node_id=corridor[3], region_id=PARK, battery=90.0,
                  state="IDLE", mission="IDLE")
-    fleet.inject(cs[1], latest_node_id=corridor[4], region_id=PARK, battery=90.0,
+    fleet.place(cs[1], latest_node_id=corridor[4], region_id=PARK, battery=90.0,
                  state="IDLE", mission="IDLE")
     assert wait_until(lambda: len(fleet.state(cs[0]).reservations) > 1, 20,
                       what="claims to be exchanged")
@@ -1746,7 +1836,7 @@ def test_E6_no_node_is_ever_held_by_two_bots_at_once(three_bots):
     corridor = _corridor(6)
 
     for c, node in zip(cs, corridor[:3], strict=False):
-        fleet.inject(c, latest_node_id=node, region_id=PARK, battery=90.0,
+        fleet.place(c, latest_node_id=node, region_id=PARK, battery=90.0,
                      state="IDLE", mission="IDLE")
     assert wait_until(lambda: len(fleet.state(cs[0]).reservations) >= 2, 20,
                       what="claims to be exchanged")
@@ -1762,7 +1852,7 @@ def test_E6_no_node_is_ever_held_by_two_bots_at_once(three_bots):
     # move. Nothing about the fleet is being tested at 0.4 s.
     for step in range(3):
         for c, node in zip(cs, corridor[step:step + 3], strict=False):
-            fleet.inject(c, latest_node_id=node, region_id=PARK, battery=90.0,
+            fleet.place(c, latest_node_id=node, region_id=PARK, battery=90.0,
                          state="MOVING", mission="IDLE")
         time.sleep(_hop_seconds())
         fleet.assert_no_overlap(cs)

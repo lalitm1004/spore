@@ -1,11 +1,16 @@
-"""AdminService — look inside a running bot, and feed it robot state.
+"""AdminService — look inside a running bot.
 
 WHAT
-    * `GetState`         — everything a test or an operator wants to assert
-                           on: role, leader, region, roster, jobs, own job.
-    * `InjectRobotState` — push a `RobotState` into the bot's `RobotSource`
-                           exactly as the real robot bridge would (a QR scan
-                           in another region, a fault, cargo progress …).
+    * `GetState` — everything a test or an operator wants to assert on: role,
+      leader, region, roster, jobs, own job, and the claims it holds.
+
+    Read-only, and that is new. It used to carry `InjectRobotState` and
+    `InjectObstruction`, which pushed a whole robot snapshot or a blockage
+    straight into the bot, around the QR read, the companion and the wire. They
+    were the last back doors, and they cost more than they looked: the container
+    suite could not see that production never fed position at all, because
+    injection supplied by hand the one thing nothing else supplied. Both are
+    gone. A robot reports over `RobotNetwork.Session` like a robot.
 
 WHERE
     Registered on every bot's server, but the virtual network (`bus/policy.py`)
@@ -18,9 +23,7 @@ WHY
     RPC is not. The same surface is handy for a fleet dashboard later.
 
 HOW
-    Thin adapter over `bot.Bot`. `InjectRobotState` requires the default
-    `QueueRobotSource`; with a real bridge plugged in it is refused, because
-    two sources of truth about the robot is exactly the thing we do not want.
+    Thin read-only adapter over `bot.Bot`.
 """
 from __future__ import annotations
 
@@ -54,30 +57,6 @@ class AdminServicer(fleet_pb2_grpc.AdminServiceServicer):
             desired_region_id=b.desired_region_id or 0, leader_settled=b.leader_settled(),
             reservations=_held_claims(b),
         )
-
-    def InjectObstruction(self, request: fleet_pb2.ObstructionMsg, context: grpc.ServicerContext):
-        """Push a blockage into the planner, or clear one with level 0."""
-        self._bot.set_obstruction(request.node_id, request.level)
-        return fleet_pb2.Empty()
-
-    def InjectRobotState(self, request: fleet_pb2.RobotStateMsg, context: grpc.ServicerContext):
-        src = self._bot._robot_source
-        # Duck-typed on purpose: in a container `bot.py` runs as __main__, so
-        # `from bot import QueueRobotSource` would be a *second* copy of the
-        # class and isinstance() would always be False.
-        push = getattr(src, "push", None)
-        if push is None:
-            context.abort(grpc.StatusCode.FAILED_PRECONDITION, "a real robot bridge is attached")
-        RobotState = type(self._bot).__module__ and __import__(type(self._bot).__module__).RobotState
-        push(RobotState(
-            latest_node_id=request.latest_node_id, region_id=request.region_id, battery=request.battery,
-            state=request.state or "IDLE", mission=request.mission or "IDLE", fault=request.fault,
-            job_id=request.job_id, cargo_state=request.cargo_state,
-        ))
-        log.info("bot-%d: admin injected robot state (region=%d node=%d state=%s mission=%s/%s)",
-                 self._bot.bot_id, request.region_id, request.latest_node_id, request.state,
-                 request.mission, request.cargo_state)
-        return fleet_pb2.Empty()
 
 
 def _held_claims(bot) -> list[fleet_pb2.HeldClaim]:
