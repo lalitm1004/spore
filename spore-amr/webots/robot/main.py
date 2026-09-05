@@ -628,27 +628,49 @@ def main(argv=None):
             counts = front_end.update(now, [s.getValue() for s in sensors])
             reading = estimator.estimate(counts)
         elif awaiting_turn:
-            # Waiting on the node to be told where to go. The wait is bounded:
-            # a robot that is never answered should not hold a junction for
-            # the rest of the run.
-            if now - awaiting_since > control.junction_timeout_s:
+            # Waiting on the node. The wait is bounded: a robot that is never
+            # answered should not hold a junction for the rest of the run.
+            #
+            # Only while it is genuinely unanswered, though. Once a bearing has
+            # arrived the robot is not waiting to be told where to go, it is
+            # waiting for room to go there -- and timing out then throws away a
+            # turn the network layer already decided. Measured: a robot was
+            # answered, the reflex stopped it 48 ms later mid-roll onto the
+            # node, the timeout fired six seconds after that, and it carried
+            # straight on through the junction instead of turning. It left the
+            # lane, lost the line and halted.
+            if (pending_bearing is None
+                    and now - awaiting_since > control.junction_timeout_s):
                 print("{}: no decision after {:.0f}s, carrying on".format(
                     config.name, control.junction_timeout_s), flush=True)
                 awaiting_turn = False
                 advance_to = None
             error, output = 0.0, pid.update(error=0.0, dt=dt)
-            if (advance_to is not None and distance < advance_to
-                    and not (guard is not None and guard.blocked)):
+            if guard is not None and guard.blocked and advance_to is not None:
+                # Something is in the way of the last few centimetres onto the
+                # node. Give the turn up rather than wait it out: `distance` is
+                # path length, so a retreat *increases* it and would report the
+                # node reached while the robot is further away than when it
+                # started -- it would then turn from the wrong place.
+                #
+                # Nothing is lost by giving up. The destination is standing, so
+                # once the reflex has cleared the robot re-approaches, reads the
+                # same marker and is handed the same goal. Letting go here is
+                # only possible because the network layer names a place rather
+                # than a direction.
+                print("{}: blocked short of node, re-approaching".format(
+                    config.name), flush=True)
+                awaiting_turn = False
+                advance_to = None
+                pending_bearing = None
+                if optics is not None:
+                    optics.crossing.reset()
+                steering, base = 0.0, 0.0
+            elif advance_to is not None and distance < advance_to:
                 # Still short of the junction. Roll the rest of the boom
                 # length on blind, holding the steering the approach ended
                 # with -- the tile is under the array, so there is nothing to
                 # follow, and this is the same dead reckoning a crossing uses.
-                #
-                # The reflex is checked here because this branch sits above it
-                # in the chain. That did not matter while waiting meant
-                # standing still; it does now that waiting means rolling
-                # forward, and a robot must not drive into something because
-                # it happens to be mid-junction.
                 steering, base = steering_average, base_speed
             else:
                 steering, base = 0.0, 0.0

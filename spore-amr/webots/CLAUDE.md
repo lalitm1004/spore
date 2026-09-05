@@ -153,6 +153,28 @@ one — summary at zero steps — and the first row written after release raised
 own `held` flag for exactly this reason. Two states that both stop the motors
 are not the same state.
 
+**A junction timeout must not discard a turn that was already answered.** The
+firmware waits at a node for the network layer, bounded by
+`junction_timeout_s`. It also rolls the last ~95 mm onto the node before
+turning -- and the obstacle reflex can stop that roll. Measured: the network
+answered in under a tick, the reflex stopped the robot 48 ms later, the timeout
+fired six seconds after that and threw the answer away, and the robot carried
+straight on through the junction, left the lane, lost the line and halted. It
+reads from outside as a robot losing the line, and the cause is six seconds
+earlier and somewhere else. The timeout now applies only while
+`pending_bearing is None` -- genuinely unanswered, rather than merely unable to
+move yet.
+
+**`odometry.distance` is path length, so a retreat increases it.** That is what
+marker crossing wants -- how far since the trigger -- and it makes `distance`
+useless as "am I there yet" across a reversal: the robot rolling onto a node
+that gets pushed backwards would see the odometer pass its target while ending
+up further away, and then turn from the wrong place. So a block during that
+roll abandons the turn instead of waiting it out. Nothing is lost by letting
+go, because the destination is standing: the robot re-approaches, re-reads the
+marker and is handed the same goal. That is only safe because the network layer
+names a place rather than a direction.
+
 **A stale `out/*.status.json` is scored as this run's first marker.** It is how
 a robot tells the supervisor what it last read, and the supervisor computes
 localisation error the moment a new `(node_id, t)` appears. A file left behind
