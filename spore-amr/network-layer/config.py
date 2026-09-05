@@ -101,8 +101,33 @@ T_JOB_RETRY = float(os.environ.get("T_JOB_RETRY", "5.0"))
 #: Path to warehouse-layout.json. Missing file → geography-blind dispatch.
 WAREHOUSE_MAP = os.environ.get(
     "WAREHOUSE_MAP",
-    os.path.join(os.path.dirname(__file__), "..", "spore-amr", "shared", "warehouse-layout.json"),
+    # Relative to this file: network-layer/ -> spore-amr/ -> shared/. The extra
+    # "spore-amr" this used to carry was correct when network-layer sat at the
+    # repo root; the move into spore-amr/ left it one level too deep, and a
+    # missing map degrades silently to NullMap rather than failing loudly.
+    os.path.join(os.path.dirname(__file__), "..", "shared", "warehouse-layout.json"),
 )
+
+# ---- Reservations (PROTOCOL.md §15) ---------------------------------------------
+
+#: How often a bot tells its neighbours what it is holding. Defaults to T_HB so
+#: announcing rides the existing run loop rather than needing a thread of its
+#: own. It is a separate name because reservations *want* to be faster than
+#: membership: a fresh claim is provisional for one of these periods, so this is
+#: also how long a bot waits after replanning before it may move. Lower it when
+#: that wait starts costing throughput.
+T_ANNOUNCE = float(os.environ.get("T_ANNOUNCE", str(T_HB)))
+
+#: How long a neighbour's claims stay believable without a fresher announcement.
+#: Three periods, matching T_DEAD's three heartbeats: long enough to ride out a
+#: lost message, short enough that a crashed bot stops blocking a lane.
+RESERVATION_TTL = float(os.environ.get("RESERVATION_TTL", str(3 * T_ANNOUNCE)))
+
+#: How far ahead of itself a bot may claim, in QR hops. Doubles as the test for
+#: who needs to hear from us: a peer can only contest a node we hold if it is
+#: within this distance of it (reservations/vicinity.py).
+RESERVATION_REACH_HOPS = int(os.environ.get("RESERVATION_REACH_HOPS", "8"))
+
 
 # ---- Location -----------------------------------------------------------------
 

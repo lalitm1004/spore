@@ -123,6 +123,50 @@ service BotService {
   rpc AssignJob(Job) returns (JobAck);
 }
 
+// --- Reservations: bot <-> bot, no leader in the path ---
+// Claims travel directly between bots because PROTOCOL.md §7 requires that
+// collision avoidance keep working when there is no leader. Putting them in the
+// leader-mediated heartbeat would make the one depend on the other. The leader
+// still helps: its roster says where neighbours are and what to dial, and its
+// yield_priority is the right of way used to settle a clash. Discovery and
+// ranking, not permission. See PROTOCOL.md §15.
+
+// One node held for one window, as offsets from the moment of sending. Relative
+// rather than absolute so the two bots never need their clocks to agree; the
+// receiver stamps arrival. start_offset_ms may be negative for a claim already
+// under way.
+message ClaimWindow {
+  int32 node_id           = 1;
+  int32 start_offset_ms   = 2;
+  int32 end_offset_ms     = 3;
+}
+
+message ReservationAnnounce {
+  int32 bot_id            = 1;
+  // Bumped on every change. Announcements are idempotent and may arrive out of
+  // order; a receiver holding a newer seq from this bot ignores the message.
+  int32 seq               = 2;
+  // Right of way, straight from PeerRecord.yield_priority: 0 free, 1 heading to
+  // a pickup, 2 carrying cargo. Higher wins a clash, ties break on lower bot_id.
+  // With no leader to compute it, 0 is safe — both sides then fall back to the
+  // id, which is still an order they agree on.
+  int32 yield_priority    = 3;
+  // How long these claims stay believable without a fresher announcement, so a
+  // bot that crashes stops blocking a lane instead of wedging it forever.
+  int32 ttl_ms            = 4;
+  // Everything this bot currently holds. An EMPTY list is a withdrawal and frees
+  // those nodes at once, rather than leaving them held until the ttl lapses.
+  repeated ClaimWindow windows = 5;
+}
+
+message ReservationAck {}
+
+// Served by every bot; callers must be in the same region, the same rule the
+// virtual network applies to RegionService and ElectionService (§12).
+service ReservationService {
+  rpc Announce(ReservationAnnounce) returns (ReservationAck);
+}
+
 // --- Admin: introspection and robot-state injection ---
 // For operators and the Docker test harness. Only served when ADMIN_ENABLED=1
 // (the virtual network refuses it otherwise). InjectRobotState feeds the
@@ -161,6 +205,18 @@ message BotState {
   repeated Job          jobs          = 12;
   int32  desired_region_id  = 13;
   bool   leader_settled     = 14;
+  // What this bot holds and what its neighbours have told it they hold, in one
+  // list and told apart by bot_id. Without this a container test can start two
+  // bots but cannot see whether a claim ever crossed between them (§15).
+  repeated HeldClaim    reservations  = 15;
+}
+
+// One entry of a bot's ledger, in absolute milliseconds on that bot's clock.
+message HeldClaim {
+  int32 bot_id   = 1;
+  int32 node_id  = 2;
+  int64 start_ms = 3;
+  int64 end_ms   = 4;
 }
 
 message DepartureRequest {

@@ -5,6 +5,7 @@ from the transport. Instead every client call carries identity metadata and a
 server interceptor enforces who may call which service:
 
     RegionService, ElectionService   caller must be in *our* region
+    ReservationService               caller must be in *our* region
     LeaderExchangeService            caller must be a leader (any region)
     MigrationJoinService             caller must have a pending handoff with us
     JobService (SubmitJob)           any authenticated caller — the order
@@ -83,7 +84,13 @@ class VirtualNetworkInterceptor(grpc.ServerInterceptor):
 
     def _allowed(self, service: str, caller_id: int, caller_region: int, caller_role: str) -> bool:
         bot = self._bot
-        if service in ("fleet.RegionService", "fleet.ElectionService"):
+        if service in (
+            "fleet.RegionService",
+            "fleet.ElectionService",
+            # Reservations are bot to bot and never cross a region: a claim can
+            # only be contested by someone who could reach the same node.
+            "fleet.ReservationService",
+        ):
             return caller_region == bot.region_id
         if service == "fleet.LeaderExchangeService":
             return caller_role == "leader"

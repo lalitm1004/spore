@@ -69,4 +69,49 @@ refer to `PROTOCOL.md`.
 - [x] `down.py` removes only fleet containers, then the network
 - [x] `AdminService`: `GetState`, `InjectRobotState` (gated by `ADMIN_ENABLED`)
 
+## Reservations (§15)
+
+- [x] Ordering: cargo beats free, lower id breaks the tie, and both sides reach the same verdict
+- [x] Windows travel as offsets and are stamped on arrival — no shared clock anywhere
+- [x] A fresh claim is provisional for one `T_ANNOUNCE`; carrying on holding a node does not restart it
+- [x] A claim is refused when a better-ranked neighbour holds it, granted over one we outrank, and never half-granted
+- [x] The winner waits for the loser's retraction rather than acting on the verdict
+- [x] Two bots claiming at once settle with no round trip; exactly one gives way
+- [x] An empty announcement is a withdrawal; a quiet neighbour lapses after `RESERVATION_TTL`
+- [x] A late announcement is ignored (`seq`), and forgetting a peer forgets its sequence
+- [x] Only bots within `RESERVATION_REACH_HOPS` of a node we hold are told; no map → tell everyone
+- [x] Cross-region and unauthenticated announcements refused by the virtual network
+- [x] The run-loop step claims the node underfoot and announces it; no QR scan → no claim
+- [x] A claim crosses a real network into a peer's ledger *(Docker)*
+- [x] Claims keep flowing when the leader is killed — the §7 property *(Docker)*
+- [x] A paused bot's claims lapse and stop blocking *(Docker)*
+- [x] Two bots injected onto one node settle on a single holder *(Docker)*
+- [ ] Claiming a **route** rather than the node underfoot — needs something deciding where the robot goes next (see below)
+- [ ] `may_enter` gating actual movement — nothing drives the robot from this repo yet (see below)
+
+## Open: two robot contracts that never met
+
+Recorded because it decides where path planning eventually plugs in, not because
+it is a job for this package.
+
+There are two things called the network layer and they have never been connected:
+
+| | `network-layer/` (this repo) | `webots/robot/netlayer.py` (`webots-implementation`) |
+|---|---|---|
+| transport | gRPC, bot to bot | unix socket, one per robot |
+| what it tells the robot | "go to node 400" | "turn left, you will arrive at node 412" |
+| plugged in? | **no** — `RobotSink` has no implementation | yes, answered by `RandomRouter` |
+
+`bot.py` sends the job's pickup or dropoff node as `target_node_id`, which can be
+seventy hops away. The real robot cannot use that: it stops at each junction and
+asks which of the turns actually in front of it to take, and the answer has to be
+one of them. `robot/network.py` says what it is waiting for in its own words —
+*"Everything above the `Router` protocol is what the real distributed layer will
+replace."*
+
+That `Router` is where path planning belongs, and reservations are what make it
+safe with more than one robot. It only exists on the unmerged branch, so nothing
+here can build against it yet. Reconciling the two is a design conversation, not
+a patch.
+
 ---

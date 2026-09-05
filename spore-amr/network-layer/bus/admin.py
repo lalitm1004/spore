@@ -52,6 +52,7 @@ class AdminServicer(fleet_pb2_grpc.AdminServiceServicer):
             current_job_id=b.current_job.job_id if b.current_job else "", cargo_state=b.cargo_state,
             roster=roster.region_peers, other_leaders=roster.other_leaders, jobs=roster.jobs,
             desired_region_id=b.desired_region_id or 0, leader_settled=b.leader_settled(),
+            reservations=_held_claims(b),
         )
 
     def InjectRobotState(self, request: fleet_pb2.RobotStateMsg, context: grpc.ServicerContext):
@@ -72,3 +73,20 @@ class AdminServicer(fleet_pb2_grpc.AdminServiceServicer):
                  self._bot.bot_id, request.region_id, request.latest_node_id, request.state,
                  request.mission, request.cargo_state)
         return fleet_pb2.Empty()
+
+
+def _held_claims(bot) -> list[fleet_pb2.HeldClaim]:
+    """This bot's ledger, flattened for inspection (PROTOCOL.md §15).
+
+    Own claims and neighbours' in one list, told apart by `bot_id`. Without this
+    a container test can start two bots and watch them announce, but has no way
+    to see whether a claim ever arrived.
+    """
+    ledger = bot.ledger
+    claims = list(ledger.mine) + list(ledger.peer_claims())
+    return [
+        fleet_pb2.HeldClaim(
+            bot_id=c.bot_id, node_id=c.node_id, start_ms=c.start_ms, end_ms=c.end_ms
+        )
+        for c in claims
+    ]

@@ -2,8 +2,9 @@
 
 The communication layer of the AMR fleet: one process per robot that finds
 its region-mates, elects a leader, keeps a live roster, follows the robot
-across regions, and gets cargo jobs to the nearest free bot. Pure gRPC over
-one flat network; no broker, no registry, no central server.
+across regions, gets cargo jobs to the nearest free bot, and lets neighbouring
+bots reserve nodes directly between themselves. Pure gRPC over one flat
+network; no broker, no registry, no central server.
 
 **Read [`PROTOCOL.md`](PROTOCOL.md) for the design.** This file is about
 running and extending the code. **[`TODO.md`](TODO.md)** tracks which use
@@ -26,6 +27,12 @@ election/
   bully.py           bully election + abdication
   priority.py        priority formula (health, battery buckets, hysteresis)
   server.py          ElectionService handlers
+reservations/
+  claims.py          what a claim is, and who gives way when two collide
+  ledger.py          one bot's record of who holds what
+  vicinity.py        who is close enough to be worth telling
+  sender.py          the announce step, run from the bot's loop
+  server.py          ReservationService handlers
 peers/table.py       roster, other-region leaders, migration ledgers
 warehouse/map.py     warehouse-layout.json → node→region, hop distances
 proto/fleet.proto    the wire schema (+ generated fleet_pb2*.py)
@@ -68,6 +75,7 @@ All via environment (see `config.py` for defaults and why):
 | `JOB_MIN_BATTERY`, `JOB_MAX_HOPS`, `T_JOB_RETRY` | job dispatch |
 | `NODE_TRAIL_LEN` | how many recent QR nodes a bot reports |
 | `T_LEADER_TENURE` | leadership rotates to a free follower after this (0 = never) |
+| `T_ANNOUNCE`, `RESERVATION_TTL`, `RESERVATION_REACH_HOPS` | reservations: how often a bot tells its neighbours what it holds, how long their claims stay believable, and how far a claim reaches (`PROTOCOL.md` §15) |
 | `ADMIN_ENABLED` | serve `AdminService` (`GetState`, `InjectRobotState`); keep off in production |
 
 ## Plugging in a real robot
@@ -114,8 +122,14 @@ sed -i 's/^import fleet_pb2/from proto import fleet_pb2/' proto/fleet_pb2_grpc.p
   returning `0`, not raising; both bind sites check for that.
 - `tests/conftest.py` shortens `T_MIGRATION_TIMEOUT` so failure paths run in
   seconds. The `fleet` fixture tears down every thread and server.
+- `up.py` publishes each container's gRPC port on an ephemeral host port, and
+  the Docker tests dial that rather than the container IP. Docker Desktop on
+  macOS does not route to container IPs at all, so without it the whole Docker
+  tier is unrunnable there. Bots still reach each other by container name on the
+  bridge and never use the published port.
 - `tests/test_docker.py` runs the chaos scenarios (kill, pause, partition,
-  migration, jobs) on real containers and a private bridge network per test.
+  migration, jobs, reservations) on real containers and a private bridge network
+  per test.
   It needs a Docker daemon (skipped otherwise), builds the image once per
   session (`AMR_DOCKER_NO_BUILD=1` to reuse), takes ~45 s, and drives bots
   through `AdminService` — enabled by `up.py`'s `ADMIN_ENABLED=1`, off by

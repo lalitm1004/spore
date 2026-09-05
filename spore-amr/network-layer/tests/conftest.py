@@ -53,6 +53,7 @@ from bus.migration import MigrationJoinServicer  # noqa: E402
 from election import priority as prio  # noqa: E402
 from election.bully import Role  # noqa: E402
 from election.server import ElectionServicer  # noqa: E402
+from reservations.server import ReservationServicer  # noqa: E402
 from proto import fleet_pb2_grpc  # noqa: E402
 
 _next_port = 21000
@@ -92,6 +93,9 @@ def make_bot(bot_id: int, port: int, region_id: int = 14, state: str = "IDLE") -
     b.election.bot_id = bot_id
     b.election.priority = b.priority
     b.election.address = b.address
+    # Same reason as election above: both were built in Bot.__init__ from the
+    # env-var identity, and this fixture assigns the real one afterwards.
+    b.ledger.bot_id = bot_id
     return b
 
 
@@ -106,6 +110,7 @@ def start_server(bot: Bot, port: int) -> grpc.Server:
     fleet_pb2_grpc.add_MigrationJoinServiceServicer_to_server(MigrationJoinServicer(bot), server)
     fleet_pb2_grpc.add_JobServiceServicer_to_server(JobServicer(bot), server)
     fleet_pb2_grpc.add_BotServiceServicer_to_server(BotServicer(bot), server)
+    fleet_pb2_grpc.add_ReservationServiceServicer_to_server(ReservationServicer(bot.ledger), server)
     if server.add_insecure_port(f"0.0.0.0:{port}") == 0:
         raise RuntimeError(f"could not bind test server to port {port}")
     server.start()

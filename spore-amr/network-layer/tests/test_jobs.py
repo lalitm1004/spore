@@ -24,7 +24,10 @@ import config
 
 from tests.conftest import md, wait_until
 
-PARK, GRID = 14, 2
+# Region ids from the consolidated 7-region map (was 14 before the upstream
+# `consolidate warehouse regions` change): parking is now 2, and the old single
+# grid_field is split across 5/6/7 -- 6 is the middle band.
+PARK, GRID = 2, 6
 
 
 def _stub(b, cls):
@@ -84,7 +87,13 @@ def _region(fleet, leader_id, region, follower_ids, *, leader_busy=False):
 def test_submit_assigns_nearest_free_follower(fleet):
     leader, (near, far) = _region(fleet, 9, PARK, [1, 2])
     p = leader.map.nodes_in(PARK)
-    pickup, near_node, far_node = p[0], p[1], p[-1]
+    pickup = p[0]
+    # Choose the near and far bots by actual driving distance, not by position in
+    # the node list: ids are assigned by position on the floor, which says nothing
+    # about how far apart two nodes are to drive between. Picking by index happened
+    # to hold on the old 14-region map and silently stopped holding on the new one.
+    by_distance = sorted(p[1:], key=lambda n: leader.map.distance(n, pickup))
+    near_node, far_node = by_distance[0], by_distance[-1]
     assert leader.map.distance(near_node, pickup) < leader.map.distance(far_node, pickup)
     register(leader, near, node=near_node, mission="PARK")
     register(leader, far, node=far_node, mission="PARK")

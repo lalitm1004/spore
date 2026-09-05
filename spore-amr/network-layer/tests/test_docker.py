@@ -33,7 +33,10 @@ from proto import fleet_pb2, fleet_pb2_grpc  # noqa: E402
 
 pytestmark = pytest.mark.docker
 
-PARK, GRID = 14, 2
+# Region ids from the consolidated 7-region map (was 14 before the upstream
+# `consolidate warehouse regions` change): parking is now 2, and the old single
+# grid_field is split across 5/6/7 -- 6 is the middle band.
+PARK, GRID = 2, 6
 ADMIN_MD = rpc_metadata(999, 0, "admin")
 
 
@@ -111,8 +114,14 @@ class DockerFleet:
         c.reload()
         return c.attrs["NetworkSettings"]["Networks"][self.network_name]["IPAddress"]
 
+    def endpoint(self, c) -> str:
+        """Where the *test process* dials. Not the container IP: Docker Desktop
+        on macOS does not route to those, so `up.launch` publishes a host port
+        and this prefers it."""
+        return up.host_endpoint(c)
+
     def admin(self, c):
-        return fleet_pb2_grpc.AdminServiceStub(grpc.insecure_channel(f"{self.ip(c)}:{up.GRPC_PORT}"))
+        return fleet_pb2_grpc.AdminServiceStub(grpc.insecure_channel(self.endpoint(c)))
 
     def state(self, c) -> fleet_pb2.BotState:
         return self.admin(c).GetState(fleet_pb2.Empty(), timeout=2, metadata=ADMIN_MD)
@@ -121,7 +130,7 @@ class DockerFleet:
         self.admin(c).InjectRobotState(fleet_pb2.RobotStateMsg(**fields), timeout=2, metadata=ADMIN_MD)
 
     def submit_job(self, c, job_id: str, pickup: int, dropoff: int) -> fleet_pb2.JobAck:
-        stub = fleet_pb2_grpc.JobServiceStub(grpc.insecure_channel(f"{self.ip(c)}:{up.GRPC_PORT}"))
+        stub = fleet_pb2_grpc.JobServiceStub(grpc.insecure_channel(self.endpoint(c)))
         return stub.SubmitJob(fleet_pb2.Job(job_id=job_id, pickup_node=pickup, dropoff_node=dropoff),
                               timeout=10, metadata=rpc_metadata(999, 0, "orders"))
 
@@ -272,3 +281,120 @@ def test_job_dispatched_and_completed_over_real_containers(fleet):
     assert wait_until(lambda: not any(j.job_id == "job-docker-1" for j in fleet.state(leader).jobs), 15,
                       what="crossed off")
     assert wait_until(lambda: fleet.state(assignee).current_job_id == "", 10, what="assignee free again")
+
+
+# =============================================================================
+# Reservations (PROTOCOL.md §15)
+#
+# The claim these make is one the in-process suite cannot: that bots agree over a
+# real network, in separate processes, with no shared memory and no leader in the
+# path. Ledgers are read through AdminService, which is the only way to see what a
+# container believes.
+
+def _nearby_pair(region: int, max_hops: int = 3) -> tuple[int, int]:
+    """Two nodes in `region` close enough to contest each other's claims."""
+    from warehouse.map import WarehouseMap
+    import config
+    m = WarehouseMap.load(config.WAREHOUSE_MAP)
+    nodes = m.nodes_in(region)
+    first = nodes[0]
+    for other in nodes[1:]:
+        if 0 < m.distance(first, other) <= max_hops:
+            return first, other
+    raise AssertionError(f"no two nodes within {max_hops} hops in region {region}")
+
+
+def _claims_of(fleet, container, bot_id: int) -> list:
+    return [r for r in fleet.state(container).reservations if r.bot_id == bot_id]
+
+
+def _park(fleet, container, node: int) -> None:
+    fleet.inject(container, latest_node_id=node, region_id=PARK,
+                 battery=90.0, state="IDLE", mission="IDLE")
+
+
+@pytest.mark.docker
+def test_a_claim_crosses_a_real_network(fleet):
+    """One bot claims the node it is standing on; the other hears about it."""
+    a_node, b_node = _nearby_pair(PARK)
+    cs = fleet.launch(2, PARK)
+    assert wait_until(lambda: fleet.converged(cs, PARK), 30, what="converge")
+
+    _park(fleet, cs[0], a_node)
+    _park(fleet, cs[1], b_node)
+
+    ids = [fleet.state(c).bot_id for c in cs]
+    assert wait_until(lambda: _claims_of(fleet, cs[1], ids[0]), 20,
+                      what="bot-0's claim to reach bot-1"), "no claim arrived"
+    assert _claims_of(fleet, cs[1], ids[0])[0].node_id == a_node
+
+
+@pytest.mark.docker
+def test_claims_keep_flowing_when_the_leader_dies(fleet):
+    """The §7 promise: collision avoidance does not depend on a leader.
+
+    Kill the leader, move a survivor, and check the other survivor still learns
+    where it went. Announcements never went through the leader in the first
+    place -- this is what proves it.
+    """
+    a_node, b_node = _nearby_pair(PARK)
+    cs = fleet.launch(3, PARK)
+    assert wait_until(lambda: fleet.converged(cs, PARK), 30, what="converge")
+
+    leader = fleet.leaders(cs)[0]
+    survivors = [c for c in cs if c.id != leader.id]
+    _park(fleet, survivors[0], a_node)
+    _park(fleet, survivors[1], b_node)
+    watcher_sees = lambda: _claims_of(fleet, survivors[1], fleet.state(survivors[0]).bot_id)
+    assert wait_until(lambda: bool(watcher_sees()), 20, what="claims before the kill")
+
+    leader.kill()
+
+    # Move the survivor somewhere new; the claim its neighbour holds must follow.
+    moved_to = b_node if a_node != b_node else a_node
+    _, elsewhere = _nearby_pair(PARK, max_hops=2)
+    _park(fleet, survivors[0], elsewhere)
+    assert wait_until(
+        lambda: any(c.node_id == elsewhere for c in watcher_sees()), 30,
+        what="a fresh claim to arrive with no leader alive",
+    ), "announcements stopped when the leader died"
+
+
+@pytest.mark.docker
+def test_a_bot_that_goes_quiet_stops_blocking_its_neighbours(fleet):
+    """Claims lapse, so a hung robot does not wedge a lane forever."""
+    a_node, b_node = _nearby_pair(PARK)
+    cs = fleet.launch(2, PARK, RESERVATION_TTL=2.0)
+    assert wait_until(lambda: fleet.converged(cs, PARK), 30, what="converge")
+
+    _park(fleet, cs[0], a_node)
+    _park(fleet, cs[1], b_node)
+    quiet_id = fleet.state(cs[0]).bot_id
+    assert wait_until(lambda: bool(_claims_of(fleet, cs[1], quiet_id)), 20, what="claim to arrive")
+
+    cs[0].pause()
+    try:
+        assert wait_until(lambda: not _claims_of(fleet, cs[1], quiet_id), 20,
+                          what="the paused bot's claims to lapse")
+    finally:
+        cs[0].unpause()
+
+
+@pytest.mark.docker
+def test_two_bots_on_one_node_settle_on_a_single_holder(fleet):
+    """Both want it, both apply the same ordering, and only one keeps it."""
+    node, _ = _nearby_pair(PARK)
+    cs = fleet.launch(2, PARK)
+    assert wait_until(lambda: fleet.converged(cs, PARK), 30, what="converge")
+
+    _park(fleet, cs[0], node)
+    _park(fleet, cs[1], node)
+
+    def one_holder() -> bool:
+        holders = set()
+        for c in cs:
+            holders |= {r.bot_id for r in fleet.state(c).reservations if r.node_id == node}
+        return len(holders) == 1
+
+    assert wait_until(one_holder, 30, what="one of them to give way"), "both kept the node"
+

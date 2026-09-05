@@ -15,6 +15,7 @@ Covers the full gRPC communication design: topology, message schemas, RPC contra
 | Migration state machine + destination join | `bus/migration.py` | `Migrator` (bot side, retries, reconcile) + `MigrationJoinServicer` |
 | Jobs: ledger, dispatch, forwarding, observation | `bus/jobs.py` | `Dispatcher` (leader side) + `JobServicer` / `BotServicer`; §14 |
 | Warehouse graph: node → region, hop distance | `warehouse/map.py` | Loaded from `warehouse-layout.json`; §14 |
+| Reservations: claims, who gives way, who to tell | `reservations/` | `claims.py` + `ledger.py` + `vicinity.py` (rules), `sender.py` + `server.py` (wire); §15 |
 | Virtual network (who may call what) | `bus/policy.py` | gRPC server interceptor; §12 |
 | Admin: introspection + robot-state injection | `bus/admin.py` | `ADMIN_ENABLED` only; used by the Docker harness; §13 |
 | Persistent gRPC channels | `bus/rpc.py` | One channel per peer, low reconnect backoff |
@@ -89,9 +90,10 @@ The `region_id` from the QR code is the ground truth for which region a bot belo
 
 ## 3. Services and RPCs
 
-Seven gRPC services, split by communication pair. The four below are the
-membership protocol; `JobService` and `BotService` (jobs) are in §14 and
-`AdminService` (tooling) in §13. The complete schema is §11.
+Eight gRPC services, split by communication pair. The four below are the
+membership protocol; `JobService` and `BotService` (jobs) are in §14,
+`ReservationService` (bot ↔ bot, no leader) in §15, and `AdminService`
+(tooling) in §13. The complete schema is §11.
 
 ### 3.1 RegionService — bot ↔ own leader
 
@@ -759,6 +761,9 @@ early; a successful `MigrationJoin` clears `pending_incoming` early.
 | `T_LEADER_TENURE` | 1800s | Leader rotates to the best free successor after this (0 disables) |
 | `T_JOB_EVENT_TTL` | 600s | Observer keeps re-sending an unowned JobEvent this long |
 | `JOB_MIN_BATTERY` / `JOB_MAX_HOPS` / `T_JOB_RETRY` | 30% / 14 / 5s | Job dispatch (§14) |
+| `T_ANNOUNCE` | = T_HB = 1s | How often a bot tells its neighbours what it holds; also how long a fresh claim stays provisional (§15) |
+| `RESERVATION_TTL` | 3 × T_ANNOUNCE = 3s | A neighbour's claims lapse after this without a fresher announcement (§15) |
+| `RESERVATION_REACH_HOPS` | 8 | How far ahead a bot may claim, and the test for who needs to hear from it (§15) |
 | `ADMIN_ENABLED` | 0 | Serve `AdminService` (introspection, robot-state injection); `up.py` sets 1 |
 | `GRPC_PORT` | 50051 | Port each bot listens on |
 
@@ -915,6 +920,50 @@ service BotService {
   rpc AssignJob(Job) returns (JobAck);
 }
 
+// --- Reservations: bot <-> bot, no leader in the path ---
+// Claims travel directly between bots because PROTOCOL.md §7 requires that
+// collision avoidance keep working when there is no leader. Putting them in the
+// leader-mediated heartbeat would make the one depend on the other. The leader
+// still helps: its roster says where neighbours are and what to dial, and its
+// yield_priority is the right of way used to settle a clash. Discovery and
+// ranking, not permission. See PROTOCOL.md §15.
+
+// One node held for one window, as offsets from the moment of sending. Relative
+// rather than absolute so the two bots never need their clocks to agree; the
+// receiver stamps arrival. start_offset_ms may be negative for a claim already
+// under way.
+message ClaimWindow {
+  int32 node_id           = 1;
+  int32 start_offset_ms   = 2;
+  int32 end_offset_ms     = 3;
+}
+
+message ReservationAnnounce {
+  int32 bot_id            = 1;
+  // Bumped on every change. Announcements are idempotent and may arrive out of
+  // order; a receiver holding a newer seq from this bot ignores the message.
+  int32 seq               = 2;
+  // Right of way, straight from PeerRecord.yield_priority: 0 free, 1 heading to
+  // a pickup, 2 carrying cargo. Higher wins a clash, ties break on lower bot_id.
+  // With no leader to compute it, 0 is safe — both sides then fall back to the
+  // id, which is still an order they agree on.
+  int32 yield_priority    = 3;
+  // How long these claims stay believable without a fresher announcement, so a
+  // bot that crashes stops blocking a lane instead of wedging it forever.
+  int32 ttl_ms            = 4;
+  // Everything this bot currently holds. An EMPTY list is a withdrawal and frees
+  // those nodes at once, rather than leaving them held until the ttl lapses.
+  repeated ClaimWindow windows = 5;
+}
+
+message ReservationAck {}
+
+// Served by every bot; callers must be in the same region, the same rule the
+// virtual network applies to RegionService and ElectionService (§12).
+service ReservationService {
+  rpc Announce(ReservationAnnounce) returns (ReservationAck);
+}
+
 // --- Admin: introspection and robot-state injection ---
 // For operators and the Docker test harness. Only served when ADMIN_ENABLED=1
 // (the virtual network refuses it otherwise). InjectRobotState feeds the
@@ -953,6 +1002,18 @@ message BotState {
   repeated Job          jobs          = 12;
   int32  desired_region_id  = 13;
   bool   leader_settled     = 14;
+  // What this bot holds and what its neighbours have told it they hold, in one
+  // list and told apart by bot_id. Without this a container test can start two
+  // bots but cannot see whether a claim ever crossed between them (§15).
+  repeated HeldClaim    reservations  = 15;
+}
+
+// One entry of a bot's ledger, in absolute milliseconds on that bot's clock.
+message HeldClaim {
+  int32 bot_id   = 1;
+  int32 node_id  = 2;
+  int64 start_ms = 3;
+  int64 end_ms   = 4;
 }
 
 message DepartureRequest {
@@ -1096,7 +1157,7 @@ identity metadata, and every bot runs a gRPC server interceptor
 
 | Service | Who may call it |
 |---|---|
-| `RegionService`, `ElectionService` | callers in **the receiver's own region** |
+| `RegionService`, `ElectionService`, `ReservationService` | callers in **the receiver's own region** |
 | `LeaderExchangeService` | callers whose role is `leader`, from **any** region |
 | `MigrationJoinService` | callers with a **pending handoff** on the receiver |
 | `JobService` (`SubmitJob`) | **any** authenticated caller — the order system or any bot |
@@ -1296,3 +1357,80 @@ extra messages from the bot.
   types — a robot-behaviour decision, not taken yet.
 - Distance uses the assignee's *last scanned node*; a bot between nodes is
   scored from the node behind it.
+
+---
+
+## 15. Reservations — two robots, one node
+
+Everything else in this document flows through a leader. This does not, and that
+is the whole point: §7 says the leader must not "be required for safety-critical
+paths — reservations, collision avoidance, energy shutoff work without the
+leader". A claim carried inside a heartbeat would make collision avoidance depend
+on the very thing §7 says it must survive.
+
+So claims go bot to bot. The leader is not cut out — it gains a job. Its roster
+already carries every region-mate's `latest_node_id` and dialable `address`,
+which is exactly what a bot needs to work out who to talk to, and its
+`yield_priority` (§5.6) is the right of way used to settle a clash. **Discovery
+and ranking, not permission.** Once a bot has a neighbour's address it talks to
+it directly, and a leader dying never interrupts that.
+
+### 15.1 The four rules
+
+**Announce, do not ask.** A bot says "I am taking node 412 for the next two
+seconds". It does not wait for a yes. Asking would need a reply per claim, and
+two bots asking each other at the same moment would both wait forever.
+
+**Windows are relative.** `+200ms to +2400ms`, and the receiver stamps its own
+clock on arrival. The two bots never need their clocks to agree, which is why
+none of the usual synchronisation machinery appears anywhere in this section.
+
+**A fresh claim is provisional.** It only counts one `T_ANNOUNCE` after it is
+made. This looks like a delay for nothing and is the entire safety story: two
+bots that claim the same node in the same breath have not heard each other yet,
+and if either acted at once they would collide. Waiting one round guarantees the
+clash surfaces before anybody moves. Carrying on holding a node you already hold
+is *not* a fresh claim — otherwise re-announcing every tick would restart the
+clock forever and no claim would ever come into force.
+
+**A clash is settled by an ordering, not a conversation.** Both bots hold both
+claims and both sort them the same way: higher `yield_priority` first, then lower
+`bot_id`. Same facts, same rule, same answer, computed independently. The loser
+withdraws; its next announcement carries the retraction.
+
+One deliberate extra caution: the winner does **not** move the moment it works
+out that it won. It waits until the loser's retraction actually arrives. "I
+should win" is not "the other bot knows it lost", and acting on the first is how
+you drive into a robot that has not got the message.
+
+### 15.2 Who hears from whom
+
+Not the whole region. A bot's claims never reach more than
+`RESERVATION_REACH_HOPS` from where it stands, so a neighbour can only contest a
+node we hold if it is within that distance *of that node*. Measuring from the
+nodes actually held — a handful — rather than from a radius around the bot is
+both exact and much smaller. In practice two or three bots out of twenty.
+
+Positions come from the roster; distances from `warehouse/map.py`, already
+BFS-cached per source. With no map file that class degrades to `NullMap`, every
+distance reads 0, and a bot announces to everyone in its region: chattier, still
+correct, and the same way job dispatch degrades without geography.
+
+### 15.3 Lifecycle
+
+| Event | What happens |
+|---|---|
+| Every `T_ANNOUNCE` | Expire lapsed neighbours, give way where we lost, claim the node underfoot, announce to whoever is in range |
+| Claim refused | A better-ranked neighbour already holds part of it. Nothing is half-granted — a partial route is one the robot cannot finish |
+| Contest lost | Withdraw, and drop the route that was costed against those windows |
+| Neighbour goes quiet | Its claims lapse after `RESERVATION_TTL`, so a crashed bot stops blocking a lane |
+| Empty announcement | A *withdrawal*, not a lapse: those nodes free up at once |
+| Neighbour drifts out of range | Forgotten; it can no longer contest anything we hold |
+
+### 15.4 What is not here yet
+
+A bot currently claims only the node it is standing on. That is real information
+— a neighbour planning through here needs to know somebody is sitting on it — but
+it is the floor, not the ceiling. Claiming a *route* needs something that decides
+where the robot is going next, and that decision does not live in this repository
+yet. See `TODO.md`.

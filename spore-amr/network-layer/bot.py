@@ -1,16 +1,18 @@
 """The bot process: one `Bot` per robot, tying every protocol piece together.
 
 WHAT
-    * The gRPC server hosting all four services behind the virtual-network
+    * The gRPC server hosting every service behind the virtual-network
       interceptor.
     * The **run loop** — the bot's brain. Every T_HB it:
         1. pulls the robot's physical state (QR position, battery, faults)
            from a `RobotSource` and mirrors it into the fields that go out
            in heartbeats;
-        2. recomputes election priority from health and battery;
-        3. abdicates if it is an unhealthy leader;
-        4. lets the `Migrator` reconcile physical region vs. membership;
-        5. does leader housekeeping (evict dead followers, expire stale
+        2. claims the node the robot is on and announces it to the bots near
+           enough to contest it — bot to bot, no leader in the path (§15);
+        3. recomputes election priority from health and battery;
+        4. abdicates if it is an unhealthy leader;
+        5. lets the `Migrator` reconcile physical region vs. membership;
+        6. does leader housekeeping (evict dead followers, expire stale
            migration records).
     * Role transitions (`become_leader` / `become_follower`) and the single
       lock that makes them atomic.
@@ -75,6 +77,9 @@ from bus.jobs import (
 )
 from bus.admin import AdminServicer
 from peers.table import PeerTable, Peer, Leader, Ledger
+from reservations.ledger import ReservationLedger
+from reservations.sender import ReservationSender
+from reservations.server import ReservationServicer
 from proto import fleet_pb2, fleet_pb2_grpc
 from warehouse.map import WarehouseMap
 
@@ -237,6 +242,15 @@ class Bot:
         self.dispatcher = Dispatcher(self)
         self._robot_source = robot_source or QueueRobotSource()
         self._robot_sink = robot_sink or QueueRobotSink()
+        # Reservations are the one channel that does not go through a leader
+        # (PROTOCOL.md §7, §15), so every bot holds its own ledger and talks
+        # straight to the neighbours it finds in the roster.
+        self.ledger = ReservationLedger(
+            self.bot_id,
+            announce_period_ms=int(config.T_ANNOUNCE * 1000),
+            ttl_ms=int(config.RESERVATION_TTL * 1000),
+        )
+        self._reservations = ReservationSender(self)
         self._hb_sender = HeartbeatSender(self)
         self._leader_exchange = LeaderExchangeSender(self)
         self._grpc_server: grpc.Server | None = None
@@ -479,6 +493,7 @@ class Bot:
         later step sees this tick's truth."""
         while not self._shutdown.is_set():
             self._tick_robot_state()
+            self._tick_reservations()
             self._tick_self_job()
             self._tick_priority()
             self._tick_health()
@@ -508,6 +523,14 @@ class Bot:
             # Migrator's job, on its own schedule, with retries (reconcile
             # loop) — never a one-shot reaction to this update.
             self.desired_region_id = update.region_id
+
+    def _tick_reservations(self) -> None:
+        """Claim where we are and tell the neighbours (PROTOCOL.md §15).
+
+        Straight after reading the robot, so the claim is about where it is now
+        rather than where it was a tick ago.
+        """
+        self._reservations.tick()
 
     def _tick_priority(self) -> None:
         """Recompute election priority from health + battery (election/priority.py)."""
@@ -698,6 +721,7 @@ class Bot:
         fleet_pb2_grpc.add_MigrationJoinServiceServicer_to_server(MigrationJoinServicer(self), self._grpc_server)
         fleet_pb2_grpc.add_JobServiceServicer_to_server(JobServicer(self), self._grpc_server)
         fleet_pb2_grpc.add_BotServiceServicer_to_server(BotServicer(self), self._grpc_server)
+        fleet_pb2_grpc.add_ReservationServiceServicer_to_server(ReservationServicer(self.ledger), self._grpc_server)
         fleet_pb2_grpc.add_AdminServiceServicer_to_server(AdminServicer(self), self._grpc_server)
 
         bind = f"{config.GRPC_HOST}:{config.GRPC_PORT}"

@@ -45,7 +45,11 @@ LABEL_FLEET = "amr.fleet"
 LABEL_REGION = "amr.region"
 LABEL_NET = "amr.net"
 
-MAP_HOST_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "spore-amr", "shared", "warehouse-layout.json"))
+# network-layer/ -> spore-amr/ -> shared/. The extra "spore-amr" this used to
+# carry was right when network-layer sat at the repo root; the move left it a
+# level too deep, and a missing file here silently skips the mount, so every
+# container ran geography-blind.
+MAP_HOST_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "shared", "warehouse-layout.json"))
 MAP_CONTAINER_PATH = "/app/warehouse-layout.json"
 
 
@@ -100,6 +104,22 @@ def remove_if_ours(client: docker.DockerClient, name: str) -> None:
     c.remove(force=True)
 
 
+def host_endpoint(container) -> str:
+    """`host:port` the *host* can dial to reach this container.
+
+    Containers talk to each other by name on the bridge network; this is only for
+    code running outside Docker. Falls back to the container IP, which works on
+    Linux, when no port was published.
+    """
+    container.reload()
+    bindings = (container.attrs["NetworkSettings"]["Ports"] or {}).get(f"{GRPC_PORT}/tcp")
+    if bindings:
+        return f"127.0.0.1:{bindings[0]['HostPort']}"
+    networks = container.attrs["NetworkSettings"]["Networks"]
+    ip = next(iter(networks.values()))["IPAddress"]
+    return f"{ip}:{GRPC_PORT}"
+
+
 def launch(
     client: docker.DockerClient, num_bots: int, region_id: int, network: str,
     start_id: int | None = None, prefix: str = "amr", extra_env: dict[str, str] | None = None,
@@ -134,6 +154,12 @@ def launch(
         try:
             c = client.containers.run(
                 IMAGE, name=name, network=network, detach=True, volumes=volumes, environment=env,
+                # Publish the gRPC port on an ephemeral host port. Bots reach each
+                # other by container name on the bridge and never use this; it is
+                # for the operator and the test suite, which run on the host.
+                # Docker Desktop on macOS does not route to container IPs at all,
+                # so without this the whole Docker tier is unrunnable there.
+                ports={f"{GRPC_PORT}/tcp": None},
                 labels={LABEL_FLEET: "1", LABEL_REGION: str(region_id), LABEL_NET: network},
             )
             started.append(c)

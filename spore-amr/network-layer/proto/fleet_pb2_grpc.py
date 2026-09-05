@@ -342,6 +342,84 @@ class BotService:
             _registered_method=True)
 
 
+class ReservationServiceStub:
+    """Served by every bot; callers must be in the same region, the same rule the
+    virtual network applies to RegionService and ElectionService (§12).
+    """
+
+    def __init__(self, channel):
+        """Constructor.
+
+        Args:
+            channel: A grpc.Channel.
+        """
+        self.Announce = channel.unary_unary(
+                '/fleet.ReservationService/Announce',
+                request_serializer=fleet__pb2.ReservationAnnounce.SerializeToString,
+                response_deserializer=fleet__pb2.ReservationAck.FromString,
+                _registered_method=True)
+
+
+class ReservationServiceServicer:
+    """Served by every bot; callers must be in the same region, the same rule the
+    virtual network applies to RegionService and ElectionService (§12).
+    """
+
+    def Announce(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+
+def add_ReservationServiceServicer_to_server(servicer, server):
+    rpc_method_handlers = {
+            'Announce': grpc.unary_unary_rpc_method_handler(
+                    servicer.Announce,
+                    request_deserializer=fleet__pb2.ReservationAnnounce.FromString,
+                    response_serializer=fleet__pb2.ReservationAck.SerializeToString,
+            ),
+    }
+    generic_handler = grpc.method_handlers_generic_handler(
+            'fleet.ReservationService', rpc_method_handlers)
+    server.add_generic_rpc_handlers((generic_handler,))
+    server.add_registered_method_handlers('fleet.ReservationService', rpc_method_handlers)
+
+
+ # This class is part of an EXPERIMENTAL API.
+class ReservationService:
+    """Served by every bot; callers must be in the same region, the same rule the
+    virtual network applies to RegionService and ElectionService (§12).
+    """
+
+    @staticmethod
+    def Announce(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/fleet.ReservationService/Announce',
+            fleet__pb2.ReservationAnnounce.SerializeToString,
+            fleet__pb2.ReservationAck.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+
 class AdminServiceStub:
     """--- Admin: introspection and robot-state injection ---
     For operators and the Docker test harness. Only served when ADMIN_ENABLED=1
