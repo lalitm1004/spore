@@ -33,6 +33,12 @@ set -euo pipefail
 cd "$(dirname "$(readlink -f "$0")")"
 
 COMPOSE=(docker compose -f compose.yml -f compose.fleet.yml)
+# Hand the simulator the host GPU only where there is one to hand it. Compose
+# fails to create a container that names a missing device, so this cannot be
+# unconditional -- see compose.gpu.yml.
+if [ -d /dev/dri ]; then
+  COMPOSE+=(-f compose.gpu.yml)
+fi
 
 # The network-layer containers, one per robot: `bot_01-bot` and friends. Their
 # logs are the coordination layer; the robot services' logs are the driving.

@@ -26,6 +26,7 @@ services:
       context: ../network-layer
     cpus: '0.5'
     environment:
+      ADMIN_ENABLED: '1'
       BOT_ID: '0'
       GRPC_HOST: 0.0.0.0
       GRPC_PORT: '50051'
@@ -65,6 +66,7 @@ services:
       context: ../network-layer
     cpus: '0.5'
     environment:
+      ADMIN_ENABLED: '1'
       BOT_ID: '1'
       GRPC_HOST: 0.0.0.0
       GRPC_PORT: '50051'
@@ -104,6 +106,7 @@ services:
       context: ../network-layer
     cpus: '0.5'
     environment:
+      ADMIN_ENABLED: '1'
       BOT_ID: '2'
       GRPC_HOST: 0.0.0.0
       GRPC_PORT: '50051'
@@ -143,6 +146,7 @@ services:
       context: ../network-layer
     cpus: '0.5'
     environment:
+      ADMIN_ENABLED: '1'
       BOT_ID: '3'
       GRPC_HOST: 0.0.0.0
       GRPC_PORT: '50051'
@@ -182,6 +186,7 @@ services:
       context: ../network-layer
     cpus: '0.5'
     environment:
+      ADMIN_ENABLED: '1'
       BOT_ID: '4'
       GRPC_HOST: 0.0.0.0
       GRPC_PORT: '50051'
@@ -221,6 +226,7 @@ services:
       context: ../network-layer
     cpus: '0.5'
     environment:
+      ADMIN_ENABLED: '1'
       BOT_ID: '5'
       GRPC_HOST: 0.0.0.0
       GRPC_PORT: '50051'
@@ -260,6 +266,7 @@ services:
       context: ../network-layer
     cpus: '0.5'
     environment:
+      ADMIN_ENABLED: '1'
       BOT_ID: '6'
       GRPC_HOST: 0.0.0.0
       GRPC_PORT: '50051'
@@ -299,6 +306,7 @@ services:
       context: ../network-layer
     cpus: '0.5'
     environment:
+      ADMIN_ENABLED: '1'
       BOT_ID: '7'
       GRPC_HOST: 0.0.0.0
       GRPC_PORT: '50051'
@@ -338,6 +346,7 @@ services:
       context: ../network-layer
     cpus: '0.5'
     environment:
+      ADMIN_ENABLED: '1'
       BOT_ID: '8'
       GRPC_HOST: 0.0.0.0
       GRPC_PORT: '50051'
@@ -377,6 +386,7 @@ services:
       context: ../network-layer
     cpus: '0.5'
     environment:
+      ADMIN_ENABLED: '1'
       BOT_ID: '9'
       GRPC_HOST: 0.0.0.0
       GRPC_PORT: '50051'

@@ -1,0 +1,14 @@
+# The host GPU, handed to the simulator.
+#
+# Split out because naming a device that is not there is a hard failure at
+# container create, not a warning: with this folded into compose.yml the entire
+# fleet refused to start on any host without a DRI node -- a Mac, or a Linux box
+# with no render group. `fleet.sh` includes this file only when /dev/dri exists.
+#
+# What it buys, where it exists: Webots otherwise falls back to software GL
+# through Xvfb, which cannot load this world with rendering on at all -- 83
+# marker tiles at 1024x1024 plus an 8192x4096 floor is 482 MB of texture.
+services:
+  sim:
+    devices:
+      - /dev/dri:/dev/dri

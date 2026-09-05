@@ -16,8 +16,11 @@ services:
     #
     # Only the render nodes, not the card nodes: rendering needs no mode
     # setting, and renderD* is world-accessible where card* is not.
-    devices:
-      - /dev/dri:/dev/dri
+    #
+    # The device itself lives in compose.gpu.yml, which `fleet.sh` adds only
+    # when /dev/dri is actually there. Naming a device that does not exist is a
+    # hard failure at container create -- so on a Mac, where there is no DRI
+    # node at all, the whole fleet refused to start.
     build:
       context: .
       dockerfile: docker/sim.Dockerfile

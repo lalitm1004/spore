@@ -639,6 +639,13 @@ def compose_source(manifest: dict) -> dict:
                 "WAREHOUSE_MAP": "/project/config/warehouse.json",
                 "GRPC_HOST": "0.0.0.0",
                 "GRPC_PORT": "50051",
+                # Read-only introspection, so `fleet.sh` can show what the
+                # coordination layer is actually doing -- who leads, who is
+                # where, what is claimed. This is a local demo fleet, the same
+                # call `network-layer/up.py` makes for its test fleets. Leave it
+                # off in production; there is nothing to write through it now
+                # that the injection RPCs are gone, but it still exposes state.
+                "ADMIN_ENABLED": "1",
             },
             "volumes": ["./:/project:ro"],
             "mem_limit": "192m",
