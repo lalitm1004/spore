@@ -48,6 +48,8 @@ HOW
 """
 from __future__ import annotations
 
+import config
+
 import logging
 import threading
 import time
@@ -66,7 +68,7 @@ if TYPE_CHECKING:
 
 log = logging.getLogger(__name__)
 
-JOIN_RETRY_INTERVAL = 0.5
+
 
 
 class Phase(Enum):
@@ -220,7 +222,7 @@ class Migrator:
                     log.warning("bot-%d: migration join failed: %s %s", bot.bot_id, e.code(), e.details())
                     return False
                 # PERMISSION_DENIED == "no handoff for you yet". Wait for it.
-            time.sleep(JOIN_RETRY_INTERVAL)
+            time.sleep(config.T_JOIN_RETRY)
 
         if join_ack is None or not join_ack.accepted:
             log.warning("bot-%d: destination never accepted join within %.0fs", bot.bot_id, T_MIGRATION_TIMEOUT)

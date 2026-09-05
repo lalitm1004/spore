@@ -915,10 +915,8 @@ class Bot:
     # ---- gRPC server ----------------------------------------------------------
 
     def _start_grpc_server(self) -> None:
-        # 32 workers: heartbeats are cheap, but a burst of migrations must not
-        # starve them (handoffs run on their own threads, not on workers).
         self._grpc_server = grpc.server(
-            futures.ThreadPoolExecutor(max_workers=32),
+            futures.ThreadPoolExecutor(max_workers=config.GRPC_WORKERS),
             interceptors=[VirtualNetworkInterceptor(self)],
         )
         fleet_pb2_grpc.add_ElectionServiceServicer_to_server(ElectionServicer(self.election, self.peer_table), self._grpc_server)
@@ -1005,7 +1003,7 @@ class Bot:
             try:
                 pool.stub(ls.leader_address, fleet_pb2_grpc.RegionServiceStub).Departure(
                     fleet_pb2.DepartureRequest(bot_id=self.bot_id, timestamp=int(time.time() * 1000)),
-                    timeout=2.0, metadata=self.rpc_metadata(),
+                    timeout=config.T_DEPARTURE, metadata=self.rpc_metadata(),
                 )
             except grpc.RpcError:
                 log.debug("bot-%d: couldn't send departure to leader", self.bot_id)

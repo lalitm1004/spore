@@ -36,6 +36,8 @@ HOW
 """
 from __future__ import annotations
 
+import config
+
 import logging
 import threading
 import time
@@ -94,7 +96,7 @@ class HeartbeatSender:
         # A redirect handled inside the loop calls become_follower → start()
         # → stop() on this very thread; joining ourselves would raise.
         if thread and thread.is_alive() and thread is not threading.current_thread():
-            thread.join(timeout=2.0)
+            thread.join(timeout=config.T_THREAD_JOIN)
         self._thread = None
 
     # ---- Loop ---------------------------------------------------------------

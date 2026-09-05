@@ -15,6 +15,7 @@ Covers the full gRPC communication design: topology, message schemas, RPC contra
 | Migration state machine + destination join | `bus/migration.py` | `Migrator` (bot side, retries, reconcile) + `MigrationJoinServicer` |
 | Jobs: ledger, dispatch, forwarding, observation | `bus/jobs.py` | `Dispatcher` (leader side) + `JobServicer` / `BotServicer`; §14 |
 | Warehouse graph: node → region, hop distance | `warehouse/map.py` | Loaded from `warehouse-layout.json`; §14 |
+| Pathfinding: the search, traffic, routes, and the robot link | `planning/` | `sipp.py` + `cost.py` + `traffic.py` (the search), `decide.py` + `server.py` (the robot); §16 |
 | Reservations: claims, who gives way, who to tell | `reservations/` | `claims.py` + `ledger.py` + `vicinity.py` (rules), `sender.py` + `server.py` (wire); §15 |
 | Virtual network (who may call what) | `bus/policy.py` | gRPC server interceptor; §12 |
 | Admin: introspection + robot-state injection | `bus/admin.py` | `ADMIN_ENABLED` only; used by the Docker harness; §13 |
@@ -764,6 +765,16 @@ early; a successful `MigrationJoin` clears `pending_incoming` early.
 | `T_ANNOUNCE` | = T_HB = 1s | How often a bot tells its neighbours what it holds; also how long a fresh claim stays provisional (§15) |
 | `RESERVATION_TTL` | 3 × T_ANNOUNCE = 3s | A neighbour's claims lapse after this without a fresher announcement (§15) |
 | `RESERVATION_REACH_HOPS` | 8 | How far ahead a bot may claim, and the test for who needs to hear from it (§15) |
+| `T_JOIN_RETRY` | 0.5s | Migrating bot's wait between join attempts |
+| `T_THREAD_JOIN` | 2s | Grace given to a sender thread being stopped |
+| `T_DEPARTURE` | 2s | How long a departing bot waits for its leader to ack |
+| `GRPC_WORKERS` | 32 | Server worker threads |
+| `T_STALL` | 6 × T_HB = 6s | Commanded but not moving for this long is a stall (§16) |
+| `ROBOT_SOCKET` | /tmp/spore-robot.sock | Unix socket the companion asks for turns on (§16) |
+| `ROBOT_SOCKET_TIMEOUT` | 5s | How long the robot blocks on a decision; every WAIT stays under it |
+| `ROUTE_ALTERNATES` | 3 | Alternative routes kept per job, stored as diffs (§16) |
+| `HOPS_CACHE_SIZE` | 64 | Distance tables cached per source node; bounded on purpose (§16) |
+| `BATTERY_CRITICAL` | 15% | Below this the planner weights charge over speed (§16) |
 | `ADMIN_ENABLED` | 0 | Serve `AdminService` (introspection, robot-state injection); `up.py` sets 1 |
 | `GRPC_PORT` | 50051 | Port each bot listens on |
 
@@ -1434,3 +1445,150 @@ A bot currently claims only the node it is standing on. That is real information
 it is the floor, not the ceiling. Claiming a *route* needs something that decides
 where the robot is going next, and that decision does not live in this repository
 yet. See `TODO.md`.
+
+---
+
+## 16. Pathfinding — telling a blind robot where to go
+
+The robot has no map of its own beyond adjacency and no idea where anything is.
+It arrives at a QR node, works out which turns physically exist, and asks. It
+then **blocks** — up to `ROBOT_SOCKET_TIMEOUT` — and if it hears nothing it sits
+there for the rest of its shift, because it only asks again on reaching the next
+node, and it will not reach one.
+
+Everything below follows from that.
+
+### 16.1 The link
+
+One unix socket per robot, newline-delimited JSON, one long-lived connection.
+`bot.Bot` serves it (`planning/server.py`); the companion dials `ROBOT_SOCKET`.
+
+```
+Query{query_id, node_id, node_type, region_id, x_cm, y_cm, heading_rad,
+      available: {"left": 412, "straight": 413, ...}}
+Decision{query_id, kind, turn, target_node_id, hold_ms, because}
+```
+
+Two things the robot gives us for free. `available` is resolved by the robot
+from its own copy of the map against the heading it arrived on — so **it**
+decides what is physically possible, not us. And `heading_rad` is exact: lanes
+are straight, so the bearing between the last two nodes *is* the direction of
+travel, with no odometry drift in it.
+
+`kind` is one of:
+
+| kind | means | carries |
+|---|---|---|
+| `PROCEED` | take this lane, same route as before | `turn`, `target_node_id` |
+| `REROUTE` | take this lane, the route changed | `turn`, `target_node_id` |
+| `WAIT` | stay put, then ask again | `hold_ms` |
+| `YIELD` | leave the route, stand aside here | `turn`, `target_node_id` |
+
+`kind` is additive: a robot reading only `turn` and `target_node_id` still
+behaves correctly for the three moving kinds. **`WAIT` is the one that needed
+the robot side too**, and it exists because the original protocol had no way to
+express waiting — a robot told to wait was indistinguishable from a robot whose
+network layer had died.
+
+### 16.2 Never answer with silence
+
+A malformed query, a planner that raised, a robot standing somewhere our map has
+never heard of, a `Query` whose `available` excludes the node we wanted — every
+one of them gets a Decision. A wrong turn is recoverable at the next node.
+Silence is not recoverable at all.
+
+The only case where we say nothing is a query so broken it has no `query_id` to
+answer against, and a reply carrying the wrong one is discarded by the robot
+anyway. That case is logged.
+
+### 16.3 What we know about other robots — three tiers
+
+| tier | source | strength |
+|---|---|---|
+| 1. Declared | peer `res[]` from the reservation ledger (§15) | hard |
+| 2. Predicted | `node_trail` heading, extrapolated | hard, but yields to tier 1 |
+| 3. Soft | positions, region density, obstructions | cost only |
+
+A declared claim is a promise. A polled position is an observation, and where
+that robot goes next is our inference — so **a prediction never contradicts a
+declaration**. If a peer has told us it holds A and B, we do not additionally
+block C because we guessed it was heading there. Prediction covers only peers
+that have not announced: out of claim range, freshly arrived, or moving between
+announcements.
+
+Prediction is worth trusting because on this floor plan heading usually
+*determines* the next hops. Over all 1,904 directed steps of the real map, 64%
+have at least one next hop with no choice at all, 41% have two, and the longest
+forced run is 16. Inside a corridor there is nowhere else to go — a fact about
+the graph, not a guess about the driver. It stops at the first junction, where
+the peer gets a real choice back.
+
+### 16.4 Proceed, wait, yield, or reroute
+
+The search already prices **waiting against going round**: that is what its wait
+actions are for, and with charge in the cost function a robot low on battery
+correctly waits where a fresh one detours.
+
+**Yielding** is the third option and the only one that means leaving the route,
+so it needs a rule rather than falling out of the search. We give way when all
+three hold:
+
+1. the plan waits longer than `T_YIELD_THRESHOLD`;
+2. we **lose** the yield-priority comparison against whoever is blocking us —
+   free `0` < heading-to-pickup `1` < carrying cargo `2` (§5.6), ties on the
+   lower `bot_id`; and
+3. somewhere to stand aside is within `YIELD_SEARCH_HOPS`.
+
+If we *win* that comparison we wait and keep our claim: the other robot is the
+one that should move. Both sides compute the same verdict from the same two
+numbers, so they cannot both give way and cannot both stay.
+
+Somewhere to stand aside is, in order: a `YI` bay, else a junction, else a `PK`
+or `CH` spur. The cascade exists because real yield bays are scarce — 15 on the
+whole floor, in two regions of seven — so insisting on one would mean never
+yielding across most of the warehouse. A junction is the honest second choice:
+somewhere a robot can actually get past us, and there are plenty. Borrowing a
+charger is last and logged, because it may block someone who needs it.
+
+### 16.5 Regions we cannot see
+
+A follower's roster covers **its own region only**. Leaders exchange every bot's
+trail (§3.2), but that never reaches followers and `HeartbeatAck` is not growing
+to carry it (§10).
+
+So a route is planned optimistically end to end and committed only within the
+current region; nodes elsewhere carry tier-3 density cost and nothing else.
+Migration completing triggers a replan, and the new region's roster arrives with
+the first ack. **The first decision in a new region is uninformed.** That is
+accepted rather than solved.
+
+### 16.6 When a robot stops moving
+
+Escalating, because the first suspicion should be the cheapest one. Each rung is
+a whole `T_STALL`, so a robot pausing for traffic never trips it.
+
+| after | conclusion | action |
+|---|---|---|
+| 1 × `T_STALL` | our route is stale | drop it and replan |
+| 2 × `T_STALL` | something will not move for us | release our claims and stand aside |
+| 3 × `T_STALL` | a person should look | `NEEDS_ATTENTION` to the control plane |
+
+Peer death and collisions ride the machinery that already exists: a bot evicted
+on `T_DEAD` has its claims dropped from every neighbour's ledger, and two bots
+reporting the same node is a contest the yield rule settles.
+
+### 16.7 What it costs
+
+Planning is 0.9 ms at the median and 3.5 ms at the 99th percentile on the real
+881-node map with nineteen peers — against a 1 s tick and a 5 s socket timeout.
+The margin is what makes it safe to answer on the socket thread.
+
+Two bounded caches keep it honest on hardware that has little memory: the
+per-source distance tables (`HOPS_CACHE_SIZE`, 2 bytes per node per entry) and
+the per-goal heuristic tables. An earlier unbounded version of the first reached
+~33 MB on the real map.
+
+Alternative routes are kept per job as **diffs** rather than copies — where each
+leaves the primary and rejoins it. Four whole routes for a seventy-hop job is
+mostly four copies of one list; measured, the diffs cost 76 stored nodes against
+280.

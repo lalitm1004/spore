@@ -16,6 +16,7 @@ than refusal, so allow ~10 s. Waits below are generous on purpose.
 """
 from __future__ import annotations
 
+import json
 import os
 import sys
 import time
@@ -133,6 +134,30 @@ class DockerFleet:
         stub = fleet_pb2_grpc.JobServiceStub(grpc.insecure_channel(self.endpoint(c)))
         return stub.SubmitJob(fleet_pb2.Job(job_id=job_id, pickup_node=pickup, dropoff_node=dropoff),
                               timeout=10, metadata=rpc_metadata(999, 0, "orders"))
+
+    def ask(self, c, query: dict, timeout: int = 10) -> dict | None:
+        """Play the companion: ask this bot for a turn on its own socket.
+
+        Run inside the container, because a unix socket is not reachable from
+        the host. This is the real link -- the same socket `planning/server.py`
+        binds and a real companion dials -- so what it exercises is the whole
+        path: query in, plan, decision out.
+        """
+        script = (
+            "import socket,json,sys\n"
+            "s=socket.socket(socket.AF_UNIX,socket.SOCK_STREAM);s.settimeout(%d)\n"
+            "s.connect('/tmp/spore-robot.sock')\n"
+            "s.sendall((json.dumps(%r)+chr(10)).encode())\n"
+            "b=b''\n"
+            "while chr(10).encode() not in b: b+=s.recv(4096)\n"
+            "sys.stdout.write(b.split(chr(10).encode())[0].decode())\n"
+        ) % (timeout, query)
+        result = c.exec_run(["python3", "-c", script])
+        text = result.output.decode().strip()
+        try:
+            return json.loads(text)
+        except json.JSONDecodeError:
+            return None
 
     # ---- assertions helpers ---------------------------------------------
 
@@ -397,3 +422,122 @@ def test_two_bots_on_one_node_settle_on_a_single_holder(fleet):
 
     assert wait_until(one_holder, 30, what="one of them to give way"), "both kept the node"
 
+
+
+# =============================================================================
+# Pathfinding (PROTOCOL.md §16)
+#
+# These play the companion: they ask on the bot's own unix socket, inside the
+# container, which is the same link a real robot uses. What they exercise is the
+# whole path -- query in, plan against live traffic, decision out.
+
+def _query(node_id: int, available: dict, query_id: int = 1, region: int = PARK) -> dict:
+    return {
+        "query_id": query_id,
+        "node": {"id": node_id, "node_type": "PT", "region_id": region},
+        "robot_position": {"x": 0.0, "y": 0.0},
+        "heading_rad": 0.0,
+        "available": available,
+    }
+
+
+def _neighbours(node_id: int) -> dict:
+    """Turns out of a node, named the way a robot would name them."""
+    from warehouse.map import WarehouseMap
+    import config
+
+    warehouse = WarehouseMap.load(config.WAREHOUSE_MAP)
+    names = ("straight", "left", "right")
+    return {n: node for n, node in zip(names, warehouse.neighbours(node_id))}
+
+
+@pytest.mark.docker
+def test_a_bot_with_no_job_still_answers(fleet):
+    """Silence is the one answer that is never allowed.
+
+    A robot that hears nothing sits there for the rest of its shift, because it
+    only asks again on reaching the next node -- and it will not reach one.
+    """
+    cs = fleet.launch(1, PARK)
+    assert wait_until(lambda: fleet.converged(cs, PARK), 30, what="converge")
+    node = _map_nodes(PARK, 1)[0]
+
+    reply = fleet.ask(cs[0], _query(node, _neighbours(node)))
+    assert reply is not None, "the bot said nothing at all"
+    assert reply["kind"] == "WAIT"
+    assert reply["hold_ms"] > 0, "a hold of zero would have it ask in a tight loop"
+
+
+@pytest.mark.docker
+def test_a_bot_given_a_job_is_routed_towards_it(fleet):
+    """The whole point: a job becomes turns, one node at a time."""
+    cs = fleet.launch(2, PARK)
+    assert wait_until(lambda: fleet.converged(cs, PARK), 30, what="converge")
+
+    nodes = _map_nodes(PARK, 8)
+    start, pickup, dropoff = nodes[0], nodes[6], nodes[7]
+    for c in cs:
+        fleet.inject(c, latest_node_id=start, region_id=PARK,
+                     battery=90.0, state="IDLE", mission="IDLE")
+    # The leader assigns from what its roster says, and the roster is only as
+    # fresh as the last heartbeat.
+    assert wait_until(
+        lambda: all(p.mission == "IDLE" for p in fleet.state(cs[0]).roster), 20,
+        what="the roster to catch up with the injected state")
+
+    ack = fleet.submit_job(cs[0], "job-nav", pickup, dropoff)
+    assert ack.accepted, ack.note
+
+    # Which bot takes it is the dispatcher's call, not this test's.
+    holder = None
+    def assigned() -> bool:
+        nonlocal holder
+        for c in cs:
+            if fleet.state(c).current_job_id == "job-nav":
+                holder = c
+                return True
+        return False
+    assert wait_until(assigned, 20, what="the job to reach a bot")
+
+    reply = fleet.ask(holder, _query(start, _neighbours(start)))
+    assert reply is not None
+    assert reply["kind"] in ("PROCEED", "REROUTE", "WAIT", "YIELD"), reply
+    if reply["kind"] in ("PROCEED", "REROUTE"):
+        assert reply["turn"] in ("left", "straight", "right")
+        assert reply["target_node_id"] in _neighbours(start).values(), \
+            "it must name a lane the robot said exists"
+
+
+@pytest.mark.docker
+def test_a_query_offering_turns_we_did_not_plan_is_still_answered(fleet):
+    """Our map and the robot's can disagree. A wrong turn is recoverable at the
+    next node; silence is not recoverable at all."""
+    cs = fleet.launch(1, PARK)
+    assert wait_until(lambda: fleet.converged(cs, PARK), 30, what="converge")
+    node = _map_nodes(PARK, 1)[0]
+
+    reply = fleet.ask(cs[0], _query(node, {"left": 999999}))
+    assert reply is not None, "a disagreement must not silence the bot"
+    assert reply["kind"] in ("WAIT", "PROCEED", "REROUTE", "YIELD")
+
+
+@pytest.mark.docker
+def test_a_malformed_query_does_not_break_the_link(fleet):
+    """One bad line must not cost the robot the rest of its shift."""
+    cs = fleet.launch(1, PARK)
+    assert wait_until(lambda: fleet.converged(cs, PARK), 30, what="converge")
+    node = _map_nodes(PARK, 1)[0]
+
+    script = (
+        "import socket,json,sys\n"
+        "s=socket.socket(socket.AF_UNIX,socket.SOCK_STREAM);s.settimeout(10)\n"
+        "s.connect('/tmp/spore-robot.sock')\n"
+        "s.sendall(b'{not json\\n')\n"
+        "s.sendall((json.dumps(%r)+chr(10)).encode())\n"
+        "b=b''\n"
+        "while chr(10).encode() not in b: b+=s.recv(4096)\n"
+        "sys.stdout.write(b.split(chr(10).encode())[0].decode())\n"
+    ) % _query(node, _neighbours(node), query_id=7)
+    out = cs[0].exec_run(["python3", "-c", script]).output.decode().strip()
+    assert out, "the connection died on the malformed line"
+    assert json.loads(out)["query_id"] == 7

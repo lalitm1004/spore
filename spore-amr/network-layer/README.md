@@ -2,8 +2,9 @@
 
 The communication layer of the AMR fleet: one process per robot that finds
 its region-mates, elects a leader, keeps a live roster, follows the robot
-across regions, gets cargo jobs to the nearest free bot, and lets neighbouring
-bots reserve nodes directly between themselves. Pure gRPC over one flat
+across regions, gets cargo jobs to the nearest free bot, lets neighbouring bots
+reserve nodes directly between themselves, and tells its robot which way to turn
+at every node it reaches. Pure gRPC over one flat
 network; no broker, no registry, no central server.
 
 **Read [`PROTOCOL.md`](PROTOCOL.md) for the design.** This file is about
@@ -27,6 +28,17 @@ election/
   bully.py           bully election + abdication
   priority.py        priority formula (health, battery buckets, hysteresis)
   server.py          ElectionService handlers
+planning/
+  geometry.py        node kinds, headings, and which way is which
+  graph.py           adjacency with headings, node kinds, hop distances
+  topology.py        corridors, junctions, dead-end bays
+  kinematics.py      how long a move takes and what it costs in charge
+  cost.py            time + energy, weighted by battery state
+  sipp.py            safe-interval search over (node, heading, interval)
+  traffic.py         what other robots are doing, in three tiers
+  routes.py          alternative routes, kept as diffs
+  decide.py          Query in, Decision out -- proceed, wait, yield, reroute
+  server.py          the unix socket the companion asks on
 reservations/
   claims.py          what a claim is, and who gives way when two collide
   ledger.py          one bot's record of who holds what
@@ -75,6 +87,11 @@ All via environment (see `config.py` for defaults and why):
 | `JOB_MIN_BATTERY`, `JOB_MAX_HOPS`, `T_JOB_RETRY` | job dispatch |
 | `NODE_TRAIL_LEN` | how many recent QR nodes a bot reports |
 | `T_LEADER_TENURE` | leadership rotates to a free follower after this (0 = never) |
+| `ROBOT_SOCKET`, `ROBOT_SOCKET_TIMEOUT` | where the companion asks for turns, and how long it blocks (`PROTOCOL.md` §16) |
+| `K_COMMIT`, `PLAN_HORIZON`, `MAX_WAIT`, `MAX_EXPANSIONS` | how far ahead the planner commits, plans, waits and searches |
+| `T_YIELD_THRESHOLD`, `YIELD_SEARCH_HOPS` | when a robot stands aside rather than waits, and how far it looks for somewhere to do it |
+| `T_STALL` | commanded but not moving for this long is a stall; escalates replan → yield → NEEDS_ATTENTION |
+| `ROUTE_ALTERNATES`, `HOPS_CACHE_SIZE`, `BATTERY_CRITICAL` | routes held per job, bounded distance cache, and where charge starts outweighing speed |
 | `T_ANNOUNCE`, `RESERVATION_TTL`, `RESERVATION_REACH_HOPS` | reservations: how often a bot tells its neighbours what it holds, how long their claims stay believable, and how far a claim reaches (`PROTOCOL.md` §15) |
 | `ADMIN_ENABLED` | serve `AdminService` (`GetState`, `InjectRobotState`); keep off in production |
 

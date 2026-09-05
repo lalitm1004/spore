@@ -89,6 +89,20 @@ refer to `PROTOCOL.md`.
 - [ ] Claiming a **route** rather than the node underfoot — needs something deciding where the robot goes next (see below)
 - [ ] `may_enter` gating actual movement — nothing drives the robot from this repo yet (see below)
 
+## Pathfinding (§16)
+
+- [x] Safe-interval search over (node, heading, interval), with turns and charge priced
+- [x] Three traffic tiers with strict precedence: a prediction never contradicts a declaration
+- [x] Prediction runs only to the first junction, where the peer regains a choice
+- [x] Yield when the wait is long, we lose the priority comparison, and there is somewhere to go
+- [x] When we *win* the comparison we hold instead — both sides reach the same verdict alone
+- [x] Yield cascade: YI bay, else junction, else a PK/CH spur (logged)
+- [x] Alternative routes kept as diffs; promoted without a full replan when the primary dies
+- [x] Distance caches bounded — an unbounded one reached ~33 MB on the real map
+- [x] Cross-region routes planned optimistically; replanned on arrival
+- [ ] The first decision after migrating is uninformed — accepted, not solved
+- [ ] Route alternates are built but not yet populated per job by the dispatcher
+
 ## Routing (§16) — the robot link
 
 - [x] The companion's `Query` is answered with a `Decision` over the unix socket

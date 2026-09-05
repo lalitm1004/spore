@@ -108,6 +108,26 @@ WAREHOUSE_MAP = os.environ.get(
     os.path.join(os.path.dirname(__file__), "..", "shared", "warehouse-layout.json"),
 )
 
+#: How long a migrating bot waits between attempts to join its destination.
+#: Shorter than T_HB: a handshake that has landed should not wait a whole
+#: heartbeat to be noticed.
+T_JOIN_RETRY = float(os.environ.get("T_JOIN_RETRY", "0.5"))
+
+#: How long a sender thread is given to finish when it is being stopped. Long
+#: enough for an RPC in flight to return, short enough that shutdown is not
+#: perceptibly slower than a kill.
+T_THREAD_JOIN = float(os.environ.get("T_THREAD_JOIN", "2.0"))
+
+#: How long a departing bot waits for its leader to acknowledge. Short on
+#: purpose: we are already shutting down, and a leader that does not answer
+#: will evict us on T_DEAD anyway.
+T_DEPARTURE = float(os.environ.get("T_DEPARTURE", "2.0"))
+
+#: gRPC server worker threads. Heartbeats are cheap, but a burst of migrations
+#: must not starve them -- handoffs run on their own threads, not on workers.
+GRPC_WORKERS = int(os.environ.get("GRPC_WORKERS", "32"))
+
+
 # ---- Planning (PROTOCOL.md §16) -------------------------------------------------
 
 #: How many hops ahead a robot plans in detail and claims. Also the reach used

@@ -68,6 +68,12 @@ WHAT — yield priority
 from __future__ import annotations
 
 HEALTHY_WEIGHT = 10_000
+# These four define what a priority *number means*, and every bot compares its
+# number against every other bot's. They are therefore protocol, not a
+# deployment knob, and deliberately not in config.py: a fleet where two bots
+# booted with different bucket sizes would be comparing incomparable numbers,
+# and the symptom -- an election that never settles -- would look nothing like
+# the cause. Change them here, for everyone, or not at all (PROTOCOL.md §5.6).
 BUCKET_WEIGHT = 100
 BUCKET_SIZE = 20.0  # battery percent per bucket → buckets 0..4
 MAX_BUCKET = 4

@@ -39,6 +39,8 @@ HOW
 """
 from __future__ import annotations
 
+import config
+
 import logging
 import threading
 import time
@@ -79,7 +81,7 @@ class LeaderExchangeSender:
         # May be called from inside the loop thread (conflict on our own ack
         # path → become_follower → stop). Joining ourselves raises.
         if thread and thread.is_alive() and thread is not threading.current_thread():
-            thread.join(timeout=2.0)
+            thread.join(timeout=config.T_THREAD_JOIN)
         self._thread = None
 
     def _loop(self, stop: threading.Event) -> None:

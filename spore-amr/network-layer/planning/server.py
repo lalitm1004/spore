@@ -35,6 +35,8 @@ HOW
 
 from __future__ import annotations
 
+import config
+
 import json
 import logging
 import os
@@ -112,7 +114,7 @@ class RobotLink:
             server.close()
         thread, self._thread = self._thread, None
         if thread and thread.is_alive() and thread is not threading.current_thread():
-            thread.join(timeout=2.0)
+            thread.join(timeout=config.T_THREAD_JOIN)
         if self.path.exists():
             try:
                 self.path.unlink()
