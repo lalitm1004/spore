@@ -21,7 +21,15 @@ WHY IT IS A TIER OF ITS OWN
     five-minute budget the container tier is held to.
 
 HOW TO RUN IT
-    uv run pytest tests -q -m webots
+    webots/fleet.sh up  &&  uv run pytest tests -q -m webots
+
+    against a fleet you brought up yourself, or
+
+    WEBOTS_TIER=1 uv run pytest tests -q -m webots
+
+    to let it start and stop one. It will not start a simulator without that,
+    because a command-line `-m` replaces the default deselection rather than
+    adding to it, and `-m "not docker"` is a reasonable thing to type.
 
     Or watch instead of asserting: `spore-amr/webots/fleet.sh view`.
 
@@ -108,6 +116,26 @@ def fleet():
         pytest.skip("no Docker daemon reachable")
     if not (FLEET / "compose.fleet.yml").exists():
         pytest.skip("no generated fleet; run `webots/fleet.sh gen`")
+
+    # Starting a simulator is not something to do by accident. `addopts`
+    # deselects this tier, but a command-line `-m` *replaces* that rather than
+    # adding to it -- so `-m "not docker"`, which is a reasonable thing to type,
+    # would otherwise bring up ten robots and a world of 881 nodes without
+    # anyone asking for it.
+    #
+    # So: run against a fleet that is already up, and only start one when told
+    # to in as many words.
+    already_up = "webots-sim-1" in subprocess.run(
+        ["docker", "ps", "--format", "{{.Names}}"],
+        capture_output=True, text=True).stdout
+
+    if already_up:
+        yield                       # someone else's fleet; leave it running
+        return
+
+    if os.environ.get("WEBOTS_TIER") != "1":
+        pytest.skip("set WEBOTS_TIER=1 to let this tier start a simulator, "
+                    "or bring one up yourself with `webots/fleet.sh up`")
 
     up = fleet_sh("up")
     if up.returncode != 0:
