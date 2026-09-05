@@ -119,6 +119,9 @@ class RobotLink:
             try:
                 self.path.unlink()
             except OSError:
+                # Best effort. A socket file we cannot remove is tidiness, not
+                # correctness -- the next start() unlinks it anyway -- and
+                # raising here would break an otherwise clean shutdown.
                 pass
 
     # ---- The loop ------------------------------------------------------------

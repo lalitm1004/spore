@@ -116,21 +116,4 @@ The stand-in router and the placeholder glue project are both gone: each robot
 container runs a real `bot.py`, and `spore-amr/webots/robot/network.py` is now
 only the shared message shapes. There is one network layer.
 
----|---|---|
-| transport | gRPC, bot to bot | unix socket, one per robot |
-| what it tells the robot | "go to node 400" | "turn left, you will arrive at node 412" |
-| plugged in? | **no** — `RobotSink` has no implementation | yes, answered by `RandomRouter` |
-
-`bot.py` sends the job's pickup or dropoff node as `target_node_id`, which can be
-seventy hops away. The real robot cannot use that: it stops at each junction and
-asks which of the turns actually in front of it to take, and the answer has to be
-one of them. `robot/network.py` says what it is waiting for in its own words —
-*"Everything above the `Router` protocol is what the real distributed layer will
-replace."*
-
-That `Router` is where path planning belongs, and reservations are what make it
-safe with more than one robot. It only exists on the unmerged branch, so nothing
-here can build against it yet. Reconciling the two is a design conversation, not
-a patch.
-
 ---

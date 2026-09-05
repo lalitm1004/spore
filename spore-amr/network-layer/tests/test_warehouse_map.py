@@ -14,7 +14,7 @@ from itertools import pairwise
 import pytest
 from tests.planning_maps import make_map_doc
 
-from planning import Graph, NodeType
+from planning import NodeType
 from warehouse.map import MapError, WarehouseMap
 
 

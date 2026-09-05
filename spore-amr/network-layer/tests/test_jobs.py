@@ -16,7 +16,7 @@ import pytest
 from bot import RobotState
 from bus.jobs import Job, NO_BOT, PENDING, ASSIGNED, PICKED_UP, NEEDS_ATTENTION, CS_PICKUP, CS_EN_ROUTE, CS_DROPOFF, CS_DELIVERED
 from election.bully import Role
-from peers.table import Peer, Leader
+from peers.table import Leader
 from proto import fleet_pb2, fleet_pb2_grpc
 from bus.rpc import pool
 from warehouse.map import WarehouseMap

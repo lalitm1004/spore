@@ -67,6 +67,12 @@ def image(client):
 
 
 def wait_until(pred, timeout: float, step: float = 0.5, what: str = "") -> bool:
+    """Poll until true or the deadline passes.
+
+    `what` names the thing being waited for and is reported on failure. Every
+    call site already passed one; it just never reached the failure message,
+    which made a timeout read as a bare `assert False` with nothing to go on.
+    """
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
         try:
@@ -75,6 +81,8 @@ def wait_until(pred, timeout: float, step: float = 0.5, what: str = "") -> bool:
         except grpc.RpcError:
             pass  # container not up / paused / partitioned — keep polling
         time.sleep(step)
+    if what:
+        print("timed out after {:.0f}s waiting for {}".format(timeout, what), flush=True)
     return False
 
 
@@ -370,7 +378,8 @@ def test_claims_keep_flowing_when_the_leader_dies(fleet):
     survivors = [c for c in cs if c.id != leader.id]
     _park(fleet, survivors[0], a_node)
     _park(fleet, survivors[1], b_node)
-    watcher_sees = lambda: _claims_of(fleet, survivors[1], fleet.state(survivors[0]).bot_id)
+    def watcher_sees():
+        return _claims_of(fleet, survivors[1], fleet.state(survivors[0]).bot_id)
     assert wait_until(lambda: bool(watcher_sees()), 20, what="claims before the kill")
 
     leader.kill()
@@ -447,8 +456,12 @@ def _neighbours(node_id: int) -> dict:
     import config
 
     warehouse = WarehouseMap.load(config.WAREHOUSE_MAP)
+    # left / straight / right is the whole vocabulary: a robot never gets
+    # offered the lane it arrived on, so a degree-4 node still has three
+    # choices. `strict=False` is deliberate and this comment is why -- without
+    # it, a reader would reasonably suspect a dropped turn.
     names = ("straight", "left", "right")
-    return {n: node for n, node in zip(names, warehouse.neighbours(node_id))}
+    return dict(zip(names, warehouse.neighbours(node_id), strict=False))
 
 
 @pytest.mark.docker
