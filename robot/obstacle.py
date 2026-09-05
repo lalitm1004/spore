@@ -47,7 +47,13 @@ class ObstacleConfig:
     accel_s: float = 0.6       # ramp into reverse
     backoff_speed: float = 2.0     # wheel rad/s once fully reversing
     borders_to_pass: int = 2   # orange bands to cross before stopping
-    max_backoff_m: float = 2.0     # give up reversing after this much travel
+    # Give up reversing after this much travel. Well under a lane length on
+    # purpose: at 2.0 m a robot could reverse the entire span it came down and
+    # keep going off the edge of the floor, which is what ten robots tripping
+    # over each other actually did. Clearing a blocked lane needs centimetres,
+    # not metres -- if two orange bands have not appeared in half a metre, the
+    # marker is not behind us and reversing further is driving blind.
+    max_backoff_m: float = 0.45
     departed_m: float = 0.15   # range must improve by this much, while parked,
                                # before the obstacle counts as gone
     hold_timeout_s: float = 8.0    # then try again anyway -- see below

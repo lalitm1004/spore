@@ -23,10 +23,9 @@ import sys
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-import yaml  # noqa: E402
 from controller import Supervisor  # noqa: E402
 
-from tools.manifest import MarkerConfig, TrackConfig  # noqa: E402
+
 
 # Label slots. Webots addresses overlay labels by index, so they are allocated
 # statically rather than per-frame.
@@ -62,27 +61,33 @@ def read_status(path):
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--manifest", type=pathlib.Path, default=ROOT / "fleet.yaml")
     parser.add_argument("--out", type=pathlib.Path, default=ROOT / "out")
+    parser.add_argument("--map", type=pathlib.Path,
+                        default=ROOT / "config" / "warehouse.json")
     parser.add_argument("--duration", type=float, default=None)
     parser.add_argument("--calibrate", action="store_true",
                         help="log the raw heading terms for recalibration")
     args = parser.parse_args(argv)
 
-    manifest = yaml.safe_load(args.manifest.read_text())
-    track = TrackConfig.from_dict(manifest["track"])
-    markers = MarkerConfig.from_dict(manifest.get("markers"))
-    origin_offset = (track.plane_size[0] / 2.0, track.plane_size[1] / 2.0)
-    # A lattice has no single centreline; its markers are its nodes.
-    marker_count = (len(track.build_graph().nodes) if track.is_graph
-                    else len(markers.nodes))
+    # The generated map, not the manifest's track. Building the track would
+    # re-read the source warehouse.json, which lives outside the container --
+    # and needing the source at runtime would defeat the point of generating a
+    # map in the first place.
+    document = json.loads(args.map.read_text())
+    origin_offset = (document["dimensions"]["width"] / 200.0,
+                     document["dimensions"]["height"] / 200.0)
+    marker_count = len(document["nodes"])
 
     supervisor = Supervisor()
     timestep = int(supervisor.getBasicTimeStep())
 
     # gen_fleet.py writes each robot as `DEF <NAME_UPPER> LineBot`, which is
     # the only handle a supervisor gets on a PROTO instance.
-    names = [entry["name"] for entry in manifest["robots"]]
+    # The generated per-robot configs, not the manifest's `robots:` block --
+    # that block may be a count-and-spawn rule rather than a list, and the
+    # configs are what actually exist.
+    names = sorted(path.stem for path in
+                   (ROOT / "config").glob("bot_*.yaml"))
     nodes = {name: supervisor.getFromDef(name.upper()) for name in names}
     for name, node in nodes.items():
         if node is None:

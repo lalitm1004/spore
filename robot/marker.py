@@ -117,6 +117,7 @@ class MarkerCrossing:
         self.read_margin = read_margin
         self.state = Crossing.CLEAR
         self.entered_at: Optional[float] = None
+        self._border_was = False
         self.crossings = 0
 
     def update(self, distance: float, sees_border: bool) -> Crossing:
@@ -181,6 +182,22 @@ class MarkerCrossing:
             return None
         travelled = distance - self.entered_at
         return self.config.color_sensor_x + self.config.tile_length / 2.0 - travelled
+
+    def reset(self) -> None:
+        """Forget the current crossing entirely.
+
+        Called after a turn. A crossing measures travel since the tile's near
+        edge, and a robot that stopped on the tile to be routed has not
+        travelled at all -- so the crossing never advances, `line_is_trustworthy`
+        stays false, and the robot drives away from the junction blind, holding
+        the steering it had before it turned. That walks it off the lane.
+
+        After a turn the robot is on a different lane facing a different way.
+        The old crossing describes none of that.
+        """
+        self.state = Crossing.CLEAR
+        self.entered_at = None
+        self._border_was = False
 
     def recovered(self) -> None:
         """Called once the line estimator has the line again."""

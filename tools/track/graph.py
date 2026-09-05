@@ -133,6 +133,14 @@ class Graph:
                 continue  # the lane we arrived on
             candidates.append((neighbour, lane))
 
+        if not candidates:
+            # A dead end -- every charging bay in the real warehouse is one,
+            # a degree-1 spur off a corridor. Excluding the arrival lane leaves
+            # nothing, and a robot offered no turn sits in the bay for the rest
+            # of the run. Reversing out is the only way, so offer it.
+            candidates = [(n, self.bearing(node_id, n))
+                          for n in self._adjacency[node_id]]
+
         result: Dict[str, int] = {}
         for turn, target in ideal.items():
             best, best_gap = None, tolerance

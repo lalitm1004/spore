@@ -16,3 +16,8 @@ node_modules/
 # layer lives elsewhere in the repo -- an empty second copy here would only
 # drift from it.
 net/
+
+# Intermediate floor texture. The world references the content-addressed copy
+# (track-<hash>.png) so a regenerated floor cannot be served from a browser
+# cache under a URL it already has.
+textures/track.png

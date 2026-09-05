@@ -28,15 +28,16 @@ def main(argv=None) -> int:
     track = TrackConfig.from_dict(manifest["track"])
     markers = MarkerConfig.from_dict(manifest.get("markers"))
     args.output.mkdir(parents=True, exist_ok=True)
-    offset = track.plane_size[0] / 2.0
+    offset_x = track.plane_size[0] / 2.0
+    offset_y = track.plane_size[1] / 2.0
 
     if track.is_graph:
         graph = track.build_graph()
         for node in sorted(graph.nodes.values(), key=lambda n: n.node_id):
             payload = encode_payload(
                 node_id=node.node_id, kind=node.kind,
-                x_cm=round((node.x + offset) * 100, 1),
-                y_cm=round((node.y + offset) * 100, 1),
+                x_cm=round((node.x + offset_x) * 100, 1),
+                y_cm=round((node.y + offset_y) * 100, 1),
                 name=node.name, region_id=node.region_id,
             )
             render_marker(payload, markers.spec).save(
@@ -52,7 +53,7 @@ def main(argv=None) -> int:
         return 0
 
     centerline = track.build_centerline()
-    origin_offset = (offset, track.plane_size[1] / 2.0)
+    origin_offset = (offset_x, offset_y)
 
     for node in markers.nodes:
         payload = node.payload(centerline, origin_offset)

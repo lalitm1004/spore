@@ -1,125 +1,266 @@
 # Architecture
 
-Companion to `CLAUDE.md`, which carries the invariants and traps. This one
-covers what each module is for and why the shape is what it is.
+Companion to `CLAUDE.md`, which carries the invariants and the traps. This one
+is the handover: what every module is for, why the shape is what it is, what
+has been measured, and what is still open.
 
 ---
 
-## 1. Two processes per robot
+## 1. What this is, and what it is not
 
-Each robot is two OS processes, joined by a `socat` pty pair so both sides open
-a real serial device path exactly as they would on hardware.
+This is the **robot half** of an AMR fleet: perception, motion control, the
+physical layer, and a simulator faithful enough to develop them against. The
+distributed coordination the project is really about — task allocation,
+reservations, deadlock resolution — is somebody else's code. It is represented
+here by `robot/network.py`'s `RandomRouter`, which picks a legal turn uniformly
+and knows nothing about tasks, congestion or other robots.
 
-| | `robot/main.py` — "the ESP32" | `robot/companion.py` — "the Pi" |
-|---|---|---|
-| owns | IR arrays, motors, cameras, lidar | nothing physical |
-| Webots access | yes, the extern controller | **none** |
-| rate | 62.5 Hz control loop | event-driven |
-| sends | `EVT LINE_LOST / MARKER / OBSTACLE / STATUS` | `CMD SET_SPEED / STOP / START` |
-| if the link dies | keeps following the line | irrelevant to control |
+That stand-in is not a placeholder to be embarrassed about. It is the interface
+frozen early, so the firmware and the companion were written against their
+final contract rather than ported to it later, and a fleet of random routers is
+a real baseline — random assignment is the floor any allocation algorithm has
+to beat.
 
-The split is a policy boundary, not just a process boundary. The companion sets
-setpoints and can never command a wheel velocity. When it sees `LINE_LOST` it
-concludes the robot is going too fast and lowers the target speed — a decision
-with no business inside a control loop.
+## 2. Three processes per robot
 
-Wire format is newline-delimited ASCII (`robot/protocol.py`), readable with a
-serial monitor. Everything lives behind `encode`/`decode`, so a binary framing
-can replace it without either side's logic changing.
+Each robot is three OS processes in one container.
 
-## 2. Pure core, thin adapter
+| | `robot/main.py` | `robot/companion.py` | `robot/netlayer.py` |
+|---|---|---|---|
+| stands for | the ESP32 / Arduino | the Pi | the network layer |
+| owns | IR arrays, motors, cameras, lidar | the map, the policy | routing |
+| Webots access | yes, the extern controller | none | none |
+| rate | 62.5 Hz control loop | event-driven | request/response |
+| talks to | companion, over a socat pty | firmware and netlayer | companion |
+
+The firmware and companion are joined by a `socat` pty pair, so both sides open
+a real serial device path exactly as they would on hardware. The companion and
+network layer are joined by a unix socket carrying newline-delimited JSON —
+a real serialisation boundary, so replacing the stand-in with the real
+TypeScript layer means changing what listens on the socket and nothing else.
+
+**The split is a policy boundary, not just a process boundary.** The companion
+sets setpoints and can never command a wheel velocity. When it sees
+`LINE_LOST` it concludes the robot is going too fast and lowers the target
+speed — a decision with no business inside a control loop. The firmware has no
+network code at all: it reports "I am at node 7" and receives "turn to 90
+degrees".
+
+**One network layer per robot, not one shared service.** A single service
+answering every robot would be a control plane wearing a hat. Per-robot also
+makes killing one robot's coordinator a real thing to demonstrate: its firmware
+never had a network dependency to lose, so it keeps following its lane and
+stops at the next junction with nothing to tell it where to go.
+
+## 3. Pure core, thin adapter
 
 Only `robot/main.py` and `robot/supervisor.py` import the Webots API.
 Everything else is pure: no I/O, no simulator, host-testable. That is what made
 the firmware/companion split cheap — the control modules moved across
-untouched — and it is why the test suite runs in under a second.
+untouched — and it is why 167 tests run in about a second.
 
 ```
 robot/
-  main.py          firmware: the only place Webots meets control    641 lines
-  companion.py     the policy half                                   67
-  supervisor.py    ground truth + the on-screen readout             193
+  main.py          firmware: the only place Webots meets control    ~700 lines
+  companion.py     the policy half, and the junction handshake       ~130
+  netlayer.py      the stand-in network layer, as a process          ~110
+  supervisor.py    ground truth and the on-screen readout            ~190
 
-  hal.py           MCU-like front end: 10-bit ADC, own sample clock   63
-  line_estimator.py  IR counts -> cross-track position               46
-  pid.py           PID with output limiting                          61
-  drive.py         steering -> wheel speeds, turn authority first    36
-  odometry.py      wheel angles -> pose and path length              82
+  hal.py           MCU-like front end: 10-bit ADC, own sample clock    63
+  line_estimator.py  IR counts -> cross-track position                 46
+  pid.py           PID with output limiting                            61
+  drive.py         steering -> wheel speeds, turn authority first      36
+  odometry.py      wheel angles -> pose and path length                82
 
-  marker.py        colour trigger + crossing state machine          189
-  qr.py            OpenCV decode of a BGRA frame                    121
-  obstacle.py      the lidar reflex                                 183
-  turn.py          in-place turning to an absolute heading           93
-  network.py       stand-in router                                   87
+  marker.py        colour trigger + crossing state machine            190
+  qr.py            OpenCV decode of a BGRA frame                       120
+  obstacle.py      the lidar reflex                                   200
+  turn.py          in-place turning to an absolute heading             93
+  navigator.py     map lookup, and the socket to the network layer    200
+  network.py       Query/Decision wire types, RandomRouter            140
 
-  protocol.py      the firmware <-> companion wire format            68
-  events.py        what the firmware reports upward, and when        48
-  policy.py        the companion's decision making                   48
-  config.py        per-robot configuration                          139
-  telemetry.py     CSV recording and run summaries                   92
+  protocol.py      the firmware <-> companion wire format              68
+  events.py        what the firmware reports upward, and when          48
+  policy.py        the companion's speed policy                        48
+  config.py        per-robot configuration                            160
+  telemetry.py     CSV recording and run summaries                     92
 
 tools/
-  gen_fleet.py     fleet.yaml -> world, compose, configs, textures  384
-  manifest.py      fleet.yaml loading and validation                158
-  track/centerline.py   analytic centreline (currently Oval only)    96
-  track/raster.py       centreline -> ground texture                 55
-  track/marker.py       QR payload + tile rendering                 210
+  gen_fleet.py     fleet.yaml -> world, compose, configs, textures    ~560
+  manifest.py      fleet.yaml loading and validation                  ~280
+  make_markers.py  one QR tile per node
+  svg2png.py       SVG -> PNG with a backend fallback chain           ~150
+  track/graph.py   the lane graph and turn resolution                 ~270
+  track/warehouse.py  warehouse.json export, and window loading       ~120
+  track/svgfloor.py   the warehouse's own map as the floor            ~290
+  track/raster.py     lane rendering for generated lattices            85
+  track/marker.py     QR payload and tile rendering                   ~210
+  track/centerline.py the original analytic oval, still used          ~120
   spike_*.py       six single-purpose diagnostics
 ```
 
-## 3. Static generation from one manifest
+## 4. One manifest generates everything
 
-`fleet.yaml` generates `worlds/track.wbt`, `compose.fleet.yml`,
-`config/<robot>.yaml` and every texture. A robot's name in the world cannot
-drift from the `--robot-name` its container connects with, because both come
-from the same source.
+`fleet.yaml` generates the floor texture, every marker texture,
+`config/warehouse.json`, `worlds/track.wbt`, `compose.fleet.yml` and every
+`config/bot_XX.yaml`. A robot's name in the world cannot drift from the
+`--robot-name` its container connects with, because both come from one source.
 
-Chosen over dynamic spawning because per-robot heterogeneity is the reason
-separate containers exist at all — different gains, different memory limits, a
-deliberately degraded robot.
+Three track types are supported, and `TrackConfig.from_dict` dispatches on
+which block is present:
 
-The generated files are tracked in git. That is the same choice this repo
-already makes for `warehouse.json` and `warehouse_map.svg`, and it means a
-fresh clone can load the world without running anything first.
+```yaml
+track:
+  warehouse:                  # a window of the real layout  (current)
+    source: ../spore/spore-warehouse-layout/output/warehouse.json
+    origin_cm: [8200, 600]
+    size_m: [32, 16]
+    pixels_per_metre: 256
 
-## 4. Localisation
+track:
+  graph: {rows: 4, columns: 4, spacing: 2.0}    # a generated lattice
+
+track:
+  shape: oval                 # the original single loop
+  plane_size: [4.0, 4.0]
+  track_size: [3.0, 2.0]
+```
+
+Robots are placed either explicitly or from the track:
+
+```yaml
+robots:
+  count: 10
+  spawn: charging             # poses computed from the CH nodes
+```
+
+Generated files are tracked in git. That is this repo's existing convention for
+`warehouse.json` and `warehouse_map.svg`, and it means a fresh clone can load
+the world without running anything first.
+
+## 5. The warehouse window
+
+The full layout is 120 x 70 m, 881 nodes, 952 edges. It cannot be simulated at
+line-following resolution, and the arithmetic is worth keeping because it is
+the first thing anyone will want to change:
+
+- One floor texture at 512 px/m would be **61440 x 35840 px**, against a GPU
+  limit usually around 16384.
+- A 1024x1024 QR tile for each of 881 nodes is roughly **3.7 GB** of texture
+  memory.
+
+So `tools/track/warehouse.load_window` takes a rectangle of it — real node ids,
+names, types, regions and edges, just fewer of them. Positions are rebased so
+the window's centre is the world origin. Edges with only one end inside are
+dropped, and nodes left with no lane are dropped with them: a marker tile no
+robot can reach is worse than no tile.
+
+The current window is 32 x 16 m at (8200, 600) cm, chosen by searching every
+2 m offset for the most charging bays: **83 nodes, 10 of them charging**, and
+8192 x 4096 px at 256 px/m — both powers of two, so Webots does not rescale it.
+
+## 6. The floor is the warehouse's own drawing
+
+`warehouse_map.svg` is what the layout tool produces alongside the JSON, so the
+simulated warehouse looks like the warehouse rather than like something this
+project drew from the same data. `tools/track/svgfloor.py` crops the window out
+of it with `rsvg-convert`, then draws the 20 mm guide line on top at true width
+— the map's lanes are hairlines, which is right for a diagram and useless for
+an IR array.
+
+Three things about that were only settled by measurement:
+
+**The coordinate mapping is `x_px = 0.11*x_cm + 90`, `y_px = 860 - 0.11*y_cm`.**
+Fitted against all 952 lane endpoints. The y axis is *inverted*, which a fit on
+ranges cannot tell you — min-to-min and max-to-max match either way. The
+landmark that settles it: the CHARGING label sits at svg y=723 while its nodes
+are at world y=800 cm.
+
+**The map's node dots are removed.** They are drawn at 1.5-4 svg px, right for
+a 1500 px diagram and **273-727 mm** once that drawing is a floor — three to
+seven times the 100 mm marker tile and bigger than the 120 mm robot. They
+swallowed the QR tiles. Nothing is lost: every node carries a real tile, which
+is the physical thing a robot reads.
+
+**The texture is content-addressed.** `track-<hash>.png`, because the streaming
+viewer caches the floor by URL and a regenerated floor kept arriving in the
+browser as the previous one.
+
+`tools/svg2png.py` is the general utility behind this, trying backends in order
+of fidelity — `rsvg-convert`, `qlmanage`, `cairosvg`, then a built-in reader
+that draws rects, lines and circles. The fallback chain exists because
+`cairosvg` wants a system libcairo macOS does not ship, and a demo that needs a
+`brew install` is a demo that fails on a teammate's laptop.
+
+## 7. Localisation
 
 Three sources, in increasing order of authority:
 
-**Wheel odometry** integrates shaft angles into a pose (`robot/odometry.py`).
-Good to about 0.1° of heading per marker segment after calibration, and it is
-the only continuous source.
+**Wheel odometry** integrates shaft angles into a pose. Good to about 0.1
+degrees of heading per marker segment after calibration, and the only
+continuous source.
 
-**The IR array** gives cross-track error against the lane, which is what the PD
-loop steers on. It says nothing about position along the lane.
+**The IR array** gives cross-track error against the lane, which the PD loop
+steers on. It says nothing about position along the lane.
 
 **A marker read** gives an absolute position fix. The QR carries the node's
-position, and the robot converts "the marker is at (x, y)" into "*I* am at
-(x, y)" by removing the lever arm between its own origin and the tile centre —
-about 115 mm, rotated by its heading.
+position; the robot converts "the marker is at (x, y)" into "*I* am at (x, y)"
+by removing the ~115 mm lever arm between its origin and the tile centre,
+rotated by its heading.
 
 Heading is **not** corrected from markers. The shared QR schema carries no lane
 bearing, and the obvious substitute — the chord between consecutive markers —
-is only the lane's direction when the lane between them is straight. On this
-track's arc it gave 85° where the lane ran at 133°, enough to turn the robot
-around. In the real warehouse, edges are straight 2 m spans and the chord would
-be exact; the oval is the outlier. It costs nothing anyway now that
-`track_width` is calibrated.
+is only the lane's direction when the lane between them is straight. On the
+original oval it gave 85 degrees where the lane ran at 133, enough to turn the
+robot around. It costs nothing now that `track_width` is calibrated.
 
-## 5. The obstacle reflex
+## 8. The junction handshake
 
 ```
-CLEAR ──►  STOPPING ──►  PAUSED ──►  BACKING ──►  HOLDING
-        0.8 s ramp     1 s settle   0.6 s ramp   until it leaves
-        down from      before       into
-        cruise         reversing    reverse
+firmware                companion                    netlayer
+   |                        |                            |
+   | EVT MARKER node=7 -->  |                            |
+   | (stops on the tile)    | turns_from(7, heading) --> |
+   |                        | {"available":{"left":9}}   |
+   |                        |                <-- {"turn":"left","target":9}
+   |  <-- CMD TURN bearing  |                            |
+   | (rotates, reacquires)  |                            |
+```
+
+The robot sends **which turns exist**, not just where it is. A blind pick from
+left/straight/right names a lane that is not there — at a corner two of three
+answers are walls — and the retry loop that fixes that is more complicated than
+the field that avoids it.
+
+`Graph.turns_from` is the load-bearing part. It excludes the lane the robot
+arrived on, matches each of left/straight/right to the closest lane within 45
+degrees, and refuses to offer one neighbour for two turns. One exception: at a
+**dead end** it offers the way back. Every charging bay in the real warehouse
+is a degree-1 spur, so excluding the arrival lane left nothing and a robot
+routed into a bay would have sat there for the rest of the run.
+
+`query_id` is echoed back so a fresh answer is distinguishable from a late
+answer to the previous junction — two junctions can share a target, which is
+exactly when confusing them would matter.
+
+The firmware's wait is bounded by `junction_timeout_s` (6 s), after which it
+carries straight on. A robot that is never answered must not hold a lane for
+the rest of the run.
+
+## 9. The obstacle reflex
+
+```
+CLEAR ──► STOPPING ──► PAUSED ──► BACKING ──► HOLDING
+       0.8 s ramp    1 s settle  0.6 s ramp  until it leaves,
+       down from     before      into        or 8 s, whichever
+       cruise        reversing   reverse     comes first
 ```
 
 Deliberately unhurried. Going straight from cruise into reverse pitches the
 chassis hard enough to throw the camera boom around, and on real hardware is
 how a gearbox dies.
 
-Two things make the retreat work, and both were arrived at the hard way:
+Four things make the retreat work, all arrived at the hard way:
 
 **It stops by counting orange bands, not by odometry.** Reversing over a tile
 the colour sensor crosses the far band, the code, then the near band — and that
@@ -132,48 +273,85 @@ correcting toward the error rotates it further off. Measured before the rear
 array existed: the line was absent for 91% of a retreat. After: 0%, with
 1.55 mm mean cross-track.
 
-Resuming needs the *obstacle* to move, not the robot. Resuming on "range is now
-clear" livelocks, because reversing is itself what produced the clearance —
-observed in sim as a BACKING/CLEAR cycle every four seconds. The robot is
-stationary while holding, so only a further improvement in range can mean the
-obstacle itself left.
+**It gives up after 0.45 m.** At 2.0 m — a full lane span — a robot at the grid
+edge reversed straight off the floor. Clearing a blocked lane needs
+centimetres.
 
-## 6. What the simulator is honest about
+**Resuming needs the obstacle to move, not the robot.** Resuming on "range is
+now clear" livelocks, because reversing is itself what produced the clearance —
+observed as a BACKING/CLEAR cycle every four seconds. The robot is stationary
+while holding, so only a *further* improvement in range can mean the obstacle
+left. But holding also times out after 8 s, because two robots waiting on each
+other never move: one spent 69% of a run parked behind another.
 
-The two things hardest to fake are not faked.
+## 10. What the simulator is honest about
 
 **Perception is real.** The sim rasterises the floor, warps it under each
-robot's pose, and hands a genuine 512×512 frame to the same
+robot's pose, and hands a genuine 512x512 frame to the same
 `cv2.QRCodeDetector` call that would run on a Pi. A blurred or undersized tag
 genuinely fails to decode rather than being modelled as failing — which is how
 the error-correction level was chosen.
 
-**The two-process split is real.** Twelve robots would be twenty-four OS
-processes talking over real pty pairs, each independently killable.
+**The process split is real.** Ten robots are thirty processes over real pty
+pairs and real unix sockets, each independently killable.
 
 What is simulated is rigid-body physics, which is not what this project is
 about. The MCU-like HAL (`robot/hal.py`) deliberately quantises to 10-bit ADC
 counts on its own sampling clock with optional transport latency, so
 quantisation surprises surface in simulation rather than on hardware.
 
-## 7. Open work, in dependency order
+## 11. Schema conformance
 
-1. **A graph track.** `tools/track/centerline.py` knows exactly one shape,
-   `Oval` — a single closed loop with no branches. Every node has one exit, so
-   the five node types are five names for identical behaviour. Turning the
-   generator into a graph of segments is the blocker for everything below it.
-   Note that `signed_distance_to` becomes unsigned in the process: a graph has
-   no inside.
+| schema | status |
+|---|---|
+| `qr-code.schema.json` | **conforms exactly** — all 83 payloads validate |
+| `warehouse.json` shape | **matches** — same keys, `units: cm`, `node_spacing: 200` |
+| `robot-to-network.schema.json` | **not used** — see below |
+| `network-to-robot.schema.json` | **not used** — see below |
 
-2. **Turning.** `robot/turn.py` exists and is unit-tested. Its accuracy against
-   ground truth has never been measured — `tools/spike_turn.py` and
-   `spike_turn_truth.py` are written for exactly that and were never
-   successfully run to completion.
+The junction handshake invented its own `Query`/`Decision` types rather than
+using the two message schemas, and that gap is worth closing deliberately:
 
-3. **The emulated network layer.** `robot/network.py` has a seeded
-   `RandomRouter` behind a `Router` interface, tested, with nothing to route
-   on. The junction path — stop, ask, wait, turn, resume — is designed but not
-   built.
+- **Their down-message is already sufficient.** `NetworkToRobot
+  {target_node_id, timestamp}` is enough — the robot knows its current node and
+  derives the bearing from the map, so the `turn` field is redundant. It needs
+  `query_id` added, or `timestamp` used for the same purpose.
+- **Their up-message is a different conversation.** `RobotToNetwork` is
+  periodic telemetry — battery, mission, faults, position. The junction query
+  is a blocking question with a list of legal exits. Those are not competing
+  designs; a real system needs both, but the schema has no field for available
+  turns, so somebody has to decide whether it gains one or whether junction
+  queries are a separate message type.
 
-4. **gRPC.** `proto/firmware.proto` is drafted for the ESP32↔Pi link. No code
-   references it; the ASCII protocol is still what runs.
+## 12. Open work, in dependency order
+
+1. **Align the junction messages** to `robot-to-network` / `network-to-robot`,
+   after agreeing the above with whoever owns the schemas.
+2. **Measure turn accuracy.** `robot/turn.py` is unit-tested but has never been
+   checked against ground truth. `tools/spike_turn.py` and
+   `spike_turn_truth.py` exist for exactly this and have never completed a run
+   — the first attempt used `--rm` and the container deleted its own logs.
+3. **The real network layer.** `robot/netlayer.py` is a socket and a `route()`
+   call; replacing the router is the whole change.
+4. **gRPC.** `proto/firmware.proto` is drafted for the firmware link. No code
+   references it; the ASCII protocol is what runs.
+
+## 13. Things that are true and surprising
+
+Collected because each one cost an hour and none is guessable from the code.
+
+- Ten robots on random routes **jam**, and that is the result rather than a
+  bug. It is the argument for coordination in one measurement.
+- `optics.enabled` was derived from the manifest's marker list, which a graph
+  track leaves empty — so every graph world silently ran with its cameras off.
+- Turning read as a line loss, so the companion throttled after every turn.
+- A robot stopped on a tile never finishes its crossing: the colour sensor
+  stays over orange, so the state machine keeps re-entering `OVER` and
+  resetting its distance counter. It then drives away *blind* on pre-turn
+  steering, which after a 90 degree turn walks it off the lane.
+- `RECOVERING` suppresses the lost-line timeout, and if the line is never found
+  it suppresses it for ever — the robot falls into the full-lock search, stops
+  travelling, and so never spends the distance budget that would end the
+  crossing. One robot span on the spot for 96 seconds.
+- Spawn placement matters more than it sounds. Robots on arbitrary lanes put
+  pairs on a collision course before they had moved a metre.

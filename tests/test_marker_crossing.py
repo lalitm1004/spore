@@ -215,3 +215,37 @@ def test_odometry_and_crossing_agree_over_a_simulated_pass():
     # decode one code, which is why a single blurred frame is not a failure.
     assert 45 <= blind_steps <= 60, blind_steps
     assert 18 <= read_steps <= 28, read_steps
+
+
+def test_a_crossing_does_not_advance_while_the_robot_is_stopped():
+    """Sitting on a tile to be routed, the colour sensor stays over orange and
+    the crossing keeps re-entering OVER with its distance counter reset. The
+    robot then drives away blind on pre-turn steering, off the lane."""
+    crossing = MarkerCrossing()
+    crossing.update(1.0, sees_border=True)
+    assert crossing.state is Crossing.OVER
+
+    # Stopped: distance never changes, border never clears.
+    for _ in range(50):
+        crossing.update(1.0, sees_border=True)
+    assert not crossing.line_is_trustworthy(1.0 + crossing.config.blind_start + 0.01)
+
+    # A turn ends the crossing, whatever it thought it was doing.
+    crossing.reset()
+    assert crossing.state is Crossing.CLEAR
+    assert crossing.line_is_trustworthy(1.0)
+
+
+def test_a_crossing_can_be_ended_when_the_line_never_returns():
+    """RECOVERING only exits when the line is found. If it never is, the
+    crossing suppresses the lost-line timeout for ever -- and the robot falls
+    into the full-lock search, stops travelling, and so never spends the
+    distance budget that would end the crossing. Measured: 96 s spinning.
+    """
+    crossing = MarkerCrossing()
+    crossing.update(0.0, sees_border=True)
+    crossing.update(crossing.config.blind_end + 0.01, sees_border=False)
+    assert crossing.state is Crossing.RECOVERING
+
+    crossing.reset()
+    assert crossing.state is Crossing.CLEAR
