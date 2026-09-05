@@ -18,7 +18,7 @@ WorldInfo {
 }
 Viewpoint {
   orientation -0.5774 0.5774 0.5774 2.0944
-  position 0 0 44.422
+  position 0 0 52.751
 }
 Background {
   skyColor [
@@ -30,7 +30,8 @@ DirectionalLight {
   intensity 2.5
   castShadows FALSE
 }
-DEF GROUND Solid {
+DEF GROUND_0_0 Solid {
+  translation 0.0000 0.0000 0
   children [
     Shape {
       appearance PBRAppearance {
@@ -39,18 +40,2697 @@ DEF GROUND Solid {
         metalness 0
         baseColorMap ImageTexture {
           url [
-            "../textures/track-e29f85d5fcac.png"
+            "../textures/track-4609b6d63949.png"
           ]
         }
       }
       geometry Plane {
-        size 32.0 16.0
+        size 38.0 22.0
       }
     }
   ]
-  name "ground"
+  name "ground_0_0"
   boundingObject Plane {
+    size 38.0 22.0
   }
+}
+DEF LANES Solid {
+  translation 0 0 0.0005
+  children [
+    Pose {
+      translation -15.0000 -8.0000 0
+      rotation 0 0 1 0.00000
+      children [
+        Shape {
+          appearance PBRAppearance {
+            baseColor 0.1686 0.2039 0.2235
+            roughness 1
+            metalness 0
+          }
+          geometry Plane {
+            size 2.0000 0.0200
+          }
+        }
+      ]
+    }
+    Pose {
+      translation -13.0000 -8.0000 0
+      rotation 0 0 1 0.00000
+      children [
+        Shape {
+          appearance PBRAppearance {
+            baseColor 0.1686 0.2039 0.2235
+            roughness 1
+            metalness 0
+          }
+          geometry Plane {
+            size 2.0000 0.0200
+          }
+        }
+      ]
+    }
+    Pose {
+      translation -11.0000 -8.0000 0
+      rotation 0 0 1 0.00000
+      children [
+        Shape {
+          appearance PBRAppearance {
+            baseColor 0.1686 0.2039 0.2235
+            roughness 1
+            metalness 0
+          }
+          geometry Plane {
+            size 2.0000 0.0200
+          }
+        }
+      ]
+    }
+    Pose {
+      translation -12.0000 -7.0000 0
+      rotation 0 0 1 1.57080
+      children [
+        Shape {
+          appearance PBRAppearance {
+            baseColor 0.1686 0.2039 0.2235
+            roughness 1
+            metalness 0
+          }
+          geometry Plane {
+            size 2.0000 0.0200
+          }
+        }
+      ]
+    }
+    Pose {
+      translation -9.0000 -8.0000 0
+      rotation 0 0 1 0.00000
+      children [
+        Shape {
+          appearance PBRAppearance {
+            baseColor 0.1686 0.2039 0.2235
+            roughness 1
+            metalness 0
+          }
+          geometry Plane {
+            size 2.0000 0.0200
+          }
+        }
+      ]
+    }
+    Pose {
+      translation -7.0000 -8.0000 0
+      rotation 0 0 1 0.00000
+      children [
+        Shape {
+          appearance PBRAppearance {
+            baseColor 0.1686 0.2039 0.2235
+            roughness 1
+            metalness 0
+          }
+          geometry Plane {
+            size 2.0000 0.0200
+          }
+        }
+      ]
+    }
+    Pose {
+      translation -5.0000 -8.0000 0
+      rotation 0 0 1 0.00000
+      children [
+        Shape {
+          appearance PBRAppearance {
+            baseColor 0.1686 0.2039 0.2235
+            roughness 1
+            metalness 0
+          }
+          geometry Plane {
+            size 2.0000 0.0200
+          }
+        }
+      ]
+    }
+    Pose {
+      translation -3.0000 -8.0000 0
+      rotation 0 0 1 0.00000
+      children [
+        Shape {
+          appearance PBRAppearance {
+            baseColor 0.1686 0.2039 0.2235
+            roughness 1
+            metalness 0
+          }
+          geometry Plane {
+            size 2.0000 0.0200
+          }
+        }
+      ]
+    }
+    Pose {
+      translation -1.0000 -8.0000 0
+      rotation 0 0 1 0.00000
+      children [
+        Shape {
+          appearance PBRAppearance {
+            baseColor 0.1686 0.2039 0.2235
+            roughness 1
+            metalness 0
+          }
+          geometry Plane {
+            size 2.0000 0.0200
+          }
+        }
+      ]
+    }
+    Pose {
+      translation 1.0000 -8.0000 0
+      rotation 0 0 1 0.00000
+      children [
+        Shape {
+          appearance PBRAppearance {
+            baseColor 0.1686 0.2039 0.2235
+            roughness 1
+            metalness 0
+          }
+          geometry Plane {
+            size 2.0000 0.0200
+          }
+        }
+      ]
+    }
+    Pose {
+      translation 3.0000 -8.0000 0
+      rotation 0 0 1 0.00000
+      children [
+        Shape {
+          appearance PBRAppearance {
+            baseColor 0.1686 0.2039 0.2235
+            roughness 1
+            metalness 0
+          }
+          geometry Plane {
+            size 2.0000 0.0200
+          }
+        }
+      ]
+    }
+    Pose {
+      translation 5.0000 -8.0000 0
+      rotation 0 0 1 0.00000
+      children [
+        Shape {
+          appearance PBRAppearance {
+            baseColor 0.1686 0.2039 0.2235
+            roughness 1
+            metalness 0
+          }
+          geometry Plane {
+            size 2.0000 0.0200
+          }
+        }
+      ]
+    }
+    Pose {
+      translation 7.0000 -8.0000 0
+      rotation 0 0 1 0.00000
+      children [
+        Shape {
+          appearance PBRAppearance {
+            baseColor 0.1686 0.2039 0.2235
+            roughness 1
+            metalness 0
+          }
+          geometry Plane {
+            size 2.0000 0.0200
+          }
+        }
+      ]
+    }
+    Pose {
+      translation 9.0000 -8.0000 0
+      rotation 0 0 1 0.00000
+      children [
+        Shape {
+          appearance PBRAppearance {
+            baseColor 0.1686 0.2039 0.2235
+            roughness 1
+            metalness 0
+          }
+          geometry Plane {
+            size 2.0000 0.0200
+          }
+        }
+      ]
+    }
+    Pose {
+      translation 11.0000 -8.0000 0
+      rotation 0 0 1 0.00000
+      children [
+        Shape {
+          appearance PBRAppearance {
+            baseColor 0.1686 0.2039 0.2235
+            roughness 1
+            metalness 0
+          }
+          geometry Plane {
+            size 2.0000 0.0200
+          }
+        }
+      ]
+    }
+    Pose {
+      translation 13.0000 -8.0000 0
+      rotation 0 0 1 0.00000
+      children [
+        Shape {
+          appearance PBRAppearance {
+            baseColor 0.1686 0.2039 0.2235
+            roughness 1
+            metalness 0
+          }
+          geometry Plane {
+            size 2.0000 0.0200
+          }
+        }
+      ]
+    }
+    Pose {
+      translation 14.0000 -7.0000 0
+      rotation 0 0 1 1.57080
+      children [
+        Shape {
+          appearance PBRAppearance {
+            baseColor 0.1686 0.2039 0.2235
+            roughness 1
+            metalness 0
+          }
+          geometry Plane {
+            size 2.0000 0.0200
+          }
+        }
+      ]
+    }
+    Pose {
+      translation -14.0000 -5.0000 0
+      rotation 0 0 1 1.57080
+      children [
+        Shape {
+          appearance PBRAppearance {
+            baseColor 0.1686 0.2039 0.2235
+            roughness 1
+            metalness 0
+          }
+          geometry Plane {
+            size 2.0000 0.0200
+          }
+        }
+      ]
+    }
+    Pose {
+      translation -12.0000 -5.0000 0
+      rotation 0 0 1 1.57080
+      children [
+        Shape {
+          appearance PBRAppearance {
+            baseColor 0.1686 0.2039 0.2235
+            roughness 1
+            metalness 0
+          }
+          geometry Plane {
+            size 2.0000 0.0200
+          }
+        }
+      ]
+    }
+    Pose {
+      translation -8.0000 -5.0000 0
+      rotation 0 0 1 1.57080
+      children [
+        Shape {
+          appearance PBRAppearance {
+            baseColor 0.1686 0.2039 0.2235
+            roughness 1
+            metalness 0
+          }
+          geometry Plane {
+            size 2.0000 0.0200
+          }
+        }
+      ]
+    }
+    Pose {
+      translation -2.0000 -5.0000 0
+      rotation 0 0 1 1.57080
+      children [
+        Shape {
+          appearance PBRAppearance {
+            baseColor 0.1686 0.2039 0.2235
+            roughness 1
+            metalness 0
+          }
+          geometry Plane {
+            size 2.0000 0.0200
+          }
+        }
+      ]
+    }
+    Pose {
+      translation 4.0000 -5.0000 0
+      rotation 0 0 1 1.57080
+      children [
+        Shape {
+          appearance PBRAppearance {
+            baseColor 0.1686 0.2039 0.2235
+            roughness 1
+            metalness 0
+          }
+          geometry Plane {
+            size 2.0000 0.0200
+          }
+        }
+      ]
+    }
+    Pose {
+      translation 10.0000 -5.0000 0
+      rotation 0 0 1 1.57080
+      children [
+        Shape {
+          appearance PBRAppearance {
+            baseColor 0.1686 0.2039 0.2235
+            roughness 1
+            metalness 0
+          }
+          geometry Plane {
+            size 2.0000 0.0200
+          }
+        }
+      ]
+    }
+    Pose {
+      translation 14.0000 -5.0000 0
+      rotation 0 0 1 1.57080
+      children [
+        Shape {
+          appearance PBRAppearance {
+            baseColor 0.1686 0.2039 0.2235
+            roughness 1
+            metalness 0
+          }
+          geometry Plane {
+            size 2.0000 0.0200
+          }
+        }
+      ]
+    }
+    Pose {
+      translation -15.0000 -4.0000 0
+      rotation 0 0 1 0.00000
+      children [
+        Shape {
+          appearance PBRAppearance {
+            baseColor 0.1686 0.2039 0.2235
+            roughness 1
+            metalness 0
+          }
+          geometry Plane {
+            size 2.0000 0.0200
+          }
+        }
+      ]
+    }
+    Pose {
+      translation -13.0000 -4.0000 0
+      rotation 0 0 1 0.00000
+      children [
+        Shape {
+          appearance PBRAppearance {
+            baseColor 0.1686 0.2039 0.2235
+            roughness 1
+            metalness 0
+          }
+          geometry Plane {
+            size 2.0000 0.0200
+          }
+        }
+      ]
+    }
+    Pose {
+      translation -14.0000 -3.0000 0
+      rotation 0 0 1 1.57080
+      children [
+        Shape {
+          appearance PBRAppearance {
+            baseColor 0.1686 0.2039 0.2235
+            roughness 1
+            metalness 0
+          }
+          geometry Plane {
+            size 2.0000 0.0200
+          }
+        }
+      ]
+    }
+    Pose {
+      translation -11.0000 -4.0000 0
+      rotation 0 0 1 0.00000
+      children [
+        Shape {
+          appearance PBRAppearance {
+            baseColor 0.1686 0.2039 0.2235
+            roughness 1
+            metalness 0
+          }
+          geometry Plane {
+            size 2.0000 0.0200
+          }
+        }
+      ]
+    }
+    Pose {
+      translation -12.0000 -3.0000 0
+      rotation 0 0 1 1.57080
+      children [
+        Shape {
+          appearance PBRAppearance {
+            baseColor 0.1686 0.2039 0.2235
+            roughness 1
+            metalness 0
+          }
+          geometry Plane {
+            size 2.0000 0.0200
+          }
+        }
+      ]
+    }
+    Pose {
+      translation -9.0000 -4.0000 0
+      rotation 0 0 1 0.00000
+      children [
+        Shape {
+          appearance PBRAppearance {
+            baseColor 0.1686 0.2039 0.2235
+            roughness 1
+            metalness 0
+          }
+          geometry Plane {
+            size 2.0000 0.0200
+          }
+        }
+      ]
+    }
+    Pose {
+      translation -7.0000 -4.0000 0
+      rotation 0 0 1 0.00000
+      children [
+        Shape {
+          appearance PBRAppearance {
+            baseColor 0.1686 0.2039 0.2235
+            roughness 1
+            metalness 0
+          }
+          geometry Plane {
+            size 2.0000 0.0200
+          }
+        }
+      ]
+    }
+    Pose {
+      translation -8.0000 -3.0000 0
+      rotation 0 0 1 1.57080
+      children [
+        Shape {
+          appearance PBRAppearance {
+            baseColor 0.1686 0.2039 0.2235
+            roughness 1
+            metalness 0
+          }
+          geometry Plane {
+            size 2.0000 0.0200
+          }
+        }
+      ]
+    }
+    Pose {
+      translation -5.0000 -4.0000 0
+      rotation 0 0 1 0.00000
+      children [
+        Shape {
+          appearance PBRAppearance {
+            baseColor 0.1686 0.2039 0.2235
+            roughness 1
+            metalness 0
+          }
+          geometry Plane {
+            size 2.0000 0.0200
+          }
+        }
+      ]
+    }
+    Pose {
+      translation -3.0000 -4.0000 0
+      rotation 0 0 1 0.00000
+      children [
+        Shape {
+          appearance PBRAppearance {
+            baseColor 0.1686 0.2039 0.2235
+            roughness 1
+            metalness 0
+          }
+          geometry Plane {
+            size 2.0000 0.0200
+          }
+        }
+      ]
+    }
+    Pose {
+      translation -1.0000 -4.0000 0
+      rotation 0 0 1 0.00000
+      children [
+        Shape {
+          appearance PBRAppearance {
+            baseColor 0.1686 0.2039 0.2235
+            roughness 1
+            metalness 0
+          }
+          geometry Plane {
+            size 2.0000 0.0200
+          }
+        }
+      ]
+    }
+    Pose {
+      translation -2.0000 -3.0000 0
+      rotation 0 0 1 1.57080
+      children [
+        Shape {
+          appearance PBRAppearance {
+            baseColor 0.1686 0.2039 0.2235
+            roughness 1
+            metalness 0
+          }
+          geometry Plane {
+            size 2.0000 0.0200
+          }
+        }
+      ]
+    }
+    Pose {
+      translation 1.0000 -4.0000 0
+      rotation 0 0 1 0.00000
+      children [
+        Shape {
+          appearance PBRAppearance {
+            baseColor 0.1686 0.2039 0.2235
+            roughness 1
+            metalness 0
+          }
+          geometry Plane {
+            size 2.0000 0.0200
+          }
+        }
+      ]
+    }
+    Pose {
+      translation 3.0000 -4.0000 0
+      rotation 0 0 1 0.00000
+      children [
+        Shape {
+          appearance PBRAppearance {
+            baseColor 0.1686 0.2039 0.2235
+            roughness 1
+            metalness 0
+          }
+          geometry Plane {
+            size 2.0000 0.0200
+          }
+        }
+      ]
+    }
+    Pose {
+      translation 5.0000 -4.0000 0
+      rotation 0 0 1 0.00000
+      children [
+        Shape {
+          appearance PBRAppearance {
+            baseColor 0.1686 0.2039 0.2235
+            roughness 1
+            metalness 0
+          }
+          geometry Plane {
+            size 2.0000 0.0200
+          }
+        }
+      ]
+    }
+    Pose {
+      translation 4.0000 -3.0000 0
+      rotation 0 0 1 1.57080
+      children [
+        Shape {
+          appearance PBRAppearance {
+            baseColor 0.1686 0.2039 0.2235
+            roughness 1
+            metalness 0
+          }
+          geometry Plane {
+            size 2.0000 0.0200
+          }
+        }
+      ]
+    }
+    Pose {
+      translation 7.0000 -4.0000 0
+      rotation 0 0 1 0.00000
+      children [
+        Shape {
+          appearance PBRAppearance {
+            baseColor 0.1686 0.2039 0.2235
+            roughness 1
+            metalness 0
+          }
+          geometry Plane {
+            size 2.0000 0.0200
+          }
+        }
+      ]
+    }
+    Pose {
+      translation 9.0000 -4.0000 0
+      rotation 0 0 1 0.00000
+      children [
+        Shape {
+          appearance PBRAppearance {
+            baseColor 0.1686 0.2039 0.2235
+            roughness 1
+            metalness 0
+          }
+          geometry Plane {
+            size 2.0000 0.0200
+          }
+        }
+      ]
+    }
+    Pose {
+      translation 11.0000 -4.0000 0
+      rotation 0 0 1 0.00000
+      children [
+        Shape {
+          appearance PBRAppearance {
+            baseColor 0.1686 0.2039 0.2235
+            roughness 1
+            metalness 0
+          }
+          geometry Plane {
+            size 2.0000 0.0200
+          }
+        }
+      ]
+    }
+    Pose {
+      translation 10.0000 -3.0000 0
+      rotation 0 0 1 1.57080
+      children [
+        Shape {
+          appearance PBRAppearance {
+            baseColor 0.1686 0.2039 0.2235
+            roughness 1
+            metalness 0
+          }
+          geometry Plane {
+            size 2.0000 0.0200
+          }
+        }
+      ]
+    }
+    Pose {
+      translation 13.0000 -4.0000 0
+      rotation 0 0 1 0.00000
+      children [
+        Shape {
+          appearance PBRAppearance {
+            baseColor 0.1686 0.2039 0.2235
+            roughness 1
+            metalness 0
+          }
+          geometry Plane {
+            size 2.0000 0.0200
+          }
+        }
+      ]
+    }
+    Pose {
+      translation 14.0000 -3.0000 0
+      rotation 0 0 1 1.57080
+      children [
+        Shape {
+          appearance PBRAppearance {
+            baseColor 0.1686 0.2039 0.2235
+            roughness 1
+            metalness 0
+          }
+          geometry Plane {
+            size 2.0000 0.0200
+          }
+        }
+      ]
+    }
+    Pose {
+      translation -12.0000 -1.0000 0
+      rotation 0 0 1 1.57080
+      children [
+        Shape {
+          appearance PBRAppearance {
+            baseColor 0.1686 0.2039 0.2235
+            roughness 1
+            metalness 0
+          }
+          geometry Plane {
+            size 2.0000 0.0200
+          }
+        }
+      ]
+    }
+    Pose {
+      translation 14.0000 -1.0000 0
+      rotation 0 0 1 1.57080
+      children [
+        Shape {
+          appearance PBRAppearance {
+            baseColor 0.1686 0.2039 0.2235
+            roughness 1
+            metalness 0
+          }
+          geometry Plane {
+            size 2.0000 0.0200
+          }
+        }
+      ]
+    }
+    Pose {
+      translation -15.0000 0.0000 0
+      rotation 0 0 1 0.00000
+      children [
+        Shape {
+          appearance PBRAppearance {
+            baseColor 0.1686 0.2039 0.2235
+            roughness 1
+            metalness 0
+          }
+          geometry Plane {
+            size 2.0000 0.0200
+          }
+        }
+      ]
+    }
+    Pose {
+      translation -16.0000 1.0000 0
+      rotation 0 0 1 1.57080
+      children [
+        Shape {
+          appearance PBRAppearance {
+            baseColor 0.1686 0.2039 0.2235
+            roughness 1
+            metalness 0
+          }
+          geometry Plane {
+            size 2.0000 0.0200
+          }
+        }
+      ]
+    }
+    Pose {
+      translation -13.0000 0.0000 0
+      rotation 0 0 1 0.00000
+      children [
+        Shape {
+          appearance PBRAppearance {
+            baseColor 0.1686 0.2039 0.2235
+            roughness 1
+            metalness 0
+          }
+          geometry Plane {
+            size 2.0000 0.0200
+          }
+        }
+      ]
+    }
+    Pose {
+      translation -11.0000 0.0000 0
+      rotation 0 0 1 0.00000
+      children [
+        Shape {
+          appearance PBRAppearance {
+            baseColor 0.1686 0.2039 0.2235
+            roughness 1
+            metalness 0
+          }
+          geometry Plane {
+            size 2.0000 0.0200
+          }
+        }
+      ]
+    }
+    Pose {
+      translation -9.0000 0.0000 0
+      rotation 0 0 1 0.00000
+      children [
+        Shape {
+          appearance PBRAppearance {
+            baseColor 0.1686 0.2039 0.2235
+            roughness 1
+            metalness 0
+          }
+          geometry Plane {
+            size 2.0000 0.0200
+          }
+        }
+      ]
+    }
+    Pose {
+      translation -7.0000 0.0000 0
+      rotation 0 0 1 0.00000
+      children [
+        Shape {
+          appearance PBRAppearance {
+            baseColor 0.1686 0.2039 0.2235
+            roughness 1
+            metalness 0
+          }
+          geometry Plane {
+            size 2.0000 0.0200
+          }
+        }
+      ]
+    }
+    Pose {
+      translation -8.0000 1.0000 0
+      rotation 0 0 1 1.57080
+      children [
+        Shape {
+          appearance PBRAppearance {
+            baseColor 0.1686 0.2039 0.2235
+            roughness 1
+            metalness 0
+          }
+          geometry Plane {
+            size 2.0000 0.0200
+          }
+        }
+      ]
+    }
+    Pose {
+      translation -5.0000 0.0000 0
+      rotation 0 0 1 0.00000
+      children [
+        Shape {
+          appearance PBRAppearance {
+            baseColor 0.1686 0.2039 0.2235
+            roughness 1
+            metalness 0
+          }
+          geometry Plane {
+            size 2.0000 0.0200
+          }
+        }
+      ]
+    }
+    Pose {
+      translation -6.0000 1.0000 0
+      rotation 0 0 1 1.57080
+      children [
+        Shape {
+          appearance PBRAppearance {
+            baseColor 0.1686 0.2039 0.2235
+            roughness 1
+            metalness 0
+          }
+          geometry Plane {
+            size 2.0000 0.0200
+          }
+        }
+      ]
+    }
+    Pose {
+      translation -3.0000 0.0000 0
+      rotation 0 0 1 0.00000
+      children [
+        Shape {
+          appearance PBRAppearance {
+            baseColor 0.1686 0.2039 0.2235
+            roughness 1
+            metalness 0
+          }
+          geometry Plane {
+            size 2.0000 0.0200
+          }
+        }
+      ]
+    }
+    Pose {
+      translation -1.0000 0.0000 0
+      rotation 0 0 1 0.00000
+      children [
+        Shape {
+          appearance PBRAppearance {
+            baseColor 0.1686 0.2039 0.2235
+            roughness 1
+            metalness 0
+          }
+          geometry Plane {
+            size 2.0000 0.0200
+          }
+        }
+      ]
+    }
+    Pose {
+      translation 1.0000 0.0000 0
+      rotation 0 0 1 0.00000
+      children [
+        Shape {
+          appearance PBRAppearance {
+            baseColor 0.1686 0.2039 0.2235
+            roughness 1
+            metalness 0
+          }
+          geometry Plane {
+            size 2.0000 0.0200
+          }
+        }
+      ]
+    }
+    Pose {
+      translation 0.0000 1.0000 0
+      rotation 0 0 1 1.57080
+      children [
+        Shape {
+          appearance PBRAppearance {
+            baseColor 0.1686 0.2039 0.2235
+            roughness 1
+            metalness 0
+          }
+          geometry Plane {
+            size 2.0000 0.0200
+          }
+        }
+      ]
+    }
+    Pose {
+      translation 3.0000 0.0000 0
+      rotation 0 0 1 0.00000
+      children [
+        Shape {
+          appearance PBRAppearance {
+            baseColor 0.1686 0.2039 0.2235
+            roughness 1
+            metalness 0
+          }
+          geometry Plane {
+            size 2.0000 0.0200
+          }
+        }
+      ]
+    }
+    Pose {
+      translation 5.0000 0.0000 0
+      rotation 0 0 1 0.00000
+      children [
+        Shape {
+          appearance PBRAppearance {
+            baseColor 0.1686 0.2039 0.2235
+            roughness 1
+            metalness 0
+          }
+          geometry Plane {
+            size 2.0000 0.0200
+          }
+        }
+      ]
+    }
+    Pose {
+      translation 7.0000 0.0000 0
+      rotation 0 0 1 0.00000
+      children [
+        Shape {
+          appearance PBRAppearance {
+            baseColor 0.1686 0.2039 0.2235
+            roughness 1
+            metalness 0
+          }
+          geometry Plane {
+            size 2.0000 0.0200
+          }
+        }
+      ]
+    }
+    Pose {
+      translation 9.0000 0.0000 0
+      rotation 0 0 1 0.00000
+      children [
+        Shape {
+          appearance PBRAppearance {
+            baseColor 0.1686 0.2039 0.2235
+            roughness 1
+            metalness 0
+          }
+          geometry Plane {
+            size 2.0000 0.0200
+          }
+        }
+      ]
+    }
+    Pose {
+      translation 8.0000 1.0000 0
+      rotation 0 0 1 1.57080
+      children [
+        Shape {
+          appearance PBRAppearance {
+            baseColor 0.1686 0.2039 0.2235
+            roughness 1
+            metalness 0
+          }
+          geometry Plane {
+            size 2.0000 0.0200
+          }
+        }
+      ]
+    }
+    Pose {
+      translation 11.0000 0.0000 0
+      rotation 0 0 1 0.00000
+      children [
+        Shape {
+          appearance PBRAppearance {
+            baseColor 0.1686 0.2039 0.2235
+            roughness 1
+            metalness 0
+          }
+          geometry Plane {
+            size 2.0000 0.0200
+          }
+        }
+      ]
+    }
+    Pose {
+      translation 13.0000 0.0000 0
+      rotation 0 0 1 0.00000
+      children [
+        Shape {
+          appearance PBRAppearance {
+            baseColor 0.1686 0.2039 0.2235
+            roughness 1
+            metalness 0
+          }
+          geometry Plane {
+            size 2.0000 0.0200
+          }
+        }
+      ]
+    }
+    Pose {
+      translation 14.0000 1.0000 0
+      rotation 0 0 1 1.57080
+      children [
+        Shape {
+          appearance PBRAppearance {
+            baseColor 0.1686 0.2039 0.2235
+            roughness 1
+            metalness 0
+          }
+          geometry Plane {
+            size 2.0000 0.0200
+          }
+        }
+      ]
+    }
+    Pose {
+      translation -16.0000 3.0000 0
+      rotation 0 0 1 1.57080
+      children [
+        Shape {
+          appearance PBRAppearance {
+            baseColor 0.1686 0.2039 0.2235
+            roughness 1
+            metalness 0
+          }
+          geometry Plane {
+            size 2.0000 0.0200
+          }
+        }
+      ]
+    }
+    Pose {
+      translation -8.0000 3.0000 0
+      rotation 0 0 1 1.57080
+      children [
+        Shape {
+          appearance PBRAppearance {
+            baseColor 0.1686 0.2039 0.2235
+            roughness 1
+            metalness 0
+          }
+          geometry Plane {
+            size 2.0000 0.0200
+          }
+        }
+      ]
+    }
+    Pose {
+      translation -6.0000 3.0000 0
+      rotation 0 0 1 1.57080
+      children [
+        Shape {
+          appearance PBRAppearance {
+            baseColor 0.1686 0.2039 0.2235
+            roughness 1
+            metalness 0
+          }
+          geometry Plane {
+            size 2.0000 0.0200
+          }
+        }
+      ]
+    }
+    Pose {
+      translation 0.0000 3.0000 0
+      rotation 0 0 1 1.57080
+      children [
+        Shape {
+          appearance PBRAppearance {
+            baseColor 0.1686 0.2039 0.2235
+            roughness 1
+            metalness 0
+          }
+          geometry Plane {
+            size 2.0000 0.0200
+          }
+        }
+      ]
+    }
+    Pose {
+      translation 8.0000 3.0000 0
+      rotation 0 0 1 1.57080
+      children [
+        Shape {
+          appearance PBRAppearance {
+            baseColor 0.1686 0.2039 0.2235
+            roughness 1
+            metalness 0
+          }
+          geometry Plane {
+            size 2.0000 0.0200
+          }
+        }
+      ]
+    }
+    Pose {
+      translation 14.0000 3.0000 0
+      rotation 0 0 1 1.57080
+      children [
+        Shape {
+          appearance PBRAppearance {
+            baseColor 0.1686 0.2039 0.2235
+            roughness 1
+            metalness 0
+          }
+          geometry Plane {
+            size 2.0000 0.0200
+          }
+        }
+      ]
+    }
+    Pose {
+      translation -16.0000 5.0000 0
+      rotation 0 0 1 1.57080
+      children [
+        Shape {
+          appearance PBRAppearance {
+            baseColor 0.1686 0.2039 0.2235
+            roughness 1
+            metalness 0
+          }
+          geometry Plane {
+            size 2.0000 0.0200
+          }
+        }
+      ]
+    }
+    Pose {
+      translation -8.0000 5.0000 0
+      rotation 0 0 1 1.57080
+      children [
+        Shape {
+          appearance PBRAppearance {
+            baseColor 0.1686 0.2039 0.2235
+            roughness 1
+            metalness 0
+          }
+          geometry Plane {
+            size 2.0000 0.0200
+          }
+        }
+      ]
+    }
+    Pose {
+      translation -6.0000 5.0000 0
+      rotation 0 0 1 1.57080
+      children [
+        Shape {
+          appearance PBRAppearance {
+            baseColor 0.1686 0.2039 0.2235
+            roughness 1
+            metalness 0
+          }
+          geometry Plane {
+            size 2.0000 0.0200
+          }
+        }
+      ]
+    }
+    Pose {
+      translation 0.0000 5.0000 0
+      rotation 0 0 1 1.57080
+      children [
+        Shape {
+          appearance PBRAppearance {
+            baseColor 0.1686 0.2039 0.2235
+            roughness 1
+            metalness 0
+          }
+          geometry Plane {
+            size 2.0000 0.0200
+          }
+        }
+      ]
+    }
+    Pose {
+      translation 8.0000 5.0000 0
+      rotation 0 0 1 1.57080
+      children [
+        Shape {
+          appearance PBRAppearance {
+            baseColor 0.1686 0.2039 0.2235
+            roughness 1
+            metalness 0
+          }
+          geometry Plane {
+            size 2.0000 0.0200
+          }
+        }
+      ]
+    }
+    Pose {
+      translation 14.0000 5.0000 0
+      rotation 0 0 1 1.57080
+      children [
+        Shape {
+          appearance PBRAppearance {
+            baseColor 0.1686 0.2039 0.2235
+            roughness 1
+            metalness 0
+          }
+          geometry Plane {
+            size 2.0000 0.0200
+          }
+        }
+      ]
+    }
+    Pose {
+      translation -5.0000 6.0000 0
+      rotation 0 0 1 0.00000
+      children [
+        Shape {
+          appearance PBRAppearance {
+            baseColor 0.1686 0.2039 0.2235
+            roughness 1
+            metalness 0
+          }
+          geometry Plane {
+            size 2.0000 0.0200
+          }
+        }
+      ]
+    }
+    Pose {
+      translation 1.0000 6.0000 0
+      rotation 0 0 1 0.00000
+      children [
+        Shape {
+          appearance PBRAppearance {
+            baseColor 0.1686 0.2039 0.2235
+            roughness 1
+            metalness 0
+          }
+          geometry Plane {
+            size 2.0000 0.0200
+          }
+        }
+      ]
+    }
+    Pose {
+      translation 9.0000 6.0000 0
+      rotation 0 0 1 0.00000
+      children [
+        Shape {
+          appearance PBRAppearance {
+            baseColor 0.1686 0.2039 0.2235
+            roughness 1
+            metalness 0
+          }
+          geometry Plane {
+            size 2.0000 0.0200
+          }
+        }
+      ]
+    }
+    Pose {
+      translation -16.0000 -8.0000 0
+      rotation 0 0 1 0.00000
+      children [
+        Shape {
+          appearance PBRAppearance {
+            baseColor 0.1686 0.2039 0.2235
+            roughness 1
+            metalness 0
+          }
+          geometry Plane {
+            size 0.0200 0.0200
+          }
+        }
+      ]
+    }
+    Pose {
+      translation -14.0000 -8.0000 0
+      rotation 0 0 1 0.00000
+      children [
+        Shape {
+          appearance PBRAppearance {
+            baseColor 0.1686 0.2039 0.2235
+            roughness 1
+            metalness 0
+          }
+          geometry Plane {
+            size 0.0200 0.0200
+          }
+        }
+      ]
+    }
+    Pose {
+      translation -12.0000 -8.0000 0
+      rotation 0 0 1 0.00000
+      children [
+        Shape {
+          appearance PBRAppearance {
+            baseColor 0.1686 0.2039 0.2235
+            roughness 1
+            metalness 0
+          }
+          geometry Plane {
+            size 0.0200 0.0200
+          }
+        }
+      ]
+    }
+    Pose {
+      translation -10.0000 -8.0000 0
+      rotation 0 0 1 0.00000
+      children [
+        Shape {
+          appearance PBRAppearance {
+            baseColor 0.1686 0.2039 0.2235
+            roughness 1
+            metalness 0
+          }
+          geometry Plane {
+            size 0.0200 0.0200
+          }
+        }
+      ]
+    }
+    Pose {
+      translation -8.0000 -8.0000 0
+      rotation 0 0 1 0.00000
+      children [
+        Shape {
+          appearance PBRAppearance {
+            baseColor 0.1686 0.2039 0.2235
+            roughness 1
+            metalness 0
+          }
+          geometry Plane {
+            size 0.0200 0.0200
+          }
+        }
+      ]
+    }
+    Pose {
+      translation -6.0000 -8.0000 0
+      rotation 0 0 1 0.00000
+      children [
+        Shape {
+          appearance PBRAppearance {
+            baseColor 0.1686 0.2039 0.2235
+            roughness 1
+            metalness 0
+          }
+          geometry Plane {
+            size 0.0200 0.0200
+          }
+        }
+      ]
+    }
+    Pose {
+      translation -4.0000 -8.0000 0
+      rotation 0 0 1 0.00000
+      children [
+        Shape {
+          appearance PBRAppearance {
+            baseColor 0.1686 0.2039 0.2235
+            roughness 1
+            metalness 0
+          }
+          geometry Plane {
+            size 0.0200 0.0200
+          }
+        }
+      ]
+    }
+    Pose {
+      translation -2.0000 -8.0000 0
+      rotation 0 0 1 0.00000
+      children [
+        Shape {
+          appearance PBRAppearance {
+            baseColor 0.1686 0.2039 0.2235
+            roughness 1
+            metalness 0
+          }
+          geometry Plane {
+            size 0.0200 0.0200
+          }
+        }
+      ]
+    }
+    Pose {
+      translation 0.0000 -8.0000 0
+      rotation 0 0 1 0.00000
+      children [
+        Shape {
+          appearance PBRAppearance {
+            baseColor 0.1686 0.2039 0.2235
+            roughness 1
+            metalness 0
+          }
+          geometry Plane {
+            size 0.0200 0.0200
+          }
+        }
+      ]
+    }
+    Pose {
+      translation 2.0000 -8.0000 0
+      rotation 0 0 1 0.00000
+      children [
+        Shape {
+          appearance PBRAppearance {
+            baseColor 0.1686 0.2039 0.2235
+            roughness 1
+            metalness 0
+          }
+          geometry Plane {
+            size 0.0200 0.0200
+          }
+        }
+      ]
+    }
+    Pose {
+      translation 4.0000 -8.0000 0
+      rotation 0 0 1 0.00000
+      children [
+        Shape {
+          appearance PBRAppearance {
+            baseColor 0.1686 0.2039 0.2235
+            roughness 1
+            metalness 0
+          }
+          geometry Plane {
+            size 0.0200 0.0200
+          }
+        }
+      ]
+    }
+    Pose {
+      translation 6.0000 -8.0000 0
+      rotation 0 0 1 0.00000
+      children [
+        Shape {
+          appearance PBRAppearance {
+            baseColor 0.1686 0.2039 0.2235
+            roughness 1
+            metalness 0
+          }
+          geometry Plane {
+            size 0.0200 0.0200
+          }
+        }
+      ]
+    }
+    Pose {
+      translation 8.0000 -8.0000 0
+      rotation 0 0 1 0.00000
+      children [
+        Shape {
+          appearance PBRAppearance {
+            baseColor 0.1686 0.2039 0.2235
+            roughness 1
+            metalness 0
+          }
+          geometry Plane {
+            size 0.0200 0.0200
+          }
+        }
+      ]
+    }
+    Pose {
+      translation 10.0000 -8.0000 0
+      rotation 0 0 1 0.00000
+      children [
+        Shape {
+          appearance PBRAppearance {
+            baseColor 0.1686 0.2039 0.2235
+            roughness 1
+            metalness 0
+          }
+          geometry Plane {
+            size 0.0200 0.0200
+          }
+        }
+      ]
+    }
+    Pose {
+      translation 12.0000 -8.0000 0
+      rotation 0 0 1 0.00000
+      children [
+        Shape {
+          appearance PBRAppearance {
+            baseColor 0.1686 0.2039 0.2235
+            roughness 1
+            metalness 0
+          }
+          geometry Plane {
+            size 0.0200 0.0200
+          }
+        }
+      ]
+    }
+    Pose {
+      translation 14.0000 -8.0000 0
+      rotation 0 0 1 0.00000
+      children [
+        Shape {
+          appearance PBRAppearance {
+            baseColor 0.1686 0.2039 0.2235
+            roughness 1
+            metalness 0
+          }
+          geometry Plane {
+            size 0.0200 0.0200
+          }
+        }
+      ]
+    }
+    Pose {
+      translation -14.0000 -6.0000 0
+      rotation 0 0 1 0.00000
+      children [
+        Shape {
+          appearance PBRAppearance {
+            baseColor 0.1686 0.2039 0.2235
+            roughness 1
+            metalness 0
+          }
+          geometry Plane {
+            size 0.0200 0.0200
+          }
+        }
+      ]
+    }
+    Pose {
+      translation -12.0000 -6.0000 0
+      rotation 0 0 1 0.00000
+      children [
+        Shape {
+          appearance PBRAppearance {
+            baseColor 0.1686 0.2039 0.2235
+            roughness 1
+            metalness 0
+          }
+          geometry Plane {
+            size 0.0200 0.0200
+          }
+        }
+      ]
+    }
+    Pose {
+      translation -8.0000 -6.0000 0
+      rotation 0 0 1 0.00000
+      children [
+        Shape {
+          appearance PBRAppearance {
+            baseColor 0.1686 0.2039 0.2235
+            roughness 1
+            metalness 0
+          }
+          geometry Plane {
+            size 0.0200 0.0200
+          }
+        }
+      ]
+    }
+    Pose {
+      translation -2.0000 -6.0000 0
+      rotation 0 0 1 0.00000
+      children [
+        Shape {
+          appearance PBRAppearance {
+            baseColor 0.1686 0.2039 0.2235
+            roughness 1
+            metalness 0
+          }
+          geometry Plane {
+            size 0.0200 0.0200
+          }
+        }
+      ]
+    }
+    Pose {
+      translation 4.0000 -6.0000 0
+      rotation 0 0 1 0.00000
+      children [
+        Shape {
+          appearance PBRAppearance {
+            baseColor 0.1686 0.2039 0.2235
+            roughness 1
+            metalness 0
+          }
+          geometry Plane {
+            size 0.0200 0.0200
+          }
+        }
+      ]
+    }
+    Pose {
+      translation 10.0000 -6.0000 0
+      rotation 0 0 1 0.00000
+      children [
+        Shape {
+          appearance PBRAppearance {
+            baseColor 0.1686 0.2039 0.2235
+            roughness 1
+            metalness 0
+          }
+          geometry Plane {
+            size 0.0200 0.0200
+          }
+        }
+      ]
+    }
+    Pose {
+      translation 14.0000 -6.0000 0
+      rotation 0 0 1 0.00000
+      children [
+        Shape {
+          appearance PBRAppearance {
+            baseColor 0.1686 0.2039 0.2235
+            roughness 1
+            metalness 0
+          }
+          geometry Plane {
+            size 0.0200 0.0200
+          }
+        }
+      ]
+    }
+    Pose {
+      translation -16.0000 -4.0000 0
+      rotation 0 0 1 0.00000
+      children [
+        Shape {
+          appearance PBRAppearance {
+            baseColor 0.1686 0.2039 0.2235
+            roughness 1
+            metalness 0
+          }
+          geometry Plane {
+            size 0.0200 0.0200
+          }
+        }
+      ]
+    }
+    Pose {
+      translation -14.0000 -4.0000 0
+      rotation 0 0 1 0.00000
+      children [
+        Shape {
+          appearance PBRAppearance {
+            baseColor 0.1686 0.2039 0.2235
+            roughness 1
+            metalness 0
+          }
+          geometry Plane {
+            size 0.0200 0.0200
+          }
+        }
+      ]
+    }
+    Pose {
+      translation -12.0000 -4.0000 0
+      rotation 0 0 1 0.00000
+      children [
+        Shape {
+          appearance PBRAppearance {
+            baseColor 0.1686 0.2039 0.2235
+            roughness 1
+            metalness 0
+          }
+          geometry Plane {
+            size 0.0200 0.0200
+          }
+        }
+      ]
+    }
+    Pose {
+      translation -10.0000 -4.0000 0
+      rotation 0 0 1 0.00000
+      children [
+        Shape {
+          appearance PBRAppearance {
+            baseColor 0.1686 0.2039 0.2235
+            roughness 1
+            metalness 0
+          }
+          geometry Plane {
+            size 0.0200 0.0200
+          }
+        }
+      ]
+    }
+    Pose {
+      translation -8.0000 -4.0000 0
+      rotation 0 0 1 0.00000
+      children [
+        Shape {
+          appearance PBRAppearance {
+            baseColor 0.1686 0.2039 0.2235
+            roughness 1
+            metalness 0
+          }
+          geometry Plane {
+            size 0.0200 0.0200
+          }
+        }
+      ]
+    }
+    Pose {
+      translation -6.0000 -4.0000 0
+      rotation 0 0 1 0.00000
+      children [
+        Shape {
+          appearance PBRAppearance {
+            baseColor 0.1686 0.2039 0.2235
+            roughness 1
+            metalness 0
+          }
+          geometry Plane {
+            size 0.0200 0.0200
+          }
+        }
+      ]
+    }
+    Pose {
+      translation -4.0000 -4.0000 0
+      rotation 0 0 1 0.00000
+      children [
+        Shape {
+          appearance PBRAppearance {
+            baseColor 0.1686 0.2039 0.2235
+            roughness 1
+            metalness 0
+          }
+          geometry Plane {
+            size 0.0200 0.0200
+          }
+        }
+      ]
+    }
+    Pose {
+      translation -2.0000 -4.0000 0
+      rotation 0 0 1 0.00000
+      children [
+        Shape {
+          appearance PBRAppearance {
+            baseColor 0.1686 0.2039 0.2235
+            roughness 1
+            metalness 0
+          }
+          geometry Plane {
+            size 0.0200 0.0200
+          }
+        }
+      ]
+    }
+    Pose {
+      translation 0.0000 -4.0000 0
+      rotation 0 0 1 0.00000
+      children [
+        Shape {
+          appearance PBRAppearance {
+            baseColor 0.1686 0.2039 0.2235
+            roughness 1
+            metalness 0
+          }
+          geometry Plane {
+            size 0.0200 0.0200
+          }
+        }
+      ]
+    }
+    Pose {
+      translation 2.0000 -4.0000 0
+      rotation 0 0 1 0.00000
+      children [
+        Shape {
+          appearance PBRAppearance {
+            baseColor 0.1686 0.2039 0.2235
+            roughness 1
+            metalness 0
+          }
+          geometry Plane {
+            size 0.0200 0.0200
+          }
+        }
+      ]
+    }
+    Pose {
+      translation 4.0000 -4.0000 0
+      rotation 0 0 1 0.00000
+      children [
+        Shape {
+          appearance PBRAppearance {
+            baseColor 0.1686 0.2039 0.2235
+            roughness 1
+            metalness 0
+          }
+          geometry Plane {
+            size 0.0200 0.0200
+          }
+        }
+      ]
+    }
+    Pose {
+      translation 6.0000 -4.0000 0
+      rotation 0 0 1 0.00000
+      children [
+        Shape {
+          appearance PBRAppearance {
+            baseColor 0.1686 0.2039 0.2235
+            roughness 1
+            metalness 0
+          }
+          geometry Plane {
+            size 0.0200 0.0200
+          }
+        }
+      ]
+    }
+    Pose {
+      translation 8.0000 -4.0000 0
+      rotation 0 0 1 0.00000
+      children [
+        Shape {
+          appearance PBRAppearance {
+            baseColor 0.1686 0.2039 0.2235
+            roughness 1
+            metalness 0
+          }
+          geometry Plane {
+            size 0.0200 0.0200
+          }
+        }
+      ]
+    }
+    Pose {
+      translation 10.0000 -4.0000 0
+      rotation 0 0 1 0.00000
+      children [
+        Shape {
+          appearance PBRAppearance {
+            baseColor 0.1686 0.2039 0.2235
+            roughness 1
+            metalness 0
+          }
+          geometry Plane {
+            size 0.0200 0.0200
+          }
+        }
+      ]
+    }
+    Pose {
+      translation 12.0000 -4.0000 0
+      rotation 0 0 1 0.00000
+      children [
+        Shape {
+          appearance PBRAppearance {
+            baseColor 0.1686 0.2039 0.2235
+            roughness 1
+            metalness 0
+          }
+          geometry Plane {
+            size 0.0200 0.0200
+          }
+        }
+      ]
+    }
+    Pose {
+      translation 14.0000 -4.0000 0
+      rotation 0 0 1 0.00000
+      children [
+        Shape {
+          appearance PBRAppearance {
+            baseColor 0.1686 0.2039 0.2235
+            roughness 1
+            metalness 0
+          }
+          geometry Plane {
+            size 0.0200 0.0200
+          }
+        }
+      ]
+    }
+    Pose {
+      translation -14.0000 -2.0000 0
+      rotation 0 0 1 0.00000
+      children [
+        Shape {
+          appearance PBRAppearance {
+            baseColor 0.1686 0.2039 0.2235
+            roughness 1
+            metalness 0
+          }
+          geometry Plane {
+            size 0.0200 0.0200
+          }
+        }
+      ]
+    }
+    Pose {
+      translation -12.0000 -2.0000 0
+      rotation 0 0 1 0.00000
+      children [
+        Shape {
+          appearance PBRAppearance {
+            baseColor 0.1686 0.2039 0.2235
+            roughness 1
+            metalness 0
+          }
+          geometry Plane {
+            size 0.0200 0.0200
+          }
+        }
+      ]
+    }
+    Pose {
+      translation -8.0000 -2.0000 0
+      rotation 0 0 1 0.00000
+      children [
+        Shape {
+          appearance PBRAppearance {
+            baseColor 0.1686 0.2039 0.2235
+            roughness 1
+            metalness 0
+          }
+          geometry Plane {
+            size 0.0200 0.0200
+          }
+        }
+      ]
+    }
+    Pose {
+      translation -2.0000 -2.0000 0
+      rotation 0 0 1 0.00000
+      children [
+        Shape {
+          appearance PBRAppearance {
+            baseColor 0.1686 0.2039 0.2235
+            roughness 1
+            metalness 0
+          }
+          geometry Plane {
+            size 0.0200 0.0200
+          }
+        }
+      ]
+    }
+    Pose {
+      translation 4.0000 -2.0000 0
+      rotation 0 0 1 0.00000
+      children [
+        Shape {
+          appearance PBRAppearance {
+            baseColor 0.1686 0.2039 0.2235
+            roughness 1
+            metalness 0
+          }
+          geometry Plane {
+            size 0.0200 0.0200
+          }
+        }
+      ]
+    }
+    Pose {
+      translation 10.0000 -2.0000 0
+      rotation 0 0 1 0.00000
+      children [
+        Shape {
+          appearance PBRAppearance {
+            baseColor 0.1686 0.2039 0.2235
+            roughness 1
+            metalness 0
+          }
+          geometry Plane {
+            size 0.0200 0.0200
+          }
+        }
+      ]
+    }
+    Pose {
+      translation 14.0000 -2.0000 0
+      rotation 0 0 1 0.00000
+      children [
+        Shape {
+          appearance PBRAppearance {
+            baseColor 0.1686 0.2039 0.2235
+            roughness 1
+            metalness 0
+          }
+          geometry Plane {
+            size 0.0200 0.0200
+          }
+        }
+      ]
+    }
+    Pose {
+      translation -16.0000 0.0000 0
+      rotation 0 0 1 0.00000
+      children [
+        Shape {
+          appearance PBRAppearance {
+            baseColor 0.1686 0.2039 0.2235
+            roughness 1
+            metalness 0
+          }
+          geometry Plane {
+            size 0.0200 0.0200
+          }
+        }
+      ]
+    }
+    Pose {
+      translation -14.0000 0.0000 0
+      rotation 0 0 1 0.00000
+      children [
+        Shape {
+          appearance PBRAppearance {
+            baseColor 0.1686 0.2039 0.2235
+            roughness 1
+            metalness 0
+          }
+          geometry Plane {
+            size 0.0200 0.0200
+          }
+        }
+      ]
+    }
+    Pose {
+      translation -12.0000 0.0000 0
+      rotation 0 0 1 0.00000
+      children [
+        Shape {
+          appearance PBRAppearance {
+            baseColor 0.1686 0.2039 0.2235
+            roughness 1
+            metalness 0
+          }
+          geometry Plane {
+            size 0.0200 0.0200
+          }
+        }
+      ]
+    }
+    Pose {
+      translation -10.0000 0.0000 0
+      rotation 0 0 1 0.00000
+      children [
+        Shape {
+          appearance PBRAppearance {
+            baseColor 0.1686 0.2039 0.2235
+            roughness 1
+            metalness 0
+          }
+          geometry Plane {
+            size 0.0200 0.0200
+          }
+        }
+      ]
+    }
+    Pose {
+      translation -8.0000 0.0000 0
+      rotation 0 0 1 0.00000
+      children [
+        Shape {
+          appearance PBRAppearance {
+            baseColor 0.1686 0.2039 0.2235
+            roughness 1
+            metalness 0
+          }
+          geometry Plane {
+            size 0.0200 0.0200
+          }
+        }
+      ]
+    }
+    Pose {
+      translation -6.0000 0.0000 0
+      rotation 0 0 1 0.00000
+      children [
+        Shape {
+          appearance PBRAppearance {
+            baseColor 0.1686 0.2039 0.2235
+            roughness 1
+            metalness 0
+          }
+          geometry Plane {
+            size 0.0200 0.0200
+          }
+        }
+      ]
+    }
+    Pose {
+      translation -4.0000 0.0000 0
+      rotation 0 0 1 0.00000
+      children [
+        Shape {
+          appearance PBRAppearance {
+            baseColor 0.1686 0.2039 0.2235
+            roughness 1
+            metalness 0
+          }
+          geometry Plane {
+            size 0.0200 0.0200
+          }
+        }
+      ]
+    }
+    Pose {
+      translation -2.0000 0.0000 0
+      rotation 0 0 1 0.00000
+      children [
+        Shape {
+          appearance PBRAppearance {
+            baseColor 0.1686 0.2039 0.2235
+            roughness 1
+            metalness 0
+          }
+          geometry Plane {
+            size 0.0200 0.0200
+          }
+        }
+      ]
+    }
+    Pose {
+      translation 0.0000 0.0000 0
+      rotation 0 0 1 0.00000
+      children [
+        Shape {
+          appearance PBRAppearance {
+            baseColor 0.1686 0.2039 0.2235
+            roughness 1
+            metalness 0
+          }
+          geometry Plane {
+            size 0.0200 0.0200
+          }
+        }
+      ]
+    }
+    Pose {
+      translation 2.0000 0.0000 0
+      rotation 0 0 1 0.00000
+      children [
+        Shape {
+          appearance PBRAppearance {
+            baseColor 0.1686 0.2039 0.2235
+            roughness 1
+            metalness 0
+          }
+          geometry Plane {
+            size 0.0200 0.0200
+          }
+        }
+      ]
+    }
+    Pose {
+      translation 4.0000 0.0000 0
+      rotation 0 0 1 0.00000
+      children [
+        Shape {
+          appearance PBRAppearance {
+            baseColor 0.1686 0.2039 0.2235
+            roughness 1
+            metalness 0
+          }
+          geometry Plane {
+            size 0.0200 0.0200
+          }
+        }
+      ]
+    }
+    Pose {
+      translation 6.0000 0.0000 0
+      rotation 0 0 1 0.00000
+      children [
+        Shape {
+          appearance PBRAppearance {
+            baseColor 0.1686 0.2039 0.2235
+            roughness 1
+            metalness 0
+          }
+          geometry Plane {
+            size 0.0200 0.0200
+          }
+        }
+      ]
+    }
+    Pose {
+      translation 8.0000 0.0000 0
+      rotation 0 0 1 0.00000
+      children [
+        Shape {
+          appearance PBRAppearance {
+            baseColor 0.1686 0.2039 0.2235
+            roughness 1
+            metalness 0
+          }
+          geometry Plane {
+            size 0.0200 0.0200
+          }
+        }
+      ]
+    }
+    Pose {
+      translation 10.0000 0.0000 0
+      rotation 0 0 1 0.00000
+      children [
+        Shape {
+          appearance PBRAppearance {
+            baseColor 0.1686 0.2039 0.2235
+            roughness 1
+            metalness 0
+          }
+          geometry Plane {
+            size 0.0200 0.0200
+          }
+        }
+      ]
+    }
+    Pose {
+      translation 12.0000 0.0000 0
+      rotation 0 0 1 0.00000
+      children [
+        Shape {
+          appearance PBRAppearance {
+            baseColor 0.1686 0.2039 0.2235
+            roughness 1
+            metalness 0
+          }
+          geometry Plane {
+            size 0.0200 0.0200
+          }
+        }
+      ]
+    }
+    Pose {
+      translation 14.0000 0.0000 0
+      rotation 0 0 1 0.00000
+      children [
+        Shape {
+          appearance PBRAppearance {
+            baseColor 0.1686 0.2039 0.2235
+            roughness 1
+            metalness 0
+          }
+          geometry Plane {
+            size 0.0200 0.0200
+          }
+        }
+      ]
+    }
+    Pose {
+      translation -16.0000 2.0000 0
+      rotation 0 0 1 0.00000
+      children [
+        Shape {
+          appearance PBRAppearance {
+            baseColor 0.1686 0.2039 0.2235
+            roughness 1
+            metalness 0
+          }
+          geometry Plane {
+            size 0.0200 0.0200
+          }
+        }
+      ]
+    }
+    Pose {
+      translation -8.0000 2.0000 0
+      rotation 0 0 1 0.00000
+      children [
+        Shape {
+          appearance PBRAppearance {
+            baseColor 0.1686 0.2039 0.2235
+            roughness 1
+            metalness 0
+          }
+          geometry Plane {
+            size 0.0200 0.0200
+          }
+        }
+      ]
+    }
+    Pose {
+      translation -6.0000 2.0000 0
+      rotation 0 0 1 0.00000
+      children [
+        Shape {
+          appearance PBRAppearance {
+            baseColor 0.1686 0.2039 0.2235
+            roughness 1
+            metalness 0
+          }
+          geometry Plane {
+            size 0.0200 0.0200
+          }
+        }
+      ]
+    }
+    Pose {
+      translation 0.0000 2.0000 0
+      rotation 0 0 1 0.00000
+      children [
+        Shape {
+          appearance PBRAppearance {
+            baseColor 0.1686 0.2039 0.2235
+            roughness 1
+            metalness 0
+          }
+          geometry Plane {
+            size 0.0200 0.0200
+          }
+        }
+      ]
+    }
+    Pose {
+      translation 8.0000 2.0000 0
+      rotation 0 0 1 0.00000
+      children [
+        Shape {
+          appearance PBRAppearance {
+            baseColor 0.1686 0.2039 0.2235
+            roughness 1
+            metalness 0
+          }
+          geometry Plane {
+            size 0.0200 0.0200
+          }
+        }
+      ]
+    }
+    Pose {
+      translation 14.0000 2.0000 0
+      rotation 0 0 1 0.00000
+      children [
+        Shape {
+          appearance PBRAppearance {
+            baseColor 0.1686 0.2039 0.2235
+            roughness 1
+            metalness 0
+          }
+          geometry Plane {
+            size 0.0200 0.0200
+          }
+        }
+      ]
+    }
+    Pose {
+      translation -16.0000 4.0000 0
+      rotation 0 0 1 0.00000
+      children [
+        Shape {
+          appearance PBRAppearance {
+            baseColor 0.1686 0.2039 0.2235
+            roughness 1
+            metalness 0
+          }
+          geometry Plane {
+            size 0.0200 0.0200
+          }
+        }
+      ]
+    }
+    Pose {
+      translation -8.0000 4.0000 0
+      rotation 0 0 1 0.00000
+      children [
+        Shape {
+          appearance PBRAppearance {
+            baseColor 0.1686 0.2039 0.2235
+            roughness 1
+            metalness 0
+          }
+          geometry Plane {
+            size 0.0200 0.0200
+          }
+        }
+      ]
+    }
+    Pose {
+      translation -6.0000 4.0000 0
+      rotation 0 0 1 0.00000
+      children [
+        Shape {
+          appearance PBRAppearance {
+            baseColor 0.1686 0.2039 0.2235
+            roughness 1
+            metalness 0
+          }
+          geometry Plane {
+            size 0.0200 0.0200
+          }
+        }
+      ]
+    }
+    Pose {
+      translation 0.0000 4.0000 0
+      rotation 0 0 1 0.00000
+      children [
+        Shape {
+          appearance PBRAppearance {
+            baseColor 0.1686 0.2039 0.2235
+            roughness 1
+            metalness 0
+          }
+          geometry Plane {
+            size 0.0200 0.0200
+          }
+        }
+      ]
+    }
+    Pose {
+      translation 8.0000 4.0000 0
+      rotation 0 0 1 0.00000
+      children [
+        Shape {
+          appearance PBRAppearance {
+            baseColor 0.1686 0.2039 0.2235
+            roughness 1
+            metalness 0
+          }
+          geometry Plane {
+            size 0.0200 0.0200
+          }
+        }
+      ]
+    }
+    Pose {
+      translation 14.0000 4.0000 0
+      rotation 0 0 1 0.00000
+      children [
+        Shape {
+          appearance PBRAppearance {
+            baseColor 0.1686 0.2039 0.2235
+            roughness 1
+            metalness 0
+          }
+          geometry Plane {
+            size 0.0200 0.0200
+          }
+        }
+      ]
+    }
+    Pose {
+      translation -16.0000 6.0000 0
+      rotation 0 0 1 0.00000
+      children [
+        Shape {
+          appearance PBRAppearance {
+            baseColor 0.1686 0.2039 0.2235
+            roughness 1
+            metalness 0
+          }
+          geometry Plane {
+            size 0.0200 0.0200
+          }
+        }
+      ]
+    }
+    Pose {
+      translation -8.0000 6.0000 0
+      rotation 0 0 1 0.00000
+      children [
+        Shape {
+          appearance PBRAppearance {
+            baseColor 0.1686 0.2039 0.2235
+            roughness 1
+            metalness 0
+          }
+          geometry Plane {
+            size 0.0200 0.0200
+          }
+        }
+      ]
+    }
+    Pose {
+      translation -6.0000 6.0000 0
+      rotation 0 0 1 0.00000
+      children [
+        Shape {
+          appearance PBRAppearance {
+            baseColor 0.1686 0.2039 0.2235
+            roughness 1
+            metalness 0
+          }
+          geometry Plane {
+            size 0.0200 0.0200
+          }
+        }
+      ]
+    }
+    Pose {
+      translation -4.0000 6.0000 0
+      rotation 0 0 1 0.00000
+      children [
+        Shape {
+          appearance PBRAppearance {
+            baseColor 0.1686 0.2039 0.2235
+            roughness 1
+            metalness 0
+          }
+          geometry Plane {
+            size 0.0200 0.0200
+          }
+        }
+      ]
+    }
+    Pose {
+      translation 0.0000 6.0000 0
+      rotation 0 0 1 0.00000
+      children [
+        Shape {
+          appearance PBRAppearance {
+            baseColor 0.1686 0.2039 0.2235
+            roughness 1
+            metalness 0
+          }
+          geometry Plane {
+            size 0.0200 0.0200
+          }
+        }
+      ]
+    }
+    Pose {
+      translation 2.0000 6.0000 0
+      rotation 0 0 1 0.00000
+      children [
+        Shape {
+          appearance PBRAppearance {
+            baseColor 0.1686 0.2039 0.2235
+            roughness 1
+            metalness 0
+          }
+          geometry Plane {
+            size 0.0200 0.0200
+          }
+        }
+      ]
+    }
+    Pose {
+      translation 8.0000 6.0000 0
+      rotation 0 0 1 0.00000
+      children [
+        Shape {
+          appearance PBRAppearance {
+            baseColor 0.1686 0.2039 0.2235
+            roughness 1
+            metalness 0
+          }
+          geometry Plane {
+            size 0.0200 0.0200
+          }
+        }
+      ]
+    }
+    Pose {
+      translation 10.0000 6.0000 0
+      rotation 0 0 1 0.00000
+      children [
+        Shape {
+          appearance PBRAppearance {
+            baseColor 0.1686 0.2039 0.2235
+            roughness 1
+            metalness 0
+          }
+          geometry Plane {
+            size 0.0200 0.0200
+          }
+        }
+      ]
+    }
+    Pose {
+      translation 14.0000 6.0000 0
+      rotation 0 0 1 0.00000
+      children [
+        Shape {
+          appearance PBRAppearance {
+            baseColor 0.1686 0.2039 0.2235
+            roughness 1
+            metalness 0
+          }
+          geometry Plane {
+            size 0.0200 0.0200
+          }
+        }
+      ]
+    }
+  ]
+  name "lanes"
 }
 DEF MARKER_37 Solid {
   translation -16.0000 -8.0000 0.001

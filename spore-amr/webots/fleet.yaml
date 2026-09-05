@@ -16,7 +16,12 @@ track:
     source: ../../spore-warehouse-layout/output/warehouse.json
     origin_cm: [8200, 600]
     size_m: [32, 16]
-    pixels_per_metre: 256
+    # The floor texture is the warehouse *drawing* and nothing senses it: the
+    # lanes are geometry, exact and free. So this sets how good the picture
+    # looks, not how well a robot follows a line, and 64 px/m over the full
+    # 128 x 64 m warehouse is one 8192x4096 texture rather than the 32768x16384
+    # -- 2.1 GB -- that carrying the lanes in pixels would have cost.
+    pixels_per_metre: 64
   line_width: 0.02
 
 robot:

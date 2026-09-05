@@ -151,6 +151,174 @@ MARKER_LIFT = 0.001
 # right, file on disk right, picture stale.
 TRACK_TEXTURE = ["track.png"]
 
+# The largest texture Webots will actually read here. A single 16384x8192 floor
+# for the whole warehouse failed with "Unable to read image data" -- the world
+# loaded, the ground had no texture at all, and every robot sat reading blank
+# white floor and reporting a lost line. 8192x4096 is the size the 32 x 16 m
+# window has always used, so it is known good.
+#
+# The fix is more planes, not a coarser floor. Resolution is the one thing that
+# cannot be given up: the IR array reads the rendered floor, and a 20 mm lane
+# at 256 px/m is 5 px. Halving that to fit a bigger map on one texture would
+# quietly wreck line following everywhere.
+MAX_TEXTURE_PX = 8192
+
+
+# The lane ink, matching what the raster floor used to draw. Normalised: the
+# renderer wants 0-1, the rasteriser wanted 0-255.
+LANE_INK = (43 / 255.0, 52 / 255.0, 57 / 255.0)
+
+# Lanes sit above the floor and below the marker tiles, so a tile still covers
+# the line it crosses. Both clear the ground plane, which would otherwise
+# z-fight and flicker -- and the IR array reads that flicker as noise.
+LANE_LIFT = 0.0005
+
+LANE_TEMPLATE = """    Pose {{
+      translation {x:.4f} {y:.4f} 0
+      rotation 0 0 1 {heading:.5f}
+      children [
+        Shape {{
+          appearance PBRAppearance {{
+            baseColor {r:.4f} {g:.4f} {b:.4f}
+            roughness 1
+            metalness 0
+          }}
+          geometry Plane {{
+            size {length:.4f} {width:.4f}
+          }}
+        }}
+      ]
+    }}
+"""
+
+
+def lane_source(track, graph):
+    """The lanes as geometry rather than as pixels.
+
+    This is the whole floor budget. A 20 mm line has to be a few pixels wide
+    for the IR array to find its centre, which fixes the floor's resolution at
+    256 px/m -- and over the full 128 x 64 m warehouse that is a 32768 x 16384
+    texture: 2.1 GB of memory to express 952 straight lines, almost all of it
+    white. Webots would not even load a quarter of it ("Unable to read image
+    data"), and the robots sat on an untextured floor reading blank white.
+
+    Geometry costs nothing and is *sharper*: a plane's edge is exact, where a
+    raster line is quantised to whole pixels and then mipmapped. The sensors do
+    not care which it is -- an infra-red DistanceSensor reads the surface it
+    hits, and the marker tiles have always been lifted planes exactly like
+    these.
+
+    Safe to lift, too: the sensor lookup table is flat from 0 to its mounting
+    height, so half a millimetre of clearance changes the reading by nothing.
+
+    One Solid holding many Poses rather than one Solid per lane -- 952 Solids
+    is 952 lots of physics bookkeeping for something that never moves.
+    """
+    blocks = []
+    for edge in graph.edges:
+        a, b = graph.nodes[edge.a], graph.nodes[edge.b]
+        blocks.append(LANE_TEMPLATE.format(
+            x=(a.x + b.x) / 2.0, y=(a.y + b.y) / 2.0,
+            heading=graph.bearing(edge.a, edge.b),
+            length=graph.length(edge.a, edge.b), width=track.line_width,
+            r=LANE_INK[0], g=LANE_INK[1], b=LANE_INK[2]))
+
+    # A square at each node fills the notch where two lanes meet at an angle.
+    # The rasteriser drew a dot here for the same reason.
+    for node in graph.nodes.values():
+        blocks.append(LANE_TEMPLATE.format(
+            x=node.x, y=node.y, heading=0.0,
+            length=track.line_width, width=track.line_width,
+            r=LANE_INK[0], g=LANE_INK[1], b=LANE_INK[2]))
+
+    return """DEF LANES Solid {{
+  translation 0 0 {lift}
+  children [
+{children}  ]
+  name "lanes"
+}}
+""".format(lift=LANE_LIFT, children="".join(blocks))
+
+
+GROUND_TEMPLATE = """DEF GROUND_{row}_{column} Solid {{
+  translation {cx:.4f} {cy:.4f} 0
+  children [
+    Shape {{
+      appearance PBRAppearance {{
+        baseColor 1 1 1
+        roughness 0
+        metalness 0
+        baseColorMap ImageTexture {{
+          url [
+            "../textures/{texture}"
+          ]
+        }}
+      }}
+      geometry Plane {{
+        size {size_x} {size_y}
+      }}
+    }}
+  ]
+  name "ground_{row}_{column}"
+  boundingObject Plane {{
+    size {size_x} {size_y}
+  }}
+}}
+"""
+
+
+def ground_source(track):
+    """One Solid per floor tile.
+
+    A `boundingObject Plane` with an explicit size on each, rather than the
+    unbounded default: an infinite collision plane per tile would have every
+    tile colliding across the whole world.
+    """
+    blocks = []
+    for tile, texture in zip(floor_tiles(track), TRACK_TEXTURE):
+        blocks.append(GROUND_TEMPLATE.format(
+            row=tile["row"], column=tile["column"],
+            cx=tile["centre"][0], cy=tile["centre"][1],
+            size_x=tile["size_m"][0], size_y=tile["size_m"][1],
+            texture=texture))
+    return "".join(blocks)
+
+
+def floor_tiles(track):
+    """The floor as a grid of planes, each within `MAX_TEXTURE_PX`.
+
+    Returns (row, column, origin_cm, size_m, centre_xy) per tile. One tile for
+    anything that already fits, so a small window generates exactly the world
+    it always did.
+    """
+    width_m, height_m = track.plane_size
+    ppm = track.pixels_per_metre
+    columns = max(1, math.ceil(width_m * ppm / MAX_TEXTURE_PX))
+    rows = max(1, math.ceil(height_m * ppm / MAX_TEXTURE_PX))
+
+    tile_w, tile_h = width_m / columns, height_m / rows
+    # The plane's corner, not the window's: the floor extends a margin beyond
+    # the graph so a robot overshooting a boundary node still has floor.
+    origin_x, origin_y = (track.warehouse.plane_origin_cm if track.warehouse
+                          else (0.0, 0.0))
+
+    tiles = []
+    for row in range(rows):
+        for column in range(columns):
+            tiles.append({
+                "row": row,
+                "column": column,
+                # The source window this tile covers, in the same centimetres
+                # the whole-floor window uses -- the renderer crops to it.
+                "origin_cm": (origin_x + column * tile_w * 100.0,
+                              origin_y + row * tile_h * 100.0),
+                "size_m": (tile_w, tile_h),
+                # Its centre on the plane, which is centred on the world origin.
+                "centre": (-width_m / 2.0 + (column + 0.5) * tile_w,
+                           -height_m / 2.0 + (row + 0.5) * tile_h),
+            })
+    return tiles
+
 
 def graph_marker_source(manifest: dict, graph) -> str:
     """One marker Solid per graph node.
@@ -318,30 +486,10 @@ DirectionalLight {{
   intensity 2.5
   castShadows FALSE
 }}
-DEF GROUND Solid {{
-  children [
-    Shape {{
-      appearance PBRAppearance {{
-        baseColor 1 1 1
-        roughness 0
-        metalness 0
-        baseColorMap ImageTexture {{
-          url [
-            "../textures/{texture}"
-          ]
-        }}
-      }}
-      geometry Plane {{
-        size {plane_x} {plane_y}
-      }}
-    }}
-  ]
-  name "ground"
-  boundingObject Plane {{
-  }}
-}}
-'''.format(plane_x=plane_x, plane_y=plane_y, texture=TRACK_TEXTURE[0],
+{ground}{lanes}'''.format(plane_x=plane_x, plane_y=plane_y,
            orientation=TOP_DOWN_ORIENTATION,
+           ground=ground_source(track),
+           lanes=lane_source(track, track.build_graph()) if track.is_graph else "",
            height=round(viewpoint_height(track.plane_size), 3))
 
     if track.is_graph:
@@ -515,31 +663,47 @@ def main(argv=None) -> int:
                               pixels_per_metre=track.pixels_per_metre)
         pathlib.Path("textures").mkdir(exist_ok=True)
 
-        if track.warehouse is not None:
-            # Use the layout tool's own drawing as the floor, so the simulated
-            # warehouse looks like the warehouse rather than like something
-            # this project drew from the same data. The guide line is redrawn
-            # on top at its true width -- the map's hairlines are a diagram.
-            from tools.track.svgfloor import render_window_via_converter as render_window
-
-            svg_path = pathlib.Path(track.warehouse.source).with_name(
-                "warehouse_map.svg")
-            render_window(svg_path, track.warehouse.origin_cm,
-                          track.warehouse.size_m, track.pixels_per_metre,
-                          graph=graph, line_width_m=track.line_width
-                          ).save("textures/track.png")
-        else:
-            render_graph(graph, spec, track.line_width).save("textures/track.png")
-
         import hashlib
 
-        source = pathlib.Path("textures/track.png")
-        digest = hashlib.sha1(source.read_bytes()).hexdigest()[:12]
+        tiles = floor_tiles(track)
         for stale in pathlib.Path("textures").glob("track-*.png"):
             stale.unlink()
-        name = "track-{}.png".format(digest)
-        (pathlib.Path("textures") / name).write_bytes(source.read_bytes())
-        TRACK_TEXTURE[0] = name
+        del TRACK_TEXTURE[:]
+
+        for tile in tiles:
+            if track.warehouse is not None:
+                # Use the layout tool's own drawing as the floor, so the
+                # simulated warehouse looks like the warehouse rather than
+                # like something this project drew from the same data. The
+                # guide line is redrawn on top at its true width -- the map's
+                # hairlines are a diagram.
+                #
+                # Rendered per tile, cropped by the renderer: rasterising the
+                # whole sheet and cutting pieces out of it is how you turn a
+                # 128 x 64 m floor into a 2 GB PIL image.
+                from tools.track.svgfloor import (
+                    render_window_via_converter as render_window)
+
+                svg_path = pathlib.Path(track.warehouse.source).with_name(
+                    "warehouse_map.svg")
+                # `graph=None`: the lanes are geometry now, so this is the
+                # warehouse *drawing* and nothing senses it. That is what
+                # frees its resolution -- it no longer has to render a 20 mm
+                # line wide enough for an IR array to find the centre of.
+                image = render_window(svg_path, tile["origin_cm"],
+                                      tile["size_m"], track.pixels_per_metre,
+                                      graph=None)
+            else:
+                image = render_graph(graph, spec, track.line_width)
+
+            source = pathlib.Path("textures/track.png")
+            image.save(source)
+            digest = hashlib.sha1(source.read_bytes()).hexdigest()[:12]
+            # Content-addressed because the streaming viewer caches by URL: a
+            # regenerated floor otherwise keeps arriving as the previous one.
+            name = "track-{}.png".format(digest)
+            (pathlib.Path("textures") / name).write_bytes(source.read_bytes())
+            TRACK_TEXTURE.append(name)
 
         pathlib.Path("config").mkdir(exist_ok=True)
         document = to_document(graph,
@@ -552,6 +716,13 @@ def main(argv=None) -> int:
                                             len(graph.nodes), len(graph.edges)))
 
     if not args.skip_markers:
+        # Stale tiles from a previous, larger track are not harmless: the world
+        # only references the current nodes, but 881 leftover 1024x1024 files
+        # are 3.7 GB of texture sitting in the tree, and the next reader
+        # measuring "what does the fleet cost" counts them.
+        for stale in pathlib.Path("textures/markers").glob("node_*.png"):
+            stale.unlink()
+
         from tools.make_markers import main as make_markers
 
         make_markers(["--manifest", str(args.manifest)])

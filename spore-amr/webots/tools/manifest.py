@@ -70,6 +70,13 @@ class WarehouseConfig:
     origin_cm: Tuple[float, float]
     size_m: Tuple[float, float]
     pixels_per_metre: int = 256
+    # Floor beyond the outermost nodes. The window used to end exactly where
+    # the graph did, so a boundary node had no floor past it: a robot routed
+    # there ran out of world. Off the plane every IR sensor reads black_ref,
+    # which the estimator renders as a perfectly centred line at maximum
+    # confidence, and one robot drove 18 m into the void believing it was on
+    # the lane. The margin is what a robot overshooting a node lands on.
+    margin_m: float = 3.0
 
     @classmethod
     def from_dict(cls, data: Optional[dict]) -> Optional["WarehouseConfig"]:
@@ -80,12 +87,24 @@ class WarehouseConfig:
             origin_cm=tuple(float(v) for v in data["origin_cm"]),
             size_m=tuple(float(v) for v in data["size_m"]),
             pixels_per_metre=int(data.get("pixels_per_metre", 256)),
+            margin_m=float(data.get("margin_m", 3.0)),
         )
 
     def build(self):
         from tools.track.warehouse import load_window
 
         return load_window(self.source, self.origin_cm, self.size_m)
+
+    @property
+    def plane_size(self) -> Tuple[float, float]:
+        """The floor, which is the window plus a margin on every side."""
+        return (self.size_m[0] + 2 * self.margin_m,
+                self.size_m[1] + 2 * self.margin_m)
+
+    @property
+    def plane_origin_cm(self) -> Tuple[float, float]:
+        return (self.origin_cm[0] - self.margin_m * 100.0,
+                self.origin_cm[1] - self.margin_m * 100.0)
 
 
 @dataclass(frozen=True)
@@ -111,7 +130,9 @@ class TrackConfig:
                  if f in data and f not in ("graph", "warehouse")}
         warehouse = WarehouseConfig.from_dict(data.get("warehouse"))
         if warehouse is not None:
-            known["plane_size"] = warehouse.size_m
+            # The plane is bigger than the window: the graph fills the window,
+            # and the margin is floor for a robot that overshoots its edge.
+            known["plane_size"] = warehouse.plane_size
             known["track_size"] = warehouse.size_m
             known["shape"] = "warehouse"
             known["pixels_per_metre"] = warehouse.pixels_per_metre

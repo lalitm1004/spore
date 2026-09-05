@@ -8,6 +8,7 @@ This is the only module that imports the Webots API.
 """
 
 import argparse
+from dataclasses import replace
 import errno
 import json
 import math
@@ -49,6 +50,15 @@ def build_columns(sensor_count):
 # lost. One tile length plus margin: if the lane were there, it would have been
 # found by now.
 RECOVERY_BUDGET_M = 0.15
+
+# How far the array may read entirely dark before that stops being a line.
+# Crossing a perpendicular lane saturates it for the lane's own width, and a
+# marker tile for its length -- 100 mm, which this comfortably clears. Beyond
+# that there is no line under the robot, however certain the weighted mean
+# sounds: off the ground plane every sensor reads `black_ref`, which the
+# estimator renders as "perfectly centred, maximum confidence". One robot drove
+# 150 s and 18 m off the map on that reading, reporting no lost time at all.
+SATURATED_BUDGET_M = 0.30
 
 # EWMA weight for the steering average held across a crossing.
 STEERING_AVERAGE_ALPHA = 0.04
@@ -418,6 +428,7 @@ def main(argv=None):
     turn_recovered_from = 0.0
     reading_lost_last = False
     recovery_from = None
+    saturated_from = None
     trip_distance = None
 
     while webots_robot.step(timestep) != -1:
@@ -565,6 +576,19 @@ def main(argv=None):
         # Bounded, though: holding indefinitely just drives a circle back onto
         # the same tile, which is how this first presented -- the same marker
         # read over and over.
+        # An array reading entirely dark is a line the robot cannot be on, once
+        # it has lasted longer than any lane crossing or tile could explain.
+        # Treated as a loss rather than a special case, so the existing timeout
+        # and halt apply and a robot stops instead of leaving the world.
+        if reading.saturated:
+            if saturated_from is None:
+                saturated_from = distance
+            elif distance - saturated_from > SATURATED_BUDGET_M:
+                if not reading.lost:
+                    reading = replace(reading, lost=True)
+        else:
+            saturated_from = None
+
         reading_lost_last = reading.lost
         if turn_recovering and reading.lost:
             crossing_blind = True

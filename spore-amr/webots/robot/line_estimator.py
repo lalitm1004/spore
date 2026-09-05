@@ -4,12 +4,22 @@ from dataclasses import dataclass
 from typing import Sequence, Tuple
 
 
+# How dark every sensor has to read before the array counts as saturated.
+# Slightly above zero because the floor is rendered, not ideal: measured off
+# the plane at exactly `black_ref`, and on a lane crossing a hair above it.
+SATURATED = 0.05
+
+
 @dataclass(frozen=True)
 class LineReading:
     position: float
     confidence: float
     lost: bool
     normalised: Tuple[float, ...]
+    # Every sensor dark. Not a fault on its own -- a perpendicular lane
+    # crossing looks exactly like this -- but sustained it means the array is
+    # not over a line at all, and the weighted mean says "centred, certain".
+    saturated: bool = False
 
 
 @dataclass(frozen=True)
@@ -33,14 +43,22 @@ class LineEstimator:
 
         weights = [1.0 - n for n in normalised]
         confidence = sum(weights)
+        # A line narrower than the array is what this is built to find, so the
+        # mean of the offsets is only meaningful while *some* sensor sees
+        # white. With every sensor dark the mean is exactly zero at maximum
+        # confidence -- the most reassuring reading the estimator can produce,
+        # and what the floor looks like when there is no floor.
+        saturated = all(n <= SATURATED for n in normalised)
         if confidence < self.min_confidence:
             # Too little of the line under the array to place it. The caller
             # decides how to recover; the estimator does not guess.
             return LineReading(
-                position=0.0, confidence=confidence, lost=True, normalised=normalised
+                position=0.0, confidence=confidence, lost=True,
+                normalised=normalised, saturated=saturated
             )
 
         position = sum(w * o for w, o in zip(weights, self.offsets)) / confidence
         return LineReading(
-            position=position, confidence=confidence, lost=False, normalised=normalised
+            position=position, confidence=confidence, lost=False,
+            normalised=normalised, saturated=saturated
         )

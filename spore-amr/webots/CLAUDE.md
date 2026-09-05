@@ -153,6 +153,18 @@ one — summary at zero steps — and the first row written after release raised
 own `held` flag for exactly this reason. Two states that both stop the motors
 are not the same state.
 
+**Off the ground plane reads as the best possible line.** Every IR sensor
+returns `black_ref`, so every weight is 1.0, and the weighted mean of the
+offsets is exactly 0.0 at the maximum confidence the array can produce:
+perfectly centred, total certainty. `lost` is built for *too little* line and
+has no notion of too much. A robot whose QR read failed at a boundary node
+sailed past it, off the plane, and drove straight for 150 s and 18 m reporting
+`lost_time_s: 0.0` — it believed it was on the line the entire time, and the
+telemetry agreed. `LineReading.saturated` names the condition and
+`SATURATED_BUDGET_M` bounds it: a perpendicular lane crossing and a marker tile
+both saturate the array legitimately, so only distance tells a crossing from a
+void. Any sensor reading that cannot fail is not a sensor reading.
+
 **A junction timeout must not discard a turn that was already answered.** The
 firmware waits at a node for the network layer, bounded by
 `junction_timeout_s`. It also rolls the last ~95 mm onto the node before
