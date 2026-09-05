@@ -108,6 +108,74 @@ WAREHOUSE_MAP = os.environ.get(
     os.path.join(os.path.dirname(__file__), "..", "shared", "warehouse-layout.json"),
 )
 
+# ---- Planning (PROTOCOL.md §16) -------------------------------------------------
+
+#: How many hops ahead a robot plans in detail and claims. Also the reach used
+#: to decide who needs to hear its claims (reservations/vicinity.py).
+K_COMMIT = int(os.environ.get("K_COMMIT", "8"))
+
+#: Clearance added to every peer claim, covering control latency and the error
+#: in estimating how fast anyone is going. Widening is always outward: over-
+#: reserving costs throughput, under-reserving costs a collision.
+PLAN_SAFETY = float(os.environ.get("PLAN_SAFETY", "0.25"))
+
+#: Plans further out than this are not worth timing — the world will have moved.
+PLAN_HORIZON = float(os.environ.get("PLAN_HORIZON", "180.0"))
+
+#: Longest single wait the search will consider at one node before deciding the
+#: route is not worth having.
+MAX_WAIT = float(os.environ.get("MAX_WAIT", "30.0"))
+
+#: Search budget. Bounds the worst case so one pathological request cannot eat
+#: the tick on a bot that has little CPU to spare.
+MAX_EXPANSIONS = int(os.environ.get("MAX_EXPANSIONS", "120000"))
+
+#: A wait longer than this makes the robot consider standing aside instead
+#: (PROTOCOL.md §16). Below it, waiting is simply cheaper than moving.
+T_YIELD_THRESHOLD = float(os.environ.get("T_YIELD_THRESHOLD", "4.0"))
+
+#: How far to look for somewhere to stand aside. Real yield bays are scarce —
+#: 15 on the whole floor — so the search falls back to junctions and then bays.
+YIELD_SEARCH_HOPS = int(os.environ.get("YIELD_SEARCH_HOPS", "8"))
+
+#: How long a robot sitting on its goal waits before asking again.
+T_ARRIVED_HOLD = float(os.environ.get("T_ARRIVED_HOLD", "2.0"))
+
+#: How long to hold when there is no route at all. Short: whatever is in the way
+#: is usually another robot that is about to move.
+T_BLOCKED_HOLD = float(os.environ.get("T_BLOCKED_HOLD", "1.0"))
+
+#: Longest single WAIT we issue. Must stay below the robot's socket timeout, or
+#: a held robot cannot tell us apart from a network layer that has died.
+T_MAX_HOLD = float(os.environ.get("T_MAX_HOLD", "4.0"))
+
+#: How many ticks a cheaper route must stay cheaper before we switch to it.
+#: Without this a robot rebuilds its route every tick and its intent becomes
+#: unreadable to the peers planning around it.
+PLAN_STABLE_TICKS = int(os.environ.get("PLAN_STABLE_TICKS", "3"))
+
+#: How much traffic beyond the reservation horizon pushes a route away, as a
+#: fraction of one straight hop.
+CONGESTION_WEIGHT = float(os.environ.get("CONGESTION_WEIGHT", "0.35"))
+
+#: Alternative routes kept per job, stored as diffs against the primary.
+ROUTE_ALTERNATES = int(os.environ.get("ROUTE_ALTERNATES", "3"))
+
+#: Distance tables cached per source node. Each is 2 bytes per node; the cache
+#: is bounded because an unbounded one reached ~33 MB on the real map.
+HOPS_CACHE_SIZE = int(os.environ.get("HOPS_CACHE_SIZE", "64"))
+
+#: Unix socket the robot's companion connects to for routing decisions.
+ROBOT_SOCKET = os.environ.get("ROBOT_SOCKET", "/tmp/spore-robot.sock")
+
+#: How long a robot blocks on a decision. We keep every WAIT under it.
+ROBOT_SOCKET_TIMEOUT = float(os.environ.get("ROBOT_SOCKET_TIMEOUT", "5.0"))
+
+#: A robot commanded to move but still on the same node after this is stalled
+#: (PROTOCOL.md §16): replan, then yield, then escalate.
+T_STALL = float(os.environ.get("T_STALL", str(6 * T_HB)))
+
+
 # ---- Reservations (PROTOCOL.md §15) ---------------------------------------------
 
 #: How often a bot tells its neighbours what it is holding. Defaults to T_HB so

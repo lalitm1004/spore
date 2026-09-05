@@ -193,6 +193,23 @@ class Config:
     stable_ticks: int = 3
     """...and must do so this many ticks running."""
 
+    yield_search_hops: int = 8
+    """How far to look for somewhere to stand aside before giving up. Beyond
+    this the drive to the bay costs more than the wait it saves."""
+
+    arrived_hold_ms: int = 2_000
+    """How long a robot sitting on its goal waits before asking again. It has
+    nowhere to be until a new job arrives."""
+
+    blocked_hold_ms: int = 1_000
+    """How long to hold when there is no route at all. Short, because the thing
+    in the way is usually another robot that is about to move."""
+
+    max_hold_ms: int = 4_000
+    """Longest single WAIT we will issue. Capped below the robot's socket
+    timeout so a held robot always comes back to ask again rather than deciding
+    the network layer has died."""
+
     obstruction_block_level: float = 0.7
     congestion_weight: float = 0.35
     """Scales the soft traffic penalty, as a fraction of one straight hop."""
@@ -208,6 +225,31 @@ class Config:
 
 
 DEFAULT_CONFIG = Config()
+
+
+def from_env() -> Config:
+    """Build the planner's tuning from `config.py`.
+
+    The fleet has one config file and it is env-driven (PROTOCOL.md §9); this
+    dataclass exists so the planner stays testable without environment
+    variables, not as a second place to tune things.
+    """
+    import config as fleet
+
+    return Config(
+        k_commit=fleet.K_COMMIT,
+        safety_ms=int(fleet.PLAN_SAFETY * 1000),
+        horizon_ms=int(fleet.PLAN_HORIZON * 1000),
+        max_wait_ms=int(fleet.MAX_WAIT * 1000),
+        max_expansions=fleet.MAX_EXPANSIONS,
+        yield_wait_threshold_ms=int(fleet.T_YIELD_THRESHOLD * 1000),
+        yield_search_hops=fleet.YIELD_SEARCH_HOPS,
+        arrived_hold_ms=int(fleet.T_ARRIVED_HOLD * 1000),
+        blocked_hold_ms=int(fleet.T_BLOCKED_HOLD * 1000),
+        max_hold_ms=int(fleet.T_MAX_HOLD * 1000),
+        stable_ticks=fleet.PLAN_STABLE_TICKS,
+        congestion_weight=fleet.CONGESTION_WEIGHT,
+    )
 
 
 # -- outputs -----------------------------------------------------------------
