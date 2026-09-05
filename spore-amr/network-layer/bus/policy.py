@@ -100,6 +100,11 @@ class VirtualNetworkInterceptor(grpc.ServerInterceptor):
             return True  # authenticated is enough; routing decides the rest
         if service == "fleet.BotService":
             return caller_role == "leader"
+        if service == "spore.network.v1.RobotNetwork":
+            # This bot's own robot, not a peer. It has no bot identity to check
+            # and no region to be in -- it is the machine this process exists to
+            # coordinate, and refusing it would strand it at a node.
+            return True
         if service == "fleet.AdminService":
             import config
             return config.ADMIN_ENABLED

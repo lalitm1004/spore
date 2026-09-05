@@ -354,7 +354,9 @@ def test_leader_migrates_by_abdicating_first(fleet):
 
 def test_run_loop_qr_region_change_drives_migration(fleet):
     src, dst, mover = _two_regions(fleet)
-    mover.on_qr_scan(node_id=77, region_id=2)  # robot reports a region-2 QR
+    # A QR scan reaching the bot the way one really does: a report, through
+    # the only ingress there is.
+    mover.report_robot_state(RobotState(latest_node_id=77, region_id=2))
     mover._tick_robot_state()
     assert mover.latest_node_id == 77 and mover.desired_region_id == 2 and mover.region_id == 14
     mover.migrator.tick()

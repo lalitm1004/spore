@@ -5,9 +5,10 @@ WHAT
     which turns one into the other.
 
 WHERE
-    Called by `planning.server` for every question a robot asks. The wire form
-    is newline-delimited JSON defined by `spore-amr/webots/robot/network.py`;
-    these are the typed mirrors, so nothing below this module parses JSON.
+    Called by `planning.robot_service` for every question a robot asks. The wire
+    form is `proto/robot.proto`; these are the planner's own shapes, so nothing
+    below this module touches protobuf. The mapping between them lives in one
+    place, and it is the only place that knows there is a wire at all.
 
 WHY
     The robot is blind by design. It arrives at a QR node, works out which turns
@@ -47,8 +48,7 @@ HOW — proceed, wait, yield, or reroute
 
 from __future__ import annotations
 
-import json
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from enum import StrEnum
 
 from planning.geometry import NodeType
@@ -57,42 +57,24 @@ from planning.topology import Topology
 from planning.traffic import Observation, TrafficView
 from planning.types import Config, PlanStatus
 
-TURNS = ("left", "straight", "right")
-
-
 @dataclass(frozen=True, slots=True)
 class Query:
     """What a robot asks on arriving at a node.
 
-    `available` is the turns that lead somewhere, resolved by the robot from the
-    shared map against the heading it arrived on — so it, not us, decides what
-    is physically possible.
+    `available` is the nodes it can legally reach from here, resolved by the
+    robot from its own map against the heading it arrived on — so it, not us,
+    decides what is physically possible. Nodes rather than turn names, because
+    left and right never cross the wire: we name a node and the robot derives
+    the bearing from the map it also holds, which is exact where a turn name is
+    a second, weaker description of geometry both ends already have.
     """
 
     query_id: int
     node_id: int
     node_type: str = "PT"
     region_id: int = 0
-    x_cm: float = 0.0
-    y_cm: float = 0.0
     heading_rad: float = 0.0
-    available: dict[str, int] = field(default_factory=dict)
-
-    @classmethod
-    def from_json(cls, text: str) -> Query:
-        d = json.loads(text)
-        node = d.get("node", {})
-        position = d.get("robot_position", {})
-        return cls(
-            query_id=int(d["query_id"]),
-            node_id=int(node["id"]),
-            node_type=str(node.get("node_type", "PT")),
-            region_id=int(node.get("region_id", 0)),
-            x_cm=float(position.get("x", 0.0)),
-            y_cm=float(position.get("y", 0.0)),
-            heading_rad=float(d.get("heading_rad", 0.0)),
-            available={k: int(v) for k, v in (d.get("available") or {}).items()},
-        )
+    available: tuple[int, ...] = ()
 
 
 class DecisionKind(StrEnum):
@@ -111,53 +93,34 @@ class DecisionKind(StrEnum):
 
 @dataclass(frozen=True, slots=True)
 class Decision:
-    """The answer. `turn` is empty only for WAIT, which names no lane."""
+    """The answer: a node to head for, or a reason to stay put.
+
+    `target_node_id` is 0 only for WAIT, which names no lane. There is no turn
+    here and there is none on the wire — see `Query.available`.
+    """
 
     query_id: int
     kind: DecisionKind = DecisionKind.PROCEED
-    turn: str = ""
     target_node_id: int = 0
     hold_ms: int = 0
     because: str = ""
 
-    def to_json(self) -> str:
-        # `kind`, `hold_ms` and `because` are additive: a robot reading only
-        # `turn` and `target_node_id` still behaves correctly for every moving
-        # kind. Only WAIT needs the new fields understood.
-        return json.dumps(
-            {
-                "schema_version": "v0.1.0",
-                "query_id": self.query_id,
-                "kind": str(self.kind),
-                "turn": self.turn,
-                "target_node_id": self.target_node_id,
-                "hold_ms": self.hold_ms,
-                "because": self.because,
-            },
-            separators=(",", ":"),
-        )
+
+def offers(query: Query, node_id: int) -> bool:
+    """Whether the robot said it can reach `node_id` from where it stands."""
+    return node_id in query.available
 
 
-def turn_for(query: Query, node_id: int) -> str | None:
-    """Which of the offered turns leads to `node_id`."""
-    for turn, destination in sorted(query.available.items()):
-        if destination == node_id:
-            return turn
-    return None
+def fallback_node(query: Query) -> int | None:
+    """Any node the robot did offer.
 
-
-def fallback_turn(query: Query) -> tuple[str, int] | None:
-    """Any legal turn, preferring straight on.
-
-    Used only when the node we wanted is not among the ones offered — our map
-    and the robot's disagree. Going somewhere recoverable beats standing still.
+    Used only when the one we wanted is not among them — our map and the
+    robot's disagree about what leaves this node. Going somewhere recoverable
+    beats standing still, and the lowest id is as good a choice as any: there
+    is nothing to prefer between lanes we did not plan for. Sorted so two bots
+    reading the same disagreement answer it the same way.
     """
-    for preferred in ("straight", "left", "right"):
-        if preferred in query.available:
-            return preferred, query.available[preferred]
-    for turn in sorted(query.available):
-        return turn, query.available[turn]
-    return None
+    return min(query.available) if query.available else None
 
 
 def outranked_by(mine: int, my_bot_id: int, theirs: int, their_bot_id: int) -> bool:
@@ -284,13 +247,13 @@ def decide(
             if spot is not None:
                 spot_id = graph.id_of(spot)
                 step = _first_step_towards(graph, graph.index(here.node_id), spot)
-                turn = turn_for(query, graph.id_of(step)) if step is not None else None
-                if turn is not None and traffic.is_free(step, here.t_in, ahead.t_out):
+                step_id = graph.id_of(step) if step is not None else None
+                if (step_id is not None and offers(query, step_id)
+                        and traffic.is_free(step, here.t_in, ahead.t_out)):
                     return Decision(
                         query_id=query.query_id,
                         kind=DecisionKind.YIELD,
-                        turn=turn,
-                        target_node_id=graph.id_of(step),
+                        target_node_id=step_id,
                         because=f"giving way to {sorted(blockers)} at node {spot_id}",
                     )
         # We win the comparison, or there is nowhere to stand aside. Hold the
@@ -310,33 +273,29 @@ def decide(
             because="short wait for the lane ahead",
         )
 
-    turn = turn_for(query, ahead.node_id)
-    if turn is None:
+    if not offers(query, ahead.node_id):
         # Our map and the robot's disagree about what leaves this node. Answer
-        # with something legal: a wrong turn is recoverable next node, silence
-        # is not.
-        alternative = fallback_turn(query)
-        if alternative is None:
+        # with something legal: a wrong lane is recoverable at the next node,
+        # silence is not.
+        target = fallback_node(query)
+        if target is None:
             return Decision(
                 query_id=query.query_id,
                 kind=DecisionKind.WAIT,
                 hold_ms=config.blocked_hold_ms,
-                because="the robot offered no turns",
+                because="the robot offered nowhere to go",
             )
-        turn, target = alternative
         return Decision(
             query_id=query.query_id,
             kind=DecisionKind.REROUTE,
-            turn=turn,
             target_node_id=target,
-            because=f"node {ahead.node_id} was not among the turns offered",
+            because=f"node {ahead.node_id} was not among the nodes offered",
         )
 
     changed = last_target is not None and last_target != ahead.node_id
     return Decision(
         query_id=query.query_id,
         kind=DecisionKind.REROUTE if changed else DecisionKind.PROCEED,
-        turn=turn,
         target_node_id=ahead.node_id,
         because="rerouted" if changed else "",
     )

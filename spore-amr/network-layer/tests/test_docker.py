@@ -16,7 +16,6 @@ than refusal, so allow ~10 s. Waits below are generous on purpose.
 """
 from __future__ import annotations
 
-import json
 import os
 import sys
 import time
@@ -30,7 +29,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import up
 from bus.policy import rpc_metadata
-from proto import fleet_pb2, fleet_pb2_grpc
+from proto import fleet_pb2, fleet_pb2_grpc, robot_pb2, robot_pb2_grpc
 
 pytestmark = pytest.mark.docker
 
@@ -39,6 +38,10 @@ pytestmark = pytest.mark.docker
 # grid_field is split across 5/6/7 -- 6 is the middle band.
 PARK, GRID = 2, 6
 ADMIN_MD = rpc_metadata(999, 0, "admin")
+#: A robot is not a bot: it has no identity in the fleet and no region to be
+#: in. The policy admits its own robot unconditionally, so this is only enough
+#: for the interceptor to have something to read.
+ROBOT_MD = rpc_metadata(0, 0, "robot")
 
 
 def _docker_client():
@@ -143,29 +146,42 @@ class DockerFleet:
         return stub.SubmitJob(fleet_pb2.Job(job_id=job_id, pickup_node=pickup, dropoff_node=dropoff),
                               timeout=10, metadata=rpc_metadata(999, 0, "orders"))
 
-    def ask(self, c, query: dict, timeout: int = 10) -> dict | None:
-        """Play the companion: ask this bot for a turn on its own socket.
+    def report(self, c, message, timeout: int = 10):
+        """Play the companion: one turn of the real robot stream.
 
-        Run inside the container, because a unix socket is not reachable from
-        the host. This is the real link -- the same socket `planning/server.py`
-        binds and a real companion dials -- so what it exercises is the whole
-        path: query in, plan, decision out.
+        `RobotNetwork.Session` is the canonical link -- the same service a
+        companion dials -- so this exercises the whole path: a report in,
+        position applied, and where it asked a question, plan and answer out.
+
+        Reaching it from the host is the point of moving off a unix socket: a
+        socket had to be spoken to from inside the container, and that meant
+        `docker exec` and a fresh python interpreter for every single question.
+
+        Returns the answer, or None when the message was telemetry and asked
+        nothing.
         """
-        script = (
-            "import socket,json,sys\n"
-            "s=socket.socket(socket.AF_UNIX,socket.SOCK_STREAM);s.settimeout(%d)\n"
-            "s.connect('/tmp/spore-robot.sock')\n"
-            "s.sendall((json.dumps(%r)+chr(10)).encode())\n"
-            "b=b''\n"
-            "while chr(10).encode() not in b: b+=s.recv(4096)\n"
-            "sys.stdout.write(b.split(chr(10).encode())[0].decode())\n"
-        ) % (timeout, query)
-        result = c.exec_run(["python3", "-c", script])
-        text = result.output.decode().strip()
-        try:
-            return json.loads(text)
-        except json.JSONDecodeError:
-            return None
+        stub = robot_pb2_grpc.RobotNetworkStub(grpc.insecure_channel(self.endpoint(c)))
+        for reply in stub.Session(iter([message]), timeout=timeout, metadata=ROBOT_MD):
+            return reply
+        return None
+
+    def converse(self, c, messages, timeout: int = 20) -> list:
+        """A whole shift's worth of talking on **one** stream.
+
+        The point of a long-lived stream is that it is long-lived: a connection
+        per question would be pure overhead on hardware that has none to spare.
+        Anything asserting about the link itself -- that it survives a message
+        it cannot use, that it serves fifty questions, what one costs -- has to
+        speak on a single stream or it is measuring connection setup.
+        """
+        stub = robot_pb2_grpc.RobotNetworkStub(grpc.insecure_channel(self.endpoint(c)))
+        return list(stub.Session(iter(messages), timeout=timeout, metadata=ROBOT_MD))
+
+    def ask(self, c, message, timeout: int = 10):
+        """`report`, for a message that is a question and must be answered."""
+        reply = self.report(c, message, timeout=timeout)
+        assert reply is not None, "a robot that asked was answered with silence"
+        return reply
 
     def reset(self, cs, nodes=None) -> None:
         """Put shared bots back to a known state between scenarios.
@@ -611,28 +627,53 @@ def test_two_bots_on_one_node_settle_on_a_single_holder(fleet):
 # container, which is the same link a real robot uses. What they exercise is the
 # whole path -- query in, plan against live traffic, decision out.
 
-def _query(node_id: int, available: dict, query_id: int = 1, region: int = PARK) -> dict:
-    return {
-        "query_id": query_id,
-        "node": {"id": node_id, "node_type": "PT", "region_id": region},
-        "robot_position": {"x": 0.0, "y": 0.0},
-        "heading_rad": 0.0,
-        "available": available,
-    }
+_KIND_NAME = {
+    # UNSPECIFIED reads as PROCEED on purpose: the wire lets a decision leave
+    # the field unset, and a robot that sees nothing there takes the lane.
+    robot_pb2.KIND_UNSPECIFIED: "PROCEED",
+    robot_pb2.KIND_PROCEED: "PROCEED",
+    robot_pb2.KIND_REROUTE: "REROUTE",
+    robot_pb2.KIND_WAIT: "WAIT",
+    robot_pb2.KIND_YIELD: "YIELD",
+}
 
 
-def _neighbours(node_id: int) -> dict:
-    """Turns out of a node, named the way a robot would name them."""
+def _kind(reply) -> str:
+    """The answer's kind, by name, so scenarios read as behaviour."""
+    return _KIND_NAME[reply.kind]
+
+
+def _query(node_id: int, available, query_id: int = 1, region: int = PARK,
+           battery: float = 90.0):
+    """A robot stopped at a node, asking which way to go.
+
+    `available` is what makes it a question rather than telemetry. The nodes in
+    it are the robot's own answer to what is physically reachable from here --
+    it holds the map and knows the heading it arrived on, so that is its call
+    and not ours.
+    """
+    return robot_pb2.RobotToNetwork(
+        query_id=query_id,
+        latest_node_id=node_id,
+        region_id=region,
+        heading_rad=0.0,
+        available=list(available),
+        mission=robot_pb2.Mission(idle=robot_pb2.Idle()),
+        telemetry=robot_pb2.Telemetry(battery=robot_pb2.Battery(percentage=battery)),
+    )
+
+
+def _neighbours(node_id: int):
+    """The nodes reachable from one node, as the robot would offer them.
+
+    Node ids, not turn names: left and right never cross this wire. The network
+    names a node and the robot derives the bearing from the map it also holds,
+    which is exact -- lanes are straight.
+    """
     from warehouse.map import WarehouseMap
     import config
 
-    warehouse = WarehouseMap.load(config.WAREHOUSE_MAP)
-    # left / straight / right is the whole vocabulary: a robot never gets
-    # offered the lane it arrived on, so a degree-4 node still has three
-    # choices. `strict=False` is deliberate and this comment is why -- without
-    # it, a reader would reasonably suspect a dropped turn.
-    names = ("straight", "left", "right")
-    return dict(zip(names, warehouse.neighbours(node_id), strict=False))
+    return tuple(WarehouseMap.load(config.WAREHOUSE_MAP).neighbours(node_id))
 
 
 # -----------------------------------------------------------------------------
@@ -651,8 +692,8 @@ def test_A1_a_bot_with_no_job_still_answers(one_bot):
 
     reply = fleet.ask(cs[0], _query(node, _neighbours(node)))
     assert reply is not None, "the bot said nothing at all"
-    assert reply["kind"] == "WAIT"
-    assert reply["hold_ms"] > 0, "a zero hold would have it ask in a tight loop"
+    assert _kind(reply) == "WAIT"
+    assert reply.hold_ms > 0, "a zero hold would have it ask in a tight loop"
 
 
 @pytest.mark.docker
@@ -661,9 +702,9 @@ def test_A2_a_bot_given_a_job_is_routed_towards_it(fleet):
     start = _map_nodes(PARK, 8)[0]
     cs, holder = _routing_fleet(fleet, "A2", start)
     reply = fleet.ask(holder, _query(start, _neighbours(start)))
-    assert reply["kind"] in ("PROCEED", "REROUTE", "WAIT", "YIELD"), reply
-    if reply["kind"] in ("PROCEED", "REROUTE"):
-        assert reply["target_node_id"] in _neighbours(start).values(), \
+    assert _kind(reply) in ("PROCEED", "REROUTE", "WAIT", "YIELD"), reply
+    if _kind(reply) in ("PROCEED", "REROUTE"):
+        assert reply.target_node_id in _neighbours(start).values(), \
             "it must name a lane the robot said exists"
     fleet.assert_no_overlap(cs)
 
@@ -690,8 +731,8 @@ def test_A4_a_changed_route_is_announced_as_a_reroute(fleet):
     # announced as changed.
     second = fleet.ask(holder, _query(start, _neighbours(start), query_id=2))
     assert first is not None and second is not None
-    if second["kind"] in ("PROCEED", "REROUTE"):
-        assert second["kind"] == "PROCEED", \
+    if _kind(second) in ("PROCEED", "REROUTE"):
+        assert _kind(second) == "PROCEED", \
             "an unchanged route must not be reported as a reroute"
 
 
@@ -713,8 +754,8 @@ def test_A3_a_bot_standing_on_its_goal_is_told_to_wait(fleet):
     holder = _holder_of(fleet, cs, "A3")
     assert holder is not None
     reply = fleet.ask(holder, _query(goal, _neighbours(goal)))
-    assert reply["kind"] == "WAIT", reply
-    assert reply["hold_ms"] > 0
+    assert _kind(reply) == "WAIT", reply
+    assert reply.hold_ms > 0
 
 
 @pytest.mark.docker
@@ -723,37 +764,37 @@ def test_A5_a_query_offering_turns_we_did_not_plan_is_still_answered(one_bot):
     next node; silence is not recoverable at all."""
     fleet, cs = one_bot
     node = _map_nodes(PARK, 1)[0]
-    reply = fleet.ask(cs[0], _query(node, {"left": 999999}))
+    reply = fleet.ask(cs[0], _query(node, (999999,)))
     assert reply is not None, "a disagreement must not silence the bot"
-    assert reply["kind"] in ("WAIT", "PROCEED", "REROUTE", "YIELD")
+    assert _kind(reply) in ("WAIT", "PROCEED", "REROUTE", "YIELD")
 
 
 @pytest.mark.docker
-def test_A6_a_malformed_query_does_not_break_the_link(one_bot):
-    """One bad line must not cost the robot the rest of its shift."""
-    _, cs = one_bot
+def test_A6_a_message_we_cannot_use_does_not_break_the_link(one_bot):
+    """One bad message must not cost the robot the rest of its shift.
+
+    A typed wire moves this failure up a layer rather than removing it. There
+    is no longer such a thing as a malformed line -- gRPC rejects that at the
+    transport -- but there is still a message that parses and makes no sense:
+    a node this map has never heard of, offering exits to nodes that do not
+    exist. The stream has to survive it and answer the next question.
+    """
+    fleet, cs = one_bot
     node = _map_nodes(PARK, 1)[0]
-    script = (
-        "import socket,json,sys\n"
-        "s=socket.socket(socket.AF_UNIX,socket.SOCK_STREAM);s.settimeout(10)\n"
-        "s.connect('/tmp/spore-robot.sock')\n"
-        "s.sendall(b'{not json\\n')\n"
-        "s.sendall((json.dumps(%r)+chr(10)).encode())\n"
-        "b=b''\n"
-        "while chr(10).encode() not in b: b+=s.recv(4096)\n"
-        "sys.stdout.write(b.split(chr(10).encode())[0].decode())\n"
-    ) % _query(node, _neighbours(node), query_id=7)
-    out = cs[0].exec_run(["python3", "-c", script]).output.decode().strip()
-    assert out, "the connection died on the malformed line"
-    assert json.loads(out)["query_id"] == 7
+    replies = fleet.converse(cs[0], [
+        _query(999999, (999998,), query_id=6),
+        _query(node, _neighbours(node), query_id=7),
+    ])
+    assert len(replies) == 2, "the stream died on the message it could not use"
+    assert replies[-1].query_id == 7
 
 
 @pytest.mark.docker
 def test_A7_a_node_this_map_has_never_heard_of_is_still_answered(one_bot):
     fleet, cs = one_bot
-    reply = fleet.ask(cs[0], _query(999999, {"left": 999998}))
+    reply = fleet.ask(cs[0], _query(999999, (999998,)))
     assert reply is not None
-    assert reply["kind"] in ("WAIT", "PROCEED", "REROUTE", "YIELD")
+    assert _kind(reply) in ("WAIT", "PROCEED", "REROUTE", "YIELD")
 
 
 @pytest.mark.docker
@@ -762,10 +803,10 @@ def test_A8_a_bot_with_no_map_answers_and_still_leads(fleet):
     cs = fleet.launch(1, PARK, WAREHOUSE_MAP="/nonexistent/warehouse.json", **FAST_TIMINGS)
     assert wait_until(lambda: fleet.converged(cs, PARK), 30, what="converge without a map")
 
-    reply = fleet.ask(cs[0], _query(434, {"left": 435}))
+    reply = fleet.ask(cs[0], _query(434, (435,)))
     assert reply is not None
-    assert reply["kind"] == "WAIT"
-    assert "map" in reply["because"], reply
+    assert _kind(reply) == "WAIT"
+    assert "map" in reply.because, reply
 
 
 @pytest.mark.docker
@@ -782,24 +823,15 @@ def test_A9_the_query_id_comes_back_exactly(one_bot):
 def test_A10_one_connection_serves_a_whole_shift(one_bot):
     """A socket per question would be pure overhead on hardware that has none
     to spare, so the companion connects once and keeps it."""
-    _, cs = one_bot
+    fleet, cs = one_bot
     node = _map_nodes(PARK, 1)[0]
-    script = (
-        "import socket,json,sys\n"
-        "s=socket.socket(socket.AF_UNIX,socket.SOCK_STREAM);s.settimeout(15)\n"
-        "s.connect('/tmp/spore-robot.sock')\n"
-        "q=%r\n"
-        "n=0\n"
-        "for i in range(50):\n"
-        "    q['query_id']=i+1\n"
-        "    s.sendall((json.dumps(q)+chr(10)).encode())\n"
-        "    b=b''\n"
-        "    while chr(10).encode() not in b: b+=s.recv(4096)\n"
-        "    n+=1\n"
-        "sys.stdout.write(str(n))\n"
-    ) % _query(node, _neighbours(node))
-    out = cs[0].exec_run(["python3", "-c", script]).output.decode().strip()
-    assert out.endswith("50"), out
+    lanes = _neighbours(node)
+    replies = fleet.converse(
+        cs[0], [_query(node, lanes, query_id=i + 1) for i in range(50)])
+
+    assert len(replies) == 50
+    assert [r.query_id for r in replies] == list(range(1, 51)), \
+        "answers came back out of order, or one went missing"
 
 
 def _holder_of(fleet, cs, job_id: str):
@@ -922,7 +954,7 @@ def _planned(reply, where: str = ""):
     rather than skipping its own assertion.
     """
     assert reply is not None, f"no answer at all {where}".strip()
-    assert reply.get("because") != "no job", \
+    assert reply.because != "no job", \
         f"the bot had no goal, so the planner was never asked {where}".strip()
     return reply
 
@@ -934,7 +966,7 @@ def test_C1_a_job_becomes_a_sequence_of_turns(fleet):
     cs, holder = _routing_fleet(fleet, "C1", route[0])
     answers = fleet.decisions(holder, route)
     assert all(a is not None for a in answers), "a node went unanswered"
-    assert all(a["kind"] in ("PROCEED", "REROUTE", "WAIT", "YIELD") for a in answers)
+    assert all(_kind(a) in ("PROCEED", "REROUTE", "WAIT", "YIELD") for a in answers)
     fleet.assert_no_overlap(cs)
 
 
@@ -963,7 +995,7 @@ def test_C2_the_goal_moves_to_the_dropoff_once_the_cargo_is_aboard(fleet):
 
     reply = fleet.ask(holder, _query(pickup, _neighbours(pickup)))
     assert reply is not None
-    assert reply["kind"] != "WAIT" or "goal" not in reply["because"], \
+    assert _kind(reply) != "WAIT" or "goal" not in reply.because, \
         "it should now be heading for the dropoff, not sitting on its goal"
 
 
@@ -983,8 +1015,8 @@ def test_C3_a_neighbours_claim_is_respected(fleet):
                       what="the neighbour's claim to arrive")
 
     reply = _planned(fleet.ask(ours_c, _query(ours, _neighbours(ours))))
-    if reply["kind"] in ("PROCEED", "REROUTE"):
-        assert reply["target_node_id"] != theirs, "it drove into a node a peer holds"
+    if _kind(reply) in ("PROCEED", "REROUTE"):
+        assert reply.target_node_id != theirs, "it drove into a node a peer holds"
 
 
 @pytest.mark.docker
@@ -1029,25 +1061,20 @@ def test_C6_a_flat_battery_waits_where_a_charged_one_would_go_round(two_bots):
 
 @pytest.mark.docker
 def test_C7_a_decision_lands_well_inside_the_tick(two_bots):
-    """Measured inside the container, so it is planning time rather than
-    docker exec overhead."""
+    """Twenty questions on one stream, so the number is planning time and not
+    twenty connection setups. Measured from the host now that the link is
+    reachable from one -- that adds a loopback hop per question, which makes
+    this a ceiling on planning time rather than an exact figure."""
     fleet, cs = two_bots
     fleet.reset(cs)
     node = _map_nodes(PARK, 1)[0]
-    script = (
-        "import socket,json,time,sys\n"
-        "s=socket.socket(socket.AF_UNIX,socket.SOCK_STREAM);s.settimeout(15)\n"
-        "s.connect('/tmp/spore-robot.sock')\n"
-        "q=%r\n"
-        "t=time.monotonic()\n"
-        "for i in range(20):\n"
-        "    q['query_id']=i+1\n"
-        "    s.sendall((json.dumps(q)+chr(10)).encode())\n"
-        "    b=b''\n"
-        "    while chr(10).encode() not in b: b+=s.recv(4096)\n"
-        "sys.stdout.write('%%.1f' %% ((time.monotonic()-t)*1000/20))\n"
-    ) % _query(node, _neighbours(node))
-    per_ask_ms = float(cs[0].exec_run(["python3", "-c", script]).output.decode().strip())
+    lanes = _neighbours(node)
+    questions = [_query(node, lanes, query_id=i + 1) for i in range(20)]
+
+    started = time.monotonic()
+    replies = fleet.converse(cs[0], questions)
+    per_ask_ms = (time.monotonic() - started) * 1000 / len(questions)
+    assert len(replies) == 20
     print(f"\n  C7: {per_ask_ms:.1f} ms per decision")
     assert per_ask_ms < 200, f"{per_ask_ms:.1f} ms is too slow to answer at every node"
 
@@ -1064,8 +1091,8 @@ def test_C8_an_unreachable_goal_is_said_out_loud(fleet):
 
     reply = fleet.ask(cs[0], _query(node, _neighbours(node)))
     assert reply is not None
-    assert reply["kind"] == "WAIT"
-    assert reply["because"], "a wait with no reason is a wait nobody can debug"
+    assert _kind(reply) == "WAIT"
+    assert reply.because, "a wait with no reason is a wait nobody can debug"
 
 
 # -----------------------------------------------------------------------------
@@ -1417,7 +1444,7 @@ def test_D6_the_link_survives_a_companion_that_goes_away(one_bot):
     # reconnection by definition.
     second = fleet.ask(cs[0], _query(node, _neighbours(node), query_id=2))
     assert second is not None, "the listener did not survive the first companion leaving"
-    assert second["query_id"] == 2
+    assert second.query_id == 2
 
 
 @pytest.mark.docker
@@ -1500,8 +1527,8 @@ def test_E4_a_following_bot_does_not_close_up_on_the_one_ahead(fleet):
                       20, what="the leader's claim to reach the follower")
 
     reply = _planned(fleet.ask(follower_c, _query(follower_node, _neighbours(follower_node))))
-    if reply["kind"] in ("PROCEED", "REROUTE"):
-        assert reply["target_node_id"] != leader_node, "it drove into an occupied node"
+    if _kind(reply) in ("PROCEED", "REROUTE"):
+        assert reply.target_node_id != leader_node, "it drove into an occupied node"
     fleet.assert_no_overlap(cs)
 
 
@@ -1522,17 +1549,17 @@ def test_F2_an_obstruction_is_routed_around(fleet):
     cs, ours = _routing_fleet(fleet, "F2", node)
 
     before = _planned(fleet.ask(ours, _query(node, _neighbours(node))), "before the block")
-    assert before["kind"] in ("PROCEED", "REROUTE"), \
+    assert _kind(before) in ("PROCEED", "REROUTE"), \
         f"nothing was in the way, so there is a lane to block; got {before}"
-    blocked = before["target_node_id"]
+    blocked = before.target_node_id
 
     fleet.obstruct(ours, blocked, level=1.0)
     after = _planned(fleet.ask(ours, _query(node, _neighbours(node), query_id=2)),
                      "after the block")
-    assert after["kind"] in ("PROCEED", "REROUTE", "WAIT", "YIELD"), \
+    assert _kind(after) in ("PROCEED", "REROUTE", "WAIT", "YIELD"), \
         "an obstruction is not a reason to go silent"
-    if after["kind"] in ("PROCEED", "REROUTE"):
-        assert after["target_node_id"] != blocked, "it drove into a node reported blocked"
+    if _kind(after) in ("PROCEED", "REROUTE"):
+        assert after.target_node_id != blocked, "it drove into a node reported blocked"
     fleet.obstruct(ours, blocked, level=0.0)
 
 
@@ -1551,11 +1578,11 @@ def test_F3_clearing_an_obstruction_opens_the_lane_again(fleet):
     cleared = _planned(fleet.ask(ours, _query(node, _neighbours(node), query_id=2)),
                        "once cleared")
 
-    if blocked["kind"] in ("PROCEED", "REROUTE"):
-        assert blocked["target_node_id"] != lane
+    if _kind(blocked) in ("PROCEED", "REROUTE"):
+        assert blocked.target_node_id != lane
     # With nothing in the way the lane is allowed again; the point is that the
     # obstruction stopped applying, not which lane wins.
-    assert cleared["kind"] in ("PROCEED", "REROUTE", "WAIT", "YIELD")
+    assert _kind(cleared) in ("PROCEED", "REROUTE", "WAIT", "YIELD")
 
 
 @pytest.mark.docker
@@ -1597,9 +1624,9 @@ def test_F6_a_peers_claim_between_two_questions_changes_the_answer(fleet):
     other_c = next(c for c in cs if c is not ours_c)
 
     first = _planned(fleet.ask(ours_c, _query(ours, _neighbours(ours))), "on the first ask")
-    assert first["kind"] in ("PROCEED", "REROUTE"), \
+    assert _kind(first) in ("PROCEED", "REROUTE"), \
         f"nothing was in the way, so there is a lane to contest; got {first}"
-    contested = first["target_node_id"]
+    contested = first.target_node_id
 
     fleet.inject(other_c, latest_node_id=contested, region_id=PARK, battery=90.0,
                  state="IDLE", mission="IDLE")
@@ -1611,8 +1638,8 @@ def test_F6_a_peers_claim_between_two_questions_changes_the_answer(fleet):
 
     second = _planned(fleet.ask(ours_c, _query(ours, _neighbours(ours), query_id=2)),
                       "on the second ask")
-    if second["kind"] in ("PROCEED", "REROUTE"):
-        assert second["target_node_id"] != contested, \
+    if _kind(second) in ("PROCEED", "REROUTE"):
+        assert second.target_node_id != contested, \
             "it kept driving at a node a peer had since claimed"
 
 
@@ -1658,7 +1685,7 @@ def test_G1_the_free_bot_gives_way_to_the_one_carrying_cargo(fleet):
 
     reply = fleet.ask(free, _query(ours, _neighbours(ours)))
     assert reply is not None
-    assert reply["kind"] != "PROCEED" or reply["target_node_id"] != theirs, \
+    assert _kind(reply) != "PROCEED" or reply.target_node_id != theirs, \
         "the free bot drove at a robot carrying cargo"
 
 
@@ -1681,7 +1708,7 @@ def test_G2_the_lower_bot_id_holds_when_ranks_are_equal(fleet):
 
     reply = fleet.ask(lower, _query(corridor[3], _neighbours(corridor[3])))
     assert reply is not None
-    assert reply["kind"] != "YIELD", "the bot that wins the tiebreak should hold, not give way"
+    assert _kind(reply) != "YIELD", "the bot that wins the tiebreak should hold, not give way"
 
 
 @pytest.mark.docker
@@ -1701,7 +1728,7 @@ def test_G7_exactly_one_side_of_a_contest_gives_way(fleet):
     a = fleet.ask(cs[0], _query(corridor[3], _neighbours(corridor[3])))
     b = fleet.ask(cs[1], _query(corridor[4], _neighbours(corridor[4])))
     assert a is not None and b is not None
-    yields = [r["kind"] == "YIELD" for r in (a, b)]
+    yields = [_kind(r) == "YIELD" for r in (a, b)]
     assert not all(yields), "both gave way, so nobody moves"
     fleet.assert_no_overlap(cs)
 

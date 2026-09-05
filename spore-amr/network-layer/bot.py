@@ -83,7 +83,6 @@ from planning.decide import Decision, DecisionKind, Query
 from planning.geometry import heading_from_radians
 from planning.graph import Graph
 from planning.planner import Planner
-from planning.server import RobotLink
 from planning.topology import Topology
 from planning.types import Goal, Obstruction, Request, Reservation, SelfState
 from planning.types import from_env as planning_config
@@ -91,7 +90,8 @@ from reservations import now_ms
 from reservations.ledger import ReservationLedger
 from reservations.sender import ReservationSender
 from reservations.server import ReservationServicer
-from proto import fleet_pb2, fleet_pb2_grpc
+from planning.robot_service import RobotNetworkServicer
+from proto import fleet_pb2, fleet_pb2_grpc, robot_pb2_grpc
 from warehouse.map import WarehouseMap
 
 # Messages already carry "bot-N:"; one process is one bot, so no prefix here
@@ -164,21 +164,38 @@ class RobotSource(Protocol):
         ...
 
 
-class QueueRobotSource:
-    """Default `RobotSource`: a thread-safe queue anything can push into.
-    Tests push `RobotState`s; a real robot bridge would too."""
+class LatestRobotState:
+    """Default `RobotSource`: a slot holding the newest report, and only that.
+
+    A slot rather than a queue, and the difference matters. The run loop drains
+    one item per tick (`T_HB`, a second), while a robot on a stream reports
+    every marker and every status beat. A FIFO under that would grow without
+    bound and hand the loop positions the robot left minutes ago -- a bot
+    steadily more confident about somewhere the robot no longer is.
+
+    Nothing downstream wants the ones in between. `latest_node_id` is a
+    position, not an event log, and the trail it feeds only records *distinct*
+    nodes anyway. So a later report simply replaces an unread earlier one.
+    """
 
     def __init__(self) -> None:
-        self._q: queue.Queue[RobotState] = queue.Queue()
+        self._lock = threading.Lock()
+        self._latest: RobotState | None = None
+        #: How many reports were replaced before the loop could read them.
+        #: Not an error -- it is the design -- but a number worth being able
+        #: to see if a fleet ever looks like it is lagging its robots.
+        self.superseded = 0
 
     def push(self, state: RobotState) -> None:
-        self._q.put(state)
+        with self._lock:
+            if self._latest is not None:
+                self.superseded += 1
+            self._latest = state
 
     def poll(self) -> RobotState | None:
-        try:
-            return self._q.get_nowait()
-        except queue.Empty:
-            return None
+        with self._lock:
+            state, self._latest = self._latest, None
+            return state
 
 
 # ---------------------------------------------------------------------------
@@ -251,7 +268,7 @@ class Bot:
         )
         self.migrator = Migrator(self)
         self.dispatcher = Dispatcher(self)
-        self._robot_source = robot_source or QueueRobotSource()
+        self._robot_source = robot_source or LatestRobotState()
         self._robot_sink = robot_sink or QueueRobotSink()
         # Reservations are the one channel that does not go through a leader
         # (PROTOCOL.md §7, §15), so every bot holds its own ledger and talks
@@ -285,9 +302,6 @@ class Bot:
         self._nav_node: int = 0
         self._nav_since: float = time.monotonic()
         self._nav_strikes: int = 0
-        self._robot_link = RobotLink(
-            config.ROBOT_SOCKET, self._route, bot_id=self.bot_id
-        )
         self._hb_sender = HeartbeatSender(self)
         self._leader_exchange = LeaderExchangeSender(self)
         self._grpc_server: grpc.Server | None = None
@@ -524,7 +538,6 @@ class Bot:
         # Refuse to boot on a configuration that cannot work, rather than
         # running and misbehaving in a way that looks like something else.
         config.validate(getattr(self.graph, "node_spacing", None))
-        self._robot_link.start()
         signal.signal(signal.SIGTERM, self._handle_signal)
         signal.signal(signal.SIGINT, self._handle_signal)
         self._run_loop()
@@ -632,9 +645,21 @@ class Bot:
             my_bot_id=self.bot_id, my_rank=self._yield_rank(),
             config=self.planning, last_target=self._last_target,
         )
-        if decision.turn:
+        # Remember where we sent it, so the next answer can tell a route that
+        # changed from one that did not. A WAIT names no node and must not
+        # clear that memory: the robot is still headed where it was.
+        if decision.target_node_id:
             self._last_target = decision.target_node_id
         return decision
+
+    def report_robot_state(self, state: RobotState) -> None:
+        """Take one report from the robot. **The only way position gets in.**
+
+        Handed to the source rather than written straight onto the bot, so the
+        run loop stays the single writer of `latest_node_id` and `node_trail`
+        and a report arriving mid-tick cannot half-apply.
+        """
+        self._robot_source.push(state)
 
     def set_obstruction(self, node_id: int, level: float) -> None:
         """Mark a node blocked, or clear it with a level of zero."""
@@ -948,6 +973,16 @@ class Bot:
         fleet_pb2_grpc.add_BotServiceServicer_to_server(BotServicer(self), self._grpc_server)
         fleet_pb2_grpc.add_ReservationServiceServicer_to_server(ReservationServicer(self.ledger), self._grpc_server)
         fleet_pb2_grpc.add_AdminServiceServicer_to_server(AdminServicer(self), self._grpc_server)
+        # The robot link. On this bot's own server, so a robot talks to its own
+        # coordinator and nothing else -- see docs/boundary.md.
+        self._robot_service = RobotNetworkServicer(
+            router=self._route,
+            report=self.report_robot_state,
+            obstruct=self.set_obstruction,
+            state_factory=RobotState,
+            bot_id=self.bot_id,
+        )
+        robot_pb2_grpc.add_RobotNetworkServicer_to_server(self._robot_service, self._grpc_server)
 
         bind = f"{config.GRPC_HOST}:{config.GRPC_PORT}"
         # add_insecure_port returns 0 on bind failure rather than raising.
@@ -989,15 +1024,6 @@ class Bot:
         else:
             log.info("bot-%d: we outrank conflicting leader bot-%d, they should yield", self.bot_id, other_bot_id)
 
-    def on_qr_scan(self, node_id: int, region_id: int) -> None:
-        """Convenience for tests / simple bridges: feed a QR scan into the
-        robot source as if the robot reported it."""
-        if isinstance(self._robot_source, QueueRobotSource):
-            self._robot_source.push(RobotState(
-                latest_node_id=node_id, region_id=region_id, battery=self.battery,
-                state=self.state, mission=self.mission, fault=self.fault,
-            ))
-
     # =====================================================================
     # Shutdown
     # =====================================================================
@@ -1007,9 +1033,9 @@ class Bot:
         so we never leave a region mid-election, then hands off or departs."""
         log.info("bot-%d: shutting down gracefully", self.bot_id)
         self.election.departing = True
-        # Stop answering the robot first: a decision issued while we are leaving
-        # would send it somewhere nobody is left to coordinate.
-        self._robot_link.stop()
+        # A decision issued while we are leaving would send the robot somewhere
+        # nobody is left to coordinate, so the robot stream goes down with the
+        # rest of the server below rather than outliving us.
 
         deadline = time.monotonic() + config.T_SETTLE
         while not self.leader_settled() and time.monotonic() < deadline:

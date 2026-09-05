@@ -1,7 +1,7 @@
 """The router end to end, in process: query in, decision out.
 
 WHAT
-    `Bot._route` -- the callable `planning.server.RobotLink` hands every query
+    `Bot._route` -- the callable `planning.robot_service` hands every question
     to. It builds the traffic view, calls the planner and turns the plan into
     one `Decision`.
 
@@ -35,15 +35,18 @@ def router():
     return botmod.Bot()
 
 
-def _junction(bot, min_degree: int = 2) -> tuple[int, dict[str, int]]:
-    """A node with a real choice of lanes, and those lanes named as a robot
-    would name them. A node with one way out cannot show a detour."""
+def _junction(bot, min_degree: int = 2) -> tuple[int, tuple[int, ...]]:
+    """A node with a real choice of lanes, and the nodes those lanes reach.
+
+    A node with one way out cannot show a detour. The lanes are node ids, not
+    turn names, because that is what a robot offers: it holds the map and knows
+    the heading it arrived on, so what is reachable is its call.
+    """
     graph = bot.graph
     for index in range(graph.n):
-        lanes = [graph.id_of(v) for v, _ in graph.neighbours(index)]
+        lanes = tuple(graph.id_of(v) for v, _ in graph.neighbours(index))
         if len(lanes) >= min_degree:
-            names = ("straight", "left", "right")
-            return graph.id_of(index), dict(zip(names, lanes, strict=False))
+            return graph.id_of(index), lanes
     raise AssertionError("no node on this map offers a choice")
 
 

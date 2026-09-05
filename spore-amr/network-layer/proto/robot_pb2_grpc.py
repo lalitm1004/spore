@@ -3,7 +3,7 @@
 import grpc
 import warnings
 
-import robot_pb2 as robot__pb2
+from proto import robot_pb2 as proto_dot_robot__pb2
 
 GRPC_GENERATED_VERSION = '1.83.1'
 GRPC_VERSION = grpc.__version__
@@ -18,7 +18,7 @@ except ImportError:
 if _version_not_supported:
     raise RuntimeError(
         f'The grpc package installed is at version {GRPC_VERSION},'
-        + ' but the generated code in robot_pb2_grpc.py depends on'
+        + ' but the generated code in proto/robot_pb2_grpc.py depends on'
         + f' grpcio>={GRPC_GENERATED_VERSION}.'
         + f' Please upgrade your grpc module to grpcio>={GRPC_GENERATED_VERSION}'
         + f' or downgrade your generated code using grpcio-tools<={GRPC_VERSION}.'
@@ -36,8 +36,8 @@ class RobotNetworkStub:
         """
         self.Session = channel.stream_stream(
                 '/spore.network.v1.RobotNetwork/Session',
-                request_serializer=robot__pb2.RobotToNetwork.SerializeToString,
-                response_deserializer=robot__pb2.NetworkToRobot.FromString,
+                request_serializer=proto_dot_robot__pb2.RobotToNetwork.SerializeToString,
+                response_deserializer=proto_dot_robot__pb2.NetworkToRobot.FromString,
                 _registered_method=True)
 
 
@@ -67,8 +67,8 @@ def add_RobotNetworkServicer_to_server(servicer, server):
     rpc_method_handlers = {
             'Session': grpc.stream_stream_rpc_method_handler(
                     servicer.Session,
-                    request_deserializer=robot__pb2.RobotToNetwork.FromString,
-                    response_serializer=robot__pb2.NetworkToRobot.SerializeToString,
+                    request_deserializer=proto_dot_robot__pb2.RobotToNetwork.FromString,
+                    response_serializer=proto_dot_robot__pb2.NetworkToRobot.SerializeToString,
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
@@ -96,8 +96,8 @@ class RobotNetwork:
             request_iterator,
             target,
             '/spore.network.v1.RobotNetwork/Session',
-            robot__pb2.RobotToNetwork.SerializeToString,
-            robot__pb2.NetworkToRobot.FromString,
+            proto_dot_robot__pb2.RobotToNetwork.SerializeToString,
+            proto_dot_robot__pb2.NetworkToRobot.FromString,
             options,
             channel_credentials,
             insecure,

@@ -190,11 +190,12 @@ ROUTE_ALTERNATES = int(os.environ.get("ROUTE_ALTERNATES", "3"))
 #: is bounded because an unbounded one reached ~33 MB on the real map.
 HOPS_CACHE_SIZE = int(os.environ.get("HOPS_CACHE_SIZE", "64"))
 
-#: Unix socket the robot's companion connects to for routing decisions.
-ROBOT_SOCKET = os.environ.get("ROBOT_SOCKET", "/tmp/spore-robot.sock")
-
-#: How long a robot blocks on a decision. We keep every WAIT under it.
-ROBOT_SOCKET_TIMEOUT = float(os.environ.get("ROBOT_SOCKET_TIMEOUT", "5.0"))
+#: How long a robot will wait at a junction before giving up on us and driving
+#: on by itself. Its firmware owns this number, not us -- it is the robot's
+#: patience, and it exists so a robot is never stranded by a network layer that
+#: died. Every WAIT we issue has to stay under it, or a hold becomes a robot
+#: that leaves halfway through one.
+ROBOT_PATIENCE = float(os.environ.get("ROBOT_PATIENCE", "5.0"))
 
 #: A robot commanded to move but still on the same node after this is stalled
 #: (PROTOCOL.md §16): replan, then yield, then escalate.
@@ -254,11 +255,12 @@ def validate(node_spacing_cm: int | None = None) -> None:
     """
     problems = []
 
-    if T_MAX_HOLD >= ROBOT_SOCKET_TIMEOUT:
+    if T_MAX_HOLD >= ROBOT_PATIENCE:
         problems.append(
-            f"T_MAX_HOLD ({T_MAX_HOLD}s) must be under ROBOT_SOCKET_TIMEOUT "
-            f"({ROBOT_SOCKET_TIMEOUT}s): a robot held longer than it is willing to "
-            "wait cannot tell us apart from a network layer that has died"
+            f"T_MAX_HOLD ({T_MAX_HOLD}s) must be under ROBOT_PATIENCE "
+            f"({ROBOT_PATIENCE}s): a robot held longer than it is willing to "
+            "wait drives on mid-hold, and cannot tell us apart from a network "
+            "layer that has died"
         )
     if RESERVATION_TTL <= T_ANNOUNCE:
         problems.append(

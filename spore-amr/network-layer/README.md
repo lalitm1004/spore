@@ -129,7 +129,9 @@ default logs at ERROR and keeps events in `Bot.alerts`.
 ## Regenerating the proto
 
 ```bash
-uv run python -m grpc_tools.protoc -I proto --python_out=proto --grpc_python_out=proto proto/fleet.proto
+# -I. so the generated stubs import `from proto import ...` rather than a
+# bare `fleet_pb2`, which only resolves if proto/ happens to be on the path.
+uv run python -m grpc_tools.protoc -I. --python_out=. --grpc_python_out=. proto/fleet.proto proto/robot.proto
 sed -i 's/^import fleet_pb2/from proto import fleet_pb2/' proto/fleet_pb2_grpc.py
 ```
 
