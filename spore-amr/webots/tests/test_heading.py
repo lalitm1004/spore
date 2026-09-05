@@ -15,28 +15,26 @@ import pytest
 from robot.companion import answer_junction
 from robot.config import ControllerConfig
 from robot.navigator import Navigator
-from robot.network import Decision
 from robot.odometry import Odometry, Pose
 from tools.track.graph import lattice
 
 SENSORS = {"offsets": [0.02, 0.0, -0.02], "white_ref": 1000, "black_ref": 200}
 
 
-class FixedRouter:
-    """A network layer that always sends the robot to one named node.
+class FixedGoal:
+    """Stands in for the uplink: the network layer wants the robot at one node.
 
-    Which is all a network layer says: `NetworkToRobot` carries
-    `target_node_id` and no direction. Working out that node 5 is to the left
-    is the robot's own job.
+    A destination, not a direction -- `NetworkToRobot` has no field for a turn,
+    so working out that node 5 is to the left is the robot's own job.
     """
 
-    def __init__(self, target):
-        self.target = target
-        self.seen = []
+    def __init__(self, goal):
+        self.goal = goal
+        self.reports = []
 
-    def ask(self, query):
-        self.seen.append(query)
-        return Decision(target_node_id=self.target, timestamp=query.timestamp)
+    def report(self, bot_id, region_id, node_id, timestamp):
+        self.reports.append((bot_id, region_id, node_id, timestamp))
+        return self.goal
 
 
 class Event:
@@ -91,7 +89,7 @@ def test_turn_command_carries_the_exact_arrival_heading():
     odometry. Without it the firmware turns in a drifted frame."""
     graph, navigator = graph_and_navigator()
     navigator.arrived(3)                       # came from the node west of centre
-    router = FixedRouter(target=5)
+    router = FixedGoal(goal=5)
 
     commands = answer_junction(navigator, router,
                                Event(node=4, heading=-1.2))  # badly drifted
@@ -105,7 +103,7 @@ def test_arrival_heading_is_absent_on_the_very_first_marker():
     """Nothing to derive it from yet, so the firmware must keep its own frame
     -- which is why the spawn heading has to be seeded at boot."""
     _, navigator = graph_and_navigator()
-    router = FixedRouter(target=5)
+    router = FixedGoal(goal=5)
 
     commands = answer_junction(navigator, router, Event(node=4, heading=0.0))
 
@@ -116,7 +114,7 @@ def test_the_turn_bearing_is_still_the_map_bearing():
     """The heading correction must not disturb the target it turns to."""
     graph, navigator = graph_and_navigator()
     navigator.arrived(3)
-    router = FixedRouter(target=5)
+    router = FixedGoal(goal=5)
 
     commands = answer_junction(navigator, router, Event(node=4, heading=-1.2))
 

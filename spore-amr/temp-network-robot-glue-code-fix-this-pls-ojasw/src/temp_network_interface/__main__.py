@@ -12,14 +12,34 @@ import time
 from temp_network_interface.messages import Mission, RobotToNetwork, Telemetry, Battery
 from temp_network_interface.policy import HoldPolicy, NoopPolicy
 
+# `goal` needs a map -- it routes -- so it is built separately below rather
+# than sitting in this table of no-argument policies.
 _POLICIES = {"hold": HoldPolicy, "noop": NoopPolicy}
+_MAP_POLICIES = ("goal",)
+
+
+def _build_policy(args):
+    if args.policy not in _MAP_POLICIES:
+        return _POLICIES[args.policy]()
+
+    if not args.map:
+        raise SystemExit("--policy {} needs --map: it routes, and routing "
+                         "needs the warehouse graph".format(args.policy))
+
+    import random
+
+    from temp_network_interface.graph import load_map
+    from temp_network_interface.goal_policy import GoalPolicy
+
+    graph = load_map(args.map)
+    return GoalPolicy(graph, minimum_hops=args.minimum_hops,
+                      random=random.Random(args.seed))
 
 
 def _serve(args) -> int:
     from temp_network_interface.server import serve
 
-    policy = _POLICIES[args.policy]()
-    serve(address=args.address, journal=args.journal, policy=policy)
+    serve(address=args.address, journal=args.journal, policy=_build_policy(args))
     return 0
 
 
@@ -48,7 +68,15 @@ def main(argv=None) -> int:
 
     serve = sub.add_parser("serve", help="run the network service")
     serve.add_argument("--address", default="[::]:50051")
-    serve.add_argument("--policy", choices=sorted(_POLICIES), default="hold")
+    serve.add_argument("--policy",
+                       choices=sorted(set(_POLICIES) | set(_MAP_POLICIES)),
+                       default="hold")
+    serve.add_argument("--map", default=None,
+                       help="warehouse.json; required by routing policies")
+    serve.add_argument("--minimum-hops", type=int, default=40,
+                       help="how far away a destination has to be, in lanes")
+    serve.add_argument("--seed", type=int, default=0,
+                       help="a run that cannot be reproduced cannot be debugged")
     serve.add_argument("--journal", default=None,
                        help="path to the durable state file (JSONL)")
     serve.set_defaults(func=_serve)

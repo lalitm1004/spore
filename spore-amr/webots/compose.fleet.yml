@@ -4,181 +4,231 @@ services:
     cpus: '1.0'
     depends_on:
     - sim
+    - network
     environment:
       CONFIG: /project/config/bot_01.yaml
       MISSION_DURATION: ${MISSION_DURATION:-120}
-      NETLAYER_SEED: '0'
+      NETWORK_ADDRESS: network:50051
+      PYTHONPATH: /project:/network
       ROBOT_NAME: bot_01
       SIM_HOST: sim
       TELEMETRY: /project/out/bot_01.csv
+      TEMP_NETWORK_INTERFACE_SCHEMA_DIR: /schemas
     image: sih2026/controller:dev
     init: true
     mem_limit: 256m
     user: ${DOCKER_USER:-1000:1000}
     volumes:
     - ./:/project
+    - ../temp-network-robot-glue-code-fix-this-pls-ojasw/src:/network
+    - ../shared/schemas:/schemas:ro
     working_dir: /project
   bot_02:
     cpus: '1.0'
     depends_on:
     - sim
+    - network
     environment:
       CONFIG: /project/config/bot_02.yaml
       MISSION_DURATION: ${MISSION_DURATION:-120}
-      NETLAYER_SEED: '1'
+      NETWORK_ADDRESS: network:50051
+      PYTHONPATH: /project:/network
       ROBOT_NAME: bot_02
       SIM_HOST: sim
       TELEMETRY: /project/out/bot_02.csv
+      TEMP_NETWORK_INTERFACE_SCHEMA_DIR: /schemas
     image: sih2026/controller:dev
     init: true
     mem_limit: 256m
     user: ${DOCKER_USER:-1000:1000}
     volumes:
     - ./:/project
+    - ../temp-network-robot-glue-code-fix-this-pls-ojasw/src:/network
+    - ../shared/schemas:/schemas:ro
     working_dir: /project
   bot_03:
     cpus: '1.0'
     depends_on:
     - sim
+    - network
     environment:
       CONFIG: /project/config/bot_03.yaml
       MISSION_DURATION: ${MISSION_DURATION:-120}
-      NETLAYER_SEED: '2'
+      NETWORK_ADDRESS: network:50051
+      PYTHONPATH: /project:/network
       ROBOT_NAME: bot_03
       SIM_HOST: sim
       TELEMETRY: /project/out/bot_03.csv
+      TEMP_NETWORK_INTERFACE_SCHEMA_DIR: /schemas
     image: sih2026/controller:dev
     init: true
     mem_limit: 256m
     user: ${DOCKER_USER:-1000:1000}
     volumes:
     - ./:/project
+    - ../temp-network-robot-glue-code-fix-this-pls-ojasw/src:/network
+    - ../shared/schemas:/schemas:ro
     working_dir: /project
   bot_04:
     cpus: '1.0'
     depends_on:
     - sim
+    - network
     environment:
       CONFIG: /project/config/bot_04.yaml
       MISSION_DURATION: ${MISSION_DURATION:-120}
-      NETLAYER_SEED: '3'
+      NETWORK_ADDRESS: network:50051
+      PYTHONPATH: /project:/network
       ROBOT_NAME: bot_04
       SIM_HOST: sim
       TELEMETRY: /project/out/bot_04.csv
+      TEMP_NETWORK_INTERFACE_SCHEMA_DIR: /schemas
     image: sih2026/controller:dev
     init: true
     mem_limit: 256m
     user: ${DOCKER_USER:-1000:1000}
     volumes:
     - ./:/project
+    - ../temp-network-robot-glue-code-fix-this-pls-ojasw/src:/network
+    - ../shared/schemas:/schemas:ro
     working_dir: /project
   bot_05:
     cpus: '1.0'
     depends_on:
     - sim
+    - network
     environment:
       CONFIG: /project/config/bot_05.yaml
       MISSION_DURATION: ${MISSION_DURATION:-120}
-      NETLAYER_SEED: '4'
+      NETWORK_ADDRESS: network:50051
+      PYTHONPATH: /project:/network
       ROBOT_NAME: bot_05
       SIM_HOST: sim
       TELEMETRY: /project/out/bot_05.csv
+      TEMP_NETWORK_INTERFACE_SCHEMA_DIR: /schemas
     image: sih2026/controller:dev
     init: true
     mem_limit: 256m
     user: ${DOCKER_USER:-1000:1000}
     volumes:
     - ./:/project
+    - ../temp-network-robot-glue-code-fix-this-pls-ojasw/src:/network
+    - ../shared/schemas:/schemas:ro
     working_dir: /project
   bot_06:
     cpus: '1.0'
     depends_on:
     - sim
+    - network
     environment:
       CONFIG: /project/config/bot_06.yaml
       MISSION_DURATION: ${MISSION_DURATION:-120}
-      NETLAYER_SEED: '5'
+      NETWORK_ADDRESS: network:50051
+      PYTHONPATH: /project:/network
       ROBOT_NAME: bot_06
       SIM_HOST: sim
       TELEMETRY: /project/out/bot_06.csv
+      TEMP_NETWORK_INTERFACE_SCHEMA_DIR: /schemas
     image: sih2026/controller:dev
     init: true
     mem_limit: 256m
     user: ${DOCKER_USER:-1000:1000}
     volumes:
     - ./:/project
+    - ../temp-network-robot-glue-code-fix-this-pls-ojasw/src:/network
+    - ../shared/schemas:/schemas:ro
     working_dir: /project
   bot_07:
     cpus: '1.0'
     depends_on:
     - sim
+    - network
     environment:
       CONFIG: /project/config/bot_07.yaml
       MISSION_DURATION: ${MISSION_DURATION:-120}
-      NETLAYER_SEED: '6'
+      NETWORK_ADDRESS: network:50051
+      PYTHONPATH: /project:/network
       ROBOT_NAME: bot_07
       SIM_HOST: sim
       TELEMETRY: /project/out/bot_07.csv
+      TEMP_NETWORK_INTERFACE_SCHEMA_DIR: /schemas
     image: sih2026/controller:dev
     init: true
     mem_limit: 256m
     user: ${DOCKER_USER:-1000:1000}
     volumes:
     - ./:/project
+    - ../temp-network-robot-glue-code-fix-this-pls-ojasw/src:/network
+    - ../shared/schemas:/schemas:ro
     working_dir: /project
   bot_08:
     cpus: '1.0'
     depends_on:
     - sim
+    - network
     environment:
       CONFIG: /project/config/bot_08.yaml
       MISSION_DURATION: ${MISSION_DURATION:-120}
-      NETLAYER_SEED: '7'
+      NETWORK_ADDRESS: network:50051
+      PYTHONPATH: /project:/network
       ROBOT_NAME: bot_08
       SIM_HOST: sim
       TELEMETRY: /project/out/bot_08.csv
+      TEMP_NETWORK_INTERFACE_SCHEMA_DIR: /schemas
     image: sih2026/controller:dev
     init: true
     mem_limit: 256m
     user: ${DOCKER_USER:-1000:1000}
     volumes:
     - ./:/project
+    - ../temp-network-robot-glue-code-fix-this-pls-ojasw/src:/network
+    - ../shared/schemas:/schemas:ro
     working_dir: /project
   bot_09:
     cpus: '1.0'
     depends_on:
     - sim
+    - network
     environment:
       CONFIG: /project/config/bot_09.yaml
       MISSION_DURATION: ${MISSION_DURATION:-120}
-      NETLAYER_SEED: '8'
+      NETWORK_ADDRESS: network:50051
+      PYTHONPATH: /project:/network
       ROBOT_NAME: bot_09
       SIM_HOST: sim
       TELEMETRY: /project/out/bot_09.csv
+      TEMP_NETWORK_INTERFACE_SCHEMA_DIR: /schemas
     image: sih2026/controller:dev
     init: true
     mem_limit: 256m
     user: ${DOCKER_USER:-1000:1000}
     volumes:
     - ./:/project
+    - ../temp-network-robot-glue-code-fix-this-pls-ojasw/src:/network
+    - ../shared/schemas:/schemas:ro
     working_dir: /project
   bot_10:
     cpus: '1.0'
     depends_on:
     - sim
+    - network
     environment:
       CONFIG: /project/config/bot_10.yaml
       MISSION_DURATION: ${MISSION_DURATION:-120}
-      NETLAYER_SEED: '9'
+      NETWORK_ADDRESS: network:50051
+      PYTHONPATH: /project:/network
       ROBOT_NAME: bot_10
       SIM_HOST: sim
       TELEMETRY: /project/out/bot_10.csv
+      TEMP_NETWORK_INTERFACE_SCHEMA_DIR: /schemas
     image: sih2026/controller:dev
     init: true
     mem_limit: 256m
     user: ${DOCKER_USER:-1000:1000}
     volumes:
     - ./:/project
+    - ../temp-network-robot-glue-code-fix-this-pls-ojasw/src:/network
+    - ../shared/schemas:/schemas:ro
     working_dir: /project
   supervisor:
     cpus: '0.25'

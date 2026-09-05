@@ -4,6 +4,41 @@
 #   docker compose -f compose.yml -f compose.fleet.yml up
 #   then open http://localhost:1234/index.html
 services:
+
+  # The fleet's network layer: one service, not one process per robot. It holds
+  # the authoritative world state, reconciles each outstanding command against
+  # what robots report, and journals both so a restart resumes rather than
+  # forgets. Its `--policy goal` hands every robot a destination far across the
+  # warehouse and a new one each time it arrives.
+  #
+  # Mounted from the sibling project rather than copied: the wire contract is
+  # shared, and a copied client is a client that drifts.
+  network:
+    image: sih2026/controller:dev
+    entrypoint: ["python3", "-m", "temp_network_interface"]
+    command:
+      - serve
+      - --address
+      - "[::]:50051"
+      - --policy
+      - goal
+      - --map
+      - /project/config/warehouse.json
+      - --journal
+      - /project/out/fleet.jsonl
+    ports:
+      - "50051:50051"
+    volumes:
+      - ./:/project
+      - ../temp-network-robot-glue-code-fix-this-pls-ojasw/src:/network
+      - ../shared/schemas:/schemas:ro
+    working_dir: /project
+    init: true
+    user: "${DOCKER_USER:-1000:1000}"
+    environment:
+      PYTHONPATH: /network
+      # The canonical schemas, not the copies inside the package.
+      TEMP_NETWORK_INTERFACE_SCHEMA_DIR: /schemas
   sim:
     image: sih2026/sim:dev
     build:

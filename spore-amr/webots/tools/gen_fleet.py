@@ -436,8 +436,16 @@ def compose_source(manifest: dict) -> dict:
         resources = config.get("resources") or {}
         services[name] = {
             "image": CONTROLLER_IMAGE,
-            "depends_on": ["sim"],
-            "volumes": ["./:/project"],
+            "depends_on": ["sim", "network"],
+            # The network package is a sibling of this project, so it is
+            # outside the `./:/project` mount and needs its own. Mounted rather
+            # than copied: a copied client is a client that drifts.
+            "volumes": ["./:/project",
+                        "../temp-network-robot-glue-code-fix-this-pls-ojasw/src:/network",
+                        # The canonical schemas, not the copies inside the
+                        # package: every payload is validated at the wire, and
+                        # two copies of a contract are one contract too many.
+                        "../shared/schemas:/schemas:ro"],
             "working_dir": "/project",
             "user": "${DOCKER_USER:-1000:1000}",
             "init": True,
@@ -448,10 +456,12 @@ def compose_source(manifest: dict) -> dict:
                 "SIM_HOST": "sim",
                 "MISSION_DURATION": "${{MISSION_DURATION:-{}}}".format(
                     config.get("mission_duration_s", 120)),
-                # A distinct seed per robot: with one seed the whole fleet
-                # makes the same choice at the same junction, which is a very
-                # convincing-looking bug.
-                "NETLAYER_SEED": str(config.get("netlayer_seed", index)),
+                # One network layer for the whole fleet, not one per robot: it
+                # holds the world state and reconciles what every robot reports
+                # against what it was told, which no per-robot process can do.
+                "NETWORK_ADDRESS": "network:50051",
+                "PYTHONPATH": "/project:/network",
+                "TEMP_NETWORK_INTERFACE_SCHEMA_DIR": "/schemas",
             },
             "mem_limit": resources.get("memory", "256m"),
             "cpus": resources.get("cpus", "0.5"),

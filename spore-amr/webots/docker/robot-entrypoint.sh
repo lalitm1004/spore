@@ -31,24 +31,15 @@ for _ in $(seq 1 100); do
   sleep 0.1
 done
 
-# Each robot runs its own network layer. One shared service answering every
-# robot would be a control plane wearing a hat, and per-robot means killing a
-# single robot's coordinator is a real thing to demonstrate.
-NETLAYER_SOCK="/tmp/${ROBOT_NAME}-netlayer.sock"
-python3 /project/robot/netlayer.py \
-  --socket "${NETLAYER_SOCK}" \
-  --seed "${NETLAYER_SEED:-0}" &
-
-for _ in $(seq 1 100); do
-  [ -S "${NETLAYER_SOCK}" ] && break
-  sleep 0.1
-done
-
+# One network layer for the whole fleet, reached over gRPC -- not one process
+# per robot. It holds the global fleet state, reconciles outstanding commands
+# against what robots report, and journals both, none of which is possible from
+# inside a single robot's process.
 python3 /project/robot/companion.py \
   --link "${COMPANION_TTY}" \
   --config "${CONFIG}" \
   --map "${WAREHOUSE_MAP:-/project/config/warehouse.json}" \
-  --netlayer "${NETLAYER_SOCK}" \
+  --network "${NETWORK_ADDRESS:-network:50051}" \
   --mission-duration "${MISSION_DURATION}" &
 
 exec /usr/local/webots/webots-controller \

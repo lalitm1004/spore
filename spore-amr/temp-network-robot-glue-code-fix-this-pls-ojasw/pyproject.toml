@@ -6,9 +6,17 @@ readme = "README.md"
 authors = [
     { name = "lalitm1004", email = "lalitm1004@gmail.com" }
 ]
-requires-python = ">=3.13"
+# 3.10, not 3.13: the robot half of this package is pasted into the Webots
+# companion, which runs inside cyberbotics/webots:R2025a-ubuntu22.04 -- and
+# Ubuntu 22.04 ships Python 3.10. The code already parses and runs clean there
+# (every module uses `from __future__ import annotations` or no PEP 604/585
+# annotations at all), so this pin was the only thing standing in the way.
+requires-python = ">=3.10"
 dependencies = [
     "grpcio>=1.83.1",
+    # The generated stubs import google.protobuf directly; grpcio does not pull
+    # it in, so a fresh environment fails at import rather than at install.
+    "protobuf>=4.25",
     "jsonschema>=4.26.0",
 ]
 
