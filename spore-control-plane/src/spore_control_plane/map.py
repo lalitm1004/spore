@@ -1,26 +1,23 @@
-"""The warehouse map, reduced to what the control plane needs.
+"""The warehouse map, reduced to the one thing the control plane can trust.
 
 WHAT
     Loads `warehouse-layout.json` (schema: `warehouse-map.schema.json`) and
-    answers two questions:
-      * does node N exist?                     (`has_node`)
-      * which region is node N in?             (`region_of`)
-      * what nodes are in region R?            (`nodes_in` — for tests / UI hints)
+    answers a single question: *does node N exist?* (`has_node`).
 
 WHERE
-    Used by the web layer to validate order node ids and to resolve
-    `pickup_node -> region_id`, which is how dispatch picks the target leader.
+    Used by the web layer to reject a typo'd node id before it reaches the
+    fleet. Nothing else.
 
 WHY
-    The control plane does not do path planning and does not need hop
-    distances. Positions alone mislead in a warehouse, but we only need the
-    node -> region mapping, which is a straight lookup.
+    The control plane must not reason about geography: it can never know which
+    region a bot is in (bots migrate), and node -> region is the fleet's
+    internal concern. So the map is used only as a list of valid node ids, not
+    for routing.
 
 HOW
     A thin wrapper over the JSON. If the file is missing we degrade to
-    `NullMap` (nothing validates, `region_of` returns None) so the control
-    plane still starts and can still dispatch — the fleet will route an order
-    to the right region regardless.
+    `NullMap` (everything "exists") so the control plane still starts and
+    still dispatches — the fleet routes regardless.
 """
 from __future__ import annotations
 
@@ -32,24 +29,15 @@ log = logging.getLogger(__name__)
 
 
 class NullMap:
-    """Stand-in when no map file is available. See module docstring."""
+    """Stand-in when no map file is available: accept every node id."""
 
     def has_node(self, node_id: int) -> bool:
         return True
 
-    def region_of(self, node_id: int) -> int | None:
-        return None
-
-    def nodes_in(self, region_id: int) -> list[int]:
-        return []
-
 
 class WarehouseMap:
     def __init__(self, data: dict) -> None:
-        self._region_of: dict[int, int] = {n["id"]: n["region_id"] for n in data["nodes"]}
-        self._by_region: dict[int, list[int]] = {}
-        for node_id, region in self._region_of.items():
-            self._by_region.setdefault(region, []).append(node_id)
+        self._node_ids: set[int] = {n["id"] for n in data["nodes"]}
 
     @classmethod
     def load(cls, path: str | Path) -> "WarehouseMap | NullMap":
@@ -60,17 +48,11 @@ class WarehouseMap:
         with p.open() as f:
             data = json.load(f)
         m = cls(data)
-        log.info("warehouse map loaded: %d nodes, %d regions", len(m._region_of), len(m._by_region))
+        log.info("warehouse map loaded: %d nodes", len(m._node_ids))
         return m
 
     def has_node(self, node_id: int) -> bool:
-        return node_id in self._region_of
-
-    def region_of(self, node_id: int) -> int | None:
-        return self._region_of.get(node_id)
-
-    def nodes_in(self, region_id: int) -> list[int]:
-        return list(self._by_region.get(region_id, []))
+        return node_id in self._node_ids
 
 
 __all__ = ["WarehouseMap", "NullMap"]

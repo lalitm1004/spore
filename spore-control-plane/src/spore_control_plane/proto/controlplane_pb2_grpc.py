@@ -39,11 +39,6 @@ class ControlPlaneServiceStub:
                 request_serializer=controlplane__pb2.Order.SerializeToString,
                 response_deserializer=controlplane__pb2.DispatchAck.FromString,
                 _registered_method=True)
-        self.DiscoverLeaders = channel.unary_unary(
-                '/controlplane.ControlPlaneService/DiscoverLeaders',
-                request_serializer=controlplane__pb2.DiscoverLeadersRequest.SerializeToString,
-                response_deserializer=controlplane__pb2.DiscoverLeadersResponse.FromString,
-                _registered_method=True)
 
 
 class ControlPlaneServiceServicer:
@@ -52,15 +47,10 @@ class ControlPlaneServiceServicer:
     def DispatchOrder(self, request, context):
         """Submit an order to ANY bot.
 
-        Routing is the bot's job: a non-leader forwards to its leader; a leader
-        forwards to the leader of pickup_node's region. Idempotent on order_id.
-        """
-        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
-        context.set_details('Method not implemented!')
-        raise NotImplementedError('Method not implemented!')
-
-    def DiscoverLeaders(self, request, context):
-        """Ask a bot what it knows about region leaders, for direct routing.
+        Routing is entirely the fleet's job: the control plane knows no regions
+        and no leaders. A non-leader forwards to its leader; a leader resolves
+        pickup_node's region from its own map and forwards to that region's
+        leader. Idempotent on order_id.
         """
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
@@ -73,11 +63,6 @@ def add_ControlPlaneServiceServicer_to_server(servicer, server):
                     servicer.DispatchOrder,
                     request_deserializer=controlplane__pb2.Order.FromString,
                     response_serializer=controlplane__pb2.DispatchAck.SerializeToString,
-            ),
-            'DiscoverLeaders': grpc.unary_unary_rpc_method_handler(
-                    servicer.DiscoverLeaders,
-                    request_deserializer=controlplane__pb2.DiscoverLeadersRequest.FromString,
-                    response_serializer=controlplane__pb2.DiscoverLeadersResponse.SerializeToString,
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
@@ -107,33 +92,6 @@ class ControlPlaneService:
             '/controlplane.ControlPlaneService/DispatchOrder',
             controlplane__pb2.Order.SerializeToString,
             controlplane__pb2.DispatchAck.FromString,
-            options,
-            channel_credentials,
-            insecure,
-            call_credentials,
-            compression,
-            wait_for_ready,
-            timeout,
-            metadata,
-            _registered_method=True)
-
-    @staticmethod
-    def DiscoverLeaders(request,
-            target,
-            options=(),
-            channel_credentials=None,
-            call_credentials=None,
-            insecure=False,
-            compression=None,
-            wait_for_ready=None,
-            timeout=None,
-            metadata=None):
-        return grpc.experimental.unary_unary(
-            request,
-            target,
-            '/controlplane.ControlPlaneService/DiscoverLeaders',
-            controlplane__pb2.DiscoverLeadersRequest.SerializeToString,
-            controlplane__pb2.DiscoverLeadersResponse.FromString,
             options,
             channel_credentials,
             insecure,

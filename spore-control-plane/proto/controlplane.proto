@@ -29,7 +29,8 @@ message DispatchAck {
   // it may be queued for a later retry).
   bool accepted = 1;
 
-  // The region whose leader now owns the order.
+  // The region whose leader now owns the order (reported back by the fleet —
+  // the control plane never computes this itself).
   int32 owner_region = 2;
 
   // Present iff a bot was assigned immediately. `optional` gives real
@@ -40,37 +41,12 @@ message DispatchAck {
   string note = 4;
 }
 
-// Who leads a region, as the answering bot knows it.
-message LeaderInfo {
-  int32 region_id = 1;
-  int32 bot_id = 2;
-  string address = 3;  // dialable host:port
-}
-
-message DiscoverLeadersRequest {
-  // When set, the client is interested in this region specifically. The
-  // answerer may still return its full view; the client filters if it wants.
-  optional int32 region_id = 1;
-}
-
-message DiscoverLeadersResponse {
-  // Every leader the answering bot knows (all regions it has met).
-  repeated LeaderInfo leaders = 1;
-
-  // The answering bot's own region and its region's leader (== itself when it
-  // leads). Lets the caller bootstrap a directory from any single bot.
-  int32 self_region_id = 2;
-  int32 self_leader_bot_id = 3;
-  string self_leader_address = 4;
-}
-
 service ControlPlaneService {
   // Submit an order to ANY bot.
   //
-  // Routing is the bot's job: a non-leader forwards to its leader; a leader
-  // forwards to the leader of pickup_node's region. Idempotent on order_id.
+  // Routing is entirely the fleet's job: the control plane knows no regions
+  // and no leaders. A non-leader forwards to its leader; a leader resolves
+  // pickup_node's region from its own map and forwards to that region's
+  // leader. Idempotent on order_id.
   rpc DispatchOrder(Order) returns (DispatchAck);
-
-  // Ask a bot what it knows about region leaders, for direct routing.
-  rpc DiscoverLeaders(DiscoverLeadersRequest) returns (DiscoverLeadersResponse);
 }

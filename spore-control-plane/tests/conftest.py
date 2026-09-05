@@ -2,7 +2,7 @@
 
 The network layer does not implement `controlplane.proto` yet, so tests spin
 up a fake implementation here to exercise the control plane's own client
-(discovery + dispatch) and the web layer end to end.
+(dispatch) and the web layer end to end.
 """
 from __future__ import annotations
 
@@ -20,25 +20,11 @@ class MockControlPlane(controlplane_pb2_grpc.ControlPlaneServiceServicer):
 
     def __init__(self) -> None:
         self.orders: list[controlplane_pb2.Order] = []
-        self.discovery_requests = 0
-        self.leaders: list[controlplane_pb2.LeaderInfo] = []
-        self.self_region_id = 0
-        self.self_leader_bot_id = 0
-        self.self_leader_address = ""
         self.ack = controlplane_pb2.DispatchAck(accepted=True, owner_region=14, note="ok")
 
     def DispatchOrder(self, request: controlplane_pb2.Order, context):
         self.orders.append(request)
         return self.ack
-
-    def DiscoverLeaders(self, request: controlplane_pb2.DiscoverLeadersRequest, context):
-        self.discovery_requests += 1
-        return controlplane_pb2.DiscoverLeadersResponse(
-            leaders=self.leaders,
-            self_region_id=self.self_region_id,
-            self_leader_bot_id=self.self_leader_bot_id,
-            self_leader_address=self.self_leader_address,
-        )
 
 
 def free_port() -> int:

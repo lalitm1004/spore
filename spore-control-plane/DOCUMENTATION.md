@@ -1,82 +1,274 @@
-# spore-control-plane — Design Documentation
+# spore-control-plane — Design & Integration Documentation
 
 ## Goal
 
 Provide a single, central service where an operator (or an external order
 system) can create cargo orders — *"collect goods at node-X, deliver them to
-node-Y"* — and have each order dispatched, over gRPC, to the leader of the
-warehouse region where the order starts.
+node-Y"* — and have each order handed to the fleet over gRPC, which routes it
+to the leader of the region where the order starts.
 
 The project is also the Kubernetes control plane that boots the AMR fleet and
-the Webots simulator, so it already knows every robot's address. It does **not**
-know which robot leads which region, and it is deliberately **not** part of the
-fleet's membership protocol.
+the Webots simulator, so it already knows every robot's address. It knows
+**nothing else** about the fleet — not regions, not leaders, not which bot is
+where — and it is deliberately **not** part of the fleet's membership protocol.
+
+---
+
+## The one rule: the control plane knows no geography
+
+The fleet is dynamic: bots migrate between regions, leaders rotate by tenure,
+fault out, die and are re-elected. It is therefore **impossible** for an outside
+service to know which region a bot is in, or who leads what, at any given
+moment. Only the fleet's live membership knows.
+
+So the control plane does the only thing it can correctly do: it hands an order
+to **any reachable bot** and lets the fleet route it. The fleet already does the
+routing internally — a non-leader forwards to its leader; a leader resolves
+`pickup_node`'s region from its own map and forwards to that region's leader
+(`network-layer/bus/jobs.py: Dispatcher.submit`). The control plane never
+computes a region, never caches a leader, never targets a bot by location.
+
+The one thing it does know — the list of bot addresses — is stable and comes
+from the fact that it boots the fleet.
+
+```
+order (pickup node X, dropoff node Y)
+  └─ mint order_id = uuid4()
+  └─ for attempt in 1..M:
+       for each known bot address:
+         DispatchOrder(order -> that bot)      # bot forwards as needed
+         if ack.accepted: done
+       backoff                                  # election / migration in flight
+  └─ error after M attempts
+```
+
+Retries reuse the *same* `order_id`, which is the fleet's idempotency key
+(`job_id == cargo_id == order_id`), so a retry after a timeout cannot
+double-place the order.
+
+---
+
+## What it does today (tangible)
+
+This is a complete, runnable service — not a stub. Concretely:
+
+- **Serves a web UI** at `GET /` with an order form, and accepts orders at
+  `POST /orders` (`pickup_node`, `dropoff_node`, optional `order_id`).
+- **Validates node ids** against `warehouse-layout.json` (881 nodes): rejects
+  non-integer, negative, or unknown node ids before anything leaves the
+  process. (This is the *only* use of the map — validation, not routing.)
+- **Mints the order id** — a UUID if the caller didn't supply one — which is the
+  fleet's `cargo_id` and therefore the idempotency key.
+- **Dispatches over gRPC** (`DispatchOrder`) to any known bot, retrying up to
+  `DISPATCH_ATTEMPTS` passes over the address list with `DISPATCH_BACKOFF`
+  between passes, so a leader election or a migration mid-flight doesn't lose
+  the order.
+- **Reports the outcome** — `owner_region`, immediate `assignee` (if any), and
+  the fleet's `note` — back on the result page. (The region comes from the
+  fleet's ack; the control plane never computes it.)
+- **Degrades gracefully**: no map → no validation but dispatch still works; no
+  bots → the app still serves and dispatch reports "not dispatched".
+
+Verified by tests (`uv run pytest`) that exercise node validation, dispatch,
+fallback across bots, retry, and the full web → dispatch path against a mock
+`ControlPlaneService` server.
+
+### File map (what lives where)
+
+| Concern | File |
+|---|---|
+| The contract the fleet implements | `proto/controlplane.proto` |
+| Generated stubs | `src/spore_control_plane/proto/controlplane_pb2*.py` |
+| Env-driven configuration | `src/spore_control_plane/config.py` |
+| Node-id validation | `src/spore_control_plane/map.py` |
+| Order dispatch + retry loop | `src/spore_control_plane/submitter.py` |
+| gRPC channel pool + wire identity | `src/spore_control_plane/client.py` |
+| Web UI (`GET /`, `POST /orders`) | `src/spore_control_plane/app.py` |
+| Order form template | `templates/order.html` |
+| Map copy (self-contained) | `shared/warehouse-layout.json` |
+
+---
+
+## What it deliberately does not do
+
+- **No region/leader knowledge.** It never resolves or stores regions, leaders,
+  or bot locations; routing is the fleet's job.
+- **No status feedback.** Dispatch is fire-and-forget: we report the ack and
+  stop. Delivery / failure (`NEEDS_ATTENTION`) push-back can be added later as
+  a streaming RPC on the same service.
+- **No path planning or hop-distance math.** The fleet owns navigation.
+- **No authentication.** The fleet's virtual network is isolation, not auth;
+  we match that posture and just present a reserved identity.
+- **No fleet membership.** We never heartbeat, never vote, never appear in a
+  roster. Our `bot-id` is reserved (`CONTROL_BOT_ID=9000`, outside the fleet's
+  `<100` space) precisely so we can never be mistaken for a robot.
+
+---
 
 ## Decisions
 
 | # | Decision | Rationale |
 |---|----------|-----------|
-| 1 | **Separate proto, owned by this project** (`controlplane.proto`) | The dependency is one-way: the network layer implements *our* contract, not the other way around. We never import or depend on `fleet.proto`. |
-| 2 | **One `ControlPlaneService`, two RPCs** (`DispatchOrder`, `DiscoverLeaders`) | A single service means the network layer adds one registration and one policy entry. |
-| 3 | **Dispatch to the pickup-region leader, fall back to any bot** | The user requirement is to hit the leader where the order starts; when discovery is stale/incomplete, any bot will forward to the right leader anyway. |
-| 4 | **Orders are fire-and-forget** | We submit and report the ack. Delivery/failure feedback (e.g. `NEEDS_ATTENTION`) is out of scope for v1 and can be added later as a streaming RPC on the same service. |
-| 5 | **`order_id` is a UUID minted here (== the fleet's `cargo_id`)** | Orders come from an external system, so IDs cannot come from a central sequential allocator. The UUID doubles as the idempotency key: retries are safe. |
-| 6 | **Bots do the routing; we only choose a target bot** | A follower forwards a dispatch to its leader; a leader forwards to the pickup region's leader. This logic already exists in the fleet, so our client stays a thin caller. |
-| 7 | **Reserved control-plane identity in metadata** | The fleet's virtual network requires `bot-id` / `region-id` / `role` metadata on every call. We use a reserved `bot-id` so the fleet can later admit us via its policy table without confusing us for a robot. |
+| 1 | **Separate proto, owned by this project** (`controlplane.proto`) | The dependency is one-way: the network layer implements *our* contract. We never import `fleet.proto`. |
+| 2 | **One service, one RPC** (`ControlPlaneService.DispatchOrder`) | The absolute minimum surface the fleet must implement. |
+| 3 | **Dispatch to any bot; the fleet routes** | Regions/leaders are unknowable from the outside and ephemeral; the fleet's dispatcher is the only authoritative router. |
+| 4 | **Orders are fire-and-forget** | Minimal v1; status can be a later streaming RPC on the same service. |
+| 5 | **`order_id` is a UUID minted here (== the fleet's `cargo_id`)** | External orders can't use a central allocator; the UUID doubles as the idempotency key. |
+| 6 | **Retry M passes over the address list** | Rides out the transient window of a leader election or migration. Idempotent, so safe. |
+| 7 | **Reserved control-plane identity in metadata** | The fleet's virtual network requires `bot-id`/`region-id`/`role` on every call; a reserved id lets it admit us without confusing us for a robot. |
 | 8 | **Python + FastAPI + grpcio** | Matches the rest of the Spore stack; FastAPI gives a minimal web UI with little ceremony. |
+| 9 | **Map and proto are copied, not linked** | Self-contained image; the control plane builds and runs with no dependency on `network-layer` or `spore-amr`. |
 
-## What we do
+---
 
-```
-operator ──► [web UI] ──► POST /orders (pickup_node, dropoff_node)
-                              │
-                              ├─ validate nodes against warehouse-layout.json
-                              ├─ resolve pickup_node → region_id
-                              ├─ mint order_id = uuid4()
-                              │
-                              ├─ DiscoverLeaders ──► cache region → leader
-                              └─ DispatchOrder ────► leader of pickup region
-                                                       (fallback: any bot)
-```
+## The contract (`proto/controlplane.proto`)
 
-1. **Web UI** — a form to create an order (pickup node, dropoff node, optional
-   order id).
-2. **Validation + region lookup** — load `warehouse-layout.json` (the same map
-   the fleet uses) to confirm the node ids exist and to find the pickup
-   region. A missing map degrades gracefully: skip validation, still dispatch.
-3. **Order → gRPC** — build an `Order`, then call `DispatchOrder` on the target
-   leader. Retry the *same* `order_id` across known bots on transient failure
-   (idempotent).
-4. **Leader discovery** — maintain a `region → leader` cache refreshed via
-   `DiscoverLeaders`, so dispatch is normally direct.
-
-## Why we do it this way
-
-- **No coupling to the fleet's internals.** The network layer only has to
-  implement `controlplane.proto`. Our knowledge of it (job ids, forwarding,
-  region semantics) is encoded in the contract, not in shared code.
-- **Resilient to leadership changes.** We never hard-code leaders; discovery is
-  live and dispatch falls back to any bot, whose forwarding guarantees delivery
-  to the right region.
-- **Idempotent and retryable.** The UUID `order_id` means a double-submit or a
-  retry after a timeout cannot create a duplicate job in the fleet.
-- **Minimal surface.** One service, two RPCs, one web endpoint — easy for the
-  network layer to implement and easy to reason about.
-
-## Contract (`proto/controlplane.proto`)
-
-See the file itself; the key messages are:
+Key messages (see the file for full comments):
 
 - `Order { order_id, pickup_node, dropoff_node, timestamp }`
 - `DispatchAck { accepted, owner_region, assignee?, note }`
-- `LeaderInfo { region_id, bot_id, address }`
-- `DiscoverLeadersResponse { leaders[], self_region_id, self_leader_bot_id, self_leader_address }`
+- `service ControlPlaneService { rpc DispatchOrder(Order) returns (DispatchAck) }`
 
-### What the network layer must implement (later)
+The wire identity we present on every call is:
 
-1. Copy `controlplane.proto` and regenerate its stubs.
-2. `DispatchOrder` → map `Order` to the fleet's internal job and call the
-   existing dispatcher (a thin adapter — the routing already exists).
-3. `DiscoverLeaders` → return the bot's known leaders + its own region/leader.
-4. Serve `ControlPlaneService` on **every** bot, and add a policy entry that
-   admits our reserved identity.
+```
+bot-id = 9000   (reserved; configurable via CONTROL_BOT_ID)
+region-id = 0   (configurable)
+role = "control"
+```
+
+---
+
+## Integration: exact edits to the network layer
+
+The fleet must implement `ControlPlaneService`. Because the routing already
+exists (`bus/jobs.py: Dispatcher.submit` forwards follower→leader and
+leader→pickup-region-leader), this is a thin adapter — three small edits, no
+changes to the fleet's protocol logic.
+
+### 1. Copy the proto and regenerate stubs
+
+Copy `proto/controlplane.proto` into `network-layer/proto/`, then (mirroring
+`network-layer/README.md`):
+
+```bash
+uv run python -m grpc_tools.protoc -I proto --python_out=proto --grpc_python_out=proto proto/controlplane.proto
+sed -i 's/^import controlplane_pb2/from proto import controlplane_pb2/' proto/controlplane_pb2_grpc.py
+```
+
+This produces `proto/controlplane_pb2.py` and `proto/controlplane_pb2_grpc.py`
+with the service name `controlplane.ControlPlaneService` (what the policy check
+below must match).
+
+### 2. Add a servicer (`network-layer/bus/controlplane.py`)
+
+```python
+"""ControlPlaneService — the control plane's own contract (see spore-control-plane).
+
+Thin adapter: DispatchOrder maps an Order onto the existing job dispatcher,
+which already routes (follower -> its leader; leader -> pickup region's leader).
+"""
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
+from proto import controlplane_pb2, controlplane_pb2_grpc
+from bus.jobs import Job
+
+if TYPE_CHECKING:
+    from bot import Bot
+
+
+class ControlPlaneServicer(controlplane_pb2_grpc.ControlPlaneServiceServicer):
+    def __init__(self, bot: Bot) -> None:
+        self._bot = bot
+
+    def DispatchOrder(self, request, context):
+        if not request.order_id:
+            return controlplane_pb2.DispatchAck(accepted=False, note="order_id required")
+        job = Job(
+            job_id=request.order_id,
+            pickup_node=request.pickup_node,
+            dropoff_node=request.dropoff_node,
+        )
+        # Dispatcher.submit already routes: follower -> its leader; leader ->
+        # pickup node's region leader. Idempotent on job_id == order_id.
+        ack = self._bot.dispatcher.submit(job)
+        resp = controlplane_pb2.DispatchAck(
+            accepted=ack.accepted, owner_region=ack.owner_region, note=ack.note
+        )
+        if ack.HasField("assignee"):
+            resp.assignee = ack.assignee
+        return resp
+```
+
+### 3. Register it on every bot (`network-layer/bot.py`)
+
+In `Bot._start_grpc_server` (next to the other `add_*_Servicer_to_server`
+calls), add:
+
+```python
+from proto import controlplane_pb2_grpc  # top of file
+from bus.controlplane import ControlPlaneServicer  # top of file
+# ...inside _start_grpc_server:
+controlplane_pb2_grpc.add_ControlPlaneServiceServicer_to_server(
+    ControlPlaneServicer(self), self._grpc_server
+)
+```
+
+### 4. Admit it in the virtual network (`network-layer/bus/policy.py`)
+
+```python
+if service == "controlplane.ControlPlaneService":
+    return True  # any authenticated caller; see reserved identity note
+```
+
+(The metadata parser above already requires `bot-id`/`region-id`/`role` to be
+present, so an unauthenticated caller is still refused. For stricter isolation,
+gate on `caller_id == 9000`.)
+
+### Integration notes
+
+- **No `ADMIN_ENABLED` needed** — this is a dedicated service, not
+  `AdminService`.
+- **No bot-to-bot delegation needed** — a follower that receives `DispatchOrder`
+  forwards internally via `Dispatcher.submit` (using `JobService`, not
+  `ControlPlaneService`), so the policy only has to admit the control plane's
+  own identity.
+- **Same network required** — the control plane's `BOT_ADDRESSES` must reach the
+  bots (same Docker bridge locally, same cluster/DNS in K8s). For a local dev
+  fleet, that's `amr-region-14-bot-0:50051`, … as `up.py` names them.
+- **Reserved id must stay out of the fleet's id space** (`BOT_ID < 100`). Keep
+  `CONTROL_BOT_ID` at a value that never collides.
+- **Idempotency is inherited** — `Dispatcher.take` already dedupes on `job_id`,
+  and `order_id` becomes `job_id`, so the control plane's retries are safe with
+  zero extra work on the fleet side.
+
+---
+
+## Acceptance checklist for integration
+
+1. `DispatchOrder` to a *follower* lands with its leader; to a *leader* of the
+   wrong region lands with the pickup region's leader (observable via
+   `owner_region` in the ack).
+2. Re-submitting the same `order_id` returns the existing assignment, not a
+   duplicate.
+3. A call with no metadata is refused `UNAUTHENTICATED` (existing policy
+   behaviour, unchanged).
+4. `controlplane.ControlPlaneService` is accepted with the reserved identity and
+   does not appear in any roster.
+
+---
+
+## Why this shape
+
+- **No coupling to the fleet's internals.** The network layer only has to
+  implement one RPC. Everything we know about it (job ids, forwarding) is
+  encoded in the contract, not in shared code.
+- **No geography to keep in sync.** The control plane holds no region or leader
+  state, so there is nothing that can go stale when bots migrate or leaders
+  rotate.
+- **Idempotent and retryable.** The UUID `order_id` means a double-submit or a
+  retry after a timeout cannot create a duplicate job in the fleet.
+- **Minimal surface.** One service, one RPC, one web endpoint — easy for the
+  network layer to implement and easy to reason about.

@@ -47,8 +47,8 @@ CONTROL_ROLE = os.environ.get("CONTROL_ROLE", "control")
 # ---- Map --------------------------------------------------------------------
 
 #: Path to warehouse-layout.json (the same map the fleet loads). Used only to
-#: validate node ids and resolve pickup_node -> region; a missing file degrades
-#: to "no validation, no region lookup" and dispatch still works.
+#: validate that a node id exists before dispatch; a missing file degrades to
+#: "no validation" and dispatch still works.
 WAREHOUSE_MAP = os.environ.get(
     "WAREHOUSE_MAP",
     str(Path(__file__).resolve().parent.parent.parent / "shared" / "warehouse-layout.json"),
@@ -56,12 +56,16 @@ WAREHOUSE_MAP = os.environ.get(
 
 # ---- Timing -----------------------------------------------------------------
 
-#: Per-RPC timeout for DispatchOrder / DiscoverLeaders.
+#: Per-RPC timeout for DispatchOrder.
 GRPC_TIMEOUT = float(os.environ.get("GRPC_TIMEOUT", "5.0"))
 
-#: How long a leader-directory entry is trusted before a re-discovery. A miss
-#: (unknown region) always triggers a refresh, regardless of TTL.
-LEADER_CACHE_TTL = float(os.environ.get("LEADER_CACHE_TTL", "10.0"))
+#: How many passes over BOT_ADDRESSES an order dispatch makes before giving up.
+#: Retrying rides out a leader election or a migration mid-flight; the fleet
+#: dedupes by order_id so a retry cannot double-place the order.
+DISPATCH_ATTEMPTS = int(os.environ.get("DISPATCH_ATTEMPTS", "5"))
+
+#: Seconds to wait between dispatch passes.
+DISPATCH_BACKOFF = float(os.environ.get("DISPATCH_BACKOFF", "1.0"))
 
 # ---- HTTP server ------------------------------------------------------------
 

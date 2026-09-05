@@ -1,30 +1,30 @@
-"""Order dispatch: turn an order into a gRPC call to the right leader.
+"""Order dispatch: hand an order to any reachable bot and let the fleet route it.
 
 WHAT
-    `OrderSubmitter.dispatch` sends an `Order` to the fleet and returns the
-    `DispatchAck`. It prefers the pickup-region's leader (when known) and falls
-    back to any bot, because the fleet forwards an order to the right leader
-    anyway.
+    `OrderSubmitter.dispatch(order)` sends the `Order` to the bots in
+    `BOT_ADDRESSES`, retrying `DISPATCH_ATTEMPTS` times, until one accepts.
+    It knows nothing about regions or leaders — the fleet does the routing.
 
 WHERE
     Called by the web layer for each POST /orders. Holds the persistent channel
     pool via `client.pool`.
 
 WHY
-    Direct-to-leader is faster and matches the product requirement ("send the
-    job to the leader of the region where it starts"); the fallback keeps
-    dispatch working when discovery is stale or the leader is unreachable.
+    The control plane can never know which region a bot is in, or who leads
+    what: bots migrate and leaders rotate. The only correct place to resolve
+    pickup_node -> region -> leader is inside the fleet's own dispatcher, at
+    dispatch time. So we just hand the order to any bot and let it forward.
 
 HOW
-    * `dispatch(order, region_id)` builds a candidate list — the region's
-      leader first, then every known bot (deduped) — and tries each in turn.
-    * Retries use the *same* `order_id`, which is the idempotency key: the
-      fleet dedupes by it, so a retry after a timeout cannot double-place the
-      order.
+    * `dispatch` tries every bot address; on failure it backs off and tries
+      again, up to `DISPATCH_ATTEMPTS`. Raises `DispatchError` when exhausted.
+    * Retries use the *same* `order_id`, which is the idempotency key: the fleet
+      dedupes by it, so a retry after a timeout cannot double-place the order.
 """
 from __future__ import annotations
 
 import logging
+import time
 
 import grpc
 
@@ -36,42 +36,34 @@ log = logging.getLogger(__name__)
 
 
 class DispatchError(Exception):
-    """Every candidate bot failed to accept the order."""
+    """No bot accepted the order within `DISPATCH_ATTEMPTS` passes."""
 
-    def __init__(self, order_id: str, failures: int) -> None:
-        super().__init__(f"order {order_id}: no bot accepted the dispatch ({failures} attempts)")
+    def __init__(self, order_id: str, attempts: int) -> None:
+        super().__init__(f"order {order_id}: not dispatched after {attempts} attempt(s)")
         self.order_id = order_id
-        self.failures = failures
+        self.attempts = attempts
 
 
 class OrderSubmitter:
     def __init__(self, addresses: list[str] | None = None) -> None:
         self._addresses = list(addresses if addresses is not None else config.BOT_ADDRESSES)
 
-    def dispatch(self, order: controlplane_pb2.Order, region_id: int | None,
-                 leader_address: str | None = None) -> controlplane_pb2.DispatchAck:
-        """Try the pickup-region leader first, then every known bot. Raises
-        `DispatchError` if nobody accepts."""
-        candidates: list[str] = []
-        if leader_address:
-            candidates.append(leader_address)
-        candidates.extend(a for a in self._addresses if a != leader_address)
-
-        failures = 0
-        last_note = "no bots configured"
-        for address in candidates:
-            ack = self._call(address, order)
-            if ack is not None:
-                if ack.accepted:
-                    log.info("order %s dispatched via %s (owner_region=%d, assignee=%s)",
+    def dispatch(self, order: controlplane_pb2.Order) -> controlplane_pb2.DispatchAck:
+        """Try every known bot, backing off and retrying, until one accepts."""
+        for attempt in range(1, config.DISPATCH_ATTEMPTS + 1):
+            for address in self._addresses:
+                ack = self._call(address, order)
+                if ack is not None and ack.accepted:
+                    log.info("order %s accepted via %s (owner_region=%d, assignee=%s)",
                              order.order_id, address, ack.owner_region,
                              ack.assignee if ack.HasField("assignee") else "-")
                     return ack
-                last_note = ack.note
-            failures += 1
+            if attempt < config.DISPATCH_ATTEMPTS:
+                time.sleep(config.DISPATCH_BACKOFF)
 
-        log.error("order %s rejected by %d bot(s): %s", order.order_id, failures, last_note)
-        raise DispatchError(order.order_id, failures)
+        log.error("order %s: giving up after %d attempt(s) across %d bot(s)",
+                  order.order_id, config.DISPATCH_ATTEMPTS, len(self._addresses))
+        raise DispatchError(order.order_id, config.DISPATCH_ATTEMPTS)
 
     def _call(self, address: str, order: controlplane_pb2.Order) -> controlplane_pb2.DispatchAck | None:
         try:

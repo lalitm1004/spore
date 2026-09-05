@@ -1,10 +1,10 @@
-"""The web layer: an order form that dispatches orders over gRPC.
+"""The web layer: an order form that hands orders to the fleet over gRPC.
 
 WHAT
     * `GET /`        — render the order form.
     * `POST /orders` — validate the pickup/dropoff nodes, mint an order id,
-                       resolve the pickup region, and dispatch the order to
-                       that region's leader (falling back to any bot).
+                       and dispatch the order to any reachable bot (the fleet
+                       routes it to the right region/leader).
 
 WHERE
     Entry point is `spore_control_plane.__init__.main`, which builds the app
@@ -17,9 +17,9 @@ WHY
     shows the result.
 
 HOW
-    A `create_app` factory takes optional `WarehouseMap` / `LeaderDirectory` /
-    `OrderSubmitter` (defaults are built from `config`), so tests can inject
-    fakes and the production entry point stays a one-liner.
+    A `create_app` factory takes an optional `WarehouseMap` and `OrderSubmitter`
+    (defaults are built from `config`), so tests can inject fakes and the
+    production entry point stays a one-liner.
 """
 from __future__ import annotations
 
@@ -33,7 +33,6 @@ from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 
 from spore_control_plane import config
-from spore_control_plane.discovery import LeaderDirectory
 from spore_control_plane.map import WarehouseMap
 from spore_control_plane.proto import controlplane_pb2
 from spore_control_plane.submitter import DispatchError, OrderSubmitter
@@ -45,7 +44,6 @@ TEMPLATES_DIR = Path(__file__).resolve().parent.parent.parent / "templates"
 
 def create_app(
     warehouse_map: WarehouseMap | None = None,
-    directory: LeaderDirectory | None = None,
     submitter: OrderSubmitter | None = None,
 ) -> FastAPI:
     app = FastAPI(title="Spore Control Plane")
@@ -53,7 +51,6 @@ def create_app(
 
     # Built once at startup; the caller may inject fakes for tests.
     wh_map = warehouse_map if warehouse_map is not None else WarehouseMap.load(config.WAREHOUSE_MAP)
-    dir_ = directory if directory is not None else LeaderDirectory()
     sub_ = submitter if submitter is not None else OrderSubmitter()
 
     @app.get("/", response_class=HTMLResponse)
@@ -74,7 +71,6 @@ def create_app(
         pickup = int(pickup_node)
         dropoff = int(dropoff_node)
         oid = order_id.strip() or str(uuid.uuid4())
-        region = wh_map.region_of(pickup)
 
         order = controlplane_pb2.Order(
             order_id=oid,
@@ -83,14 +79,8 @@ def create_app(
             timestamp=int(time.time() * 1000),
         )
 
-        leader_address = None
-        if region is not None:
-            leader = dir_.leader_for(region)
-            if leader is not None:
-                leader_address = leader.address
-
         try:
-            ack = sub_.dispatch(order, region, leader_address=leader_address)
+            ack = sub_.dispatch(order)
         except DispatchError as e:
             log.error("dispatch failed: %s", e)
             return templates.TemplateResponse(request, "order.html", {
@@ -101,7 +91,6 @@ def create_app(
             "order_id": oid,
             "pickup_node": pickup,
             "dropoff_node": dropoff,
-            "region": region,
             "accepted": ack.accepted,
             "owner_region": ack.owner_region,
             "assignee": ack.assignee if ack.HasField("assignee") else None,
