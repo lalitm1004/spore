@@ -983,6 +983,23 @@ service ReservationService {
 service AdminService {
   rpc GetState(Empty)                     returns (BotState);
   rpc InjectRobotState(RobotStateMsg)     returns (Empty);
+  rpc InjectObstruction(ObstructionMsg)   returns (Empty);
+}
+
+// A blockage pushed straight into the planner, for tests and operators.
+//
+// Deliberately a shortcut, and worth being honest about: the real path does not
+// exist yet. `robot-to-network.schema.json` carries the node in its OBSTACLE
+// warning, but `RobotState.fault` is a flat string, so the node is lost on the
+// way in and nothing ever builds one of these from what a robot reported. This
+// exercises how the planner *responds* to a blockage, not how it hears about
+// one. Clearing is `level = 0`.
+message ObstructionMsg {
+  int32 node_id = 1;
+  // 0 clears; at or above `obstruction_block_level` the node is impassable;
+  // below it the node is merely expensive, so a robot still routes through a
+  // lightly obstructed lane when the alternative is much worse.
+  float level   = 2;
 }
 
 message Empty {}
@@ -1449,6 +1466,10 @@ yet. See `TODO.md`.
 ---
 
 ## 16. Pathfinding — telling a blind robot where to go
+
+> What the fleet does in each concrete situation, with the container test that
+> proves it, is **[`docs/scenarios.md`](docs/scenarios.md)**. This section is the
+> design; that one is the behaviour.
 
 The robot has no map of its own beyond adjacency and no idea where anything is.
 It arrives at a QR node, works out which turns physically exist, and asks. It

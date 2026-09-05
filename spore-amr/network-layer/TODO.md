@@ -117,3 +117,26 @@ container runs a real `bot.py`, and `spore-amr/webots/robot/network.py` is now
 only the shared message shapes. There is one network layer.
 
 ---
+
+## Scenario coverage (docs/scenarios.md)
+
+55 scenarios on real containers, ids matching test names. A guard test
+(`tests/test_scenarios_doc.py`) fails if a documented scenario has no test or a
+test has no row, so the contract cannot quietly stop being true.
+
+- [x] **A1-A10** decisions — never silence, the four kinds, malformed input, no map, one connection a shift
+- [x] **B1-B12** job distribution — nearest, charge over distance, exclusions, leader last, idempotence, forwarding, queueing, full lifecycle
+- [x] **C1-C8** planning — a job becomes turns, the goal moves at pickup, claims and trails respected, latency, unreachable
+- [x] **D1-D8** exceptions — the three stall rungs, faults either side of pickup, companion reconnect, dead bot, dead leader
+- [x] **E1-E6** collisions — two and three on a node, following, claims crossing, and the no-overlap invariant on its own
+- [x] **F2, F3, F4, F6** redirections — obstruction avoided and cleared, migration replan, a peer's claim changing the answer
+- [x] **G1, G2, G7** yielding — carrying beats free, the id tiebreak, exactly one side gives way
+- [ ] **F1** promoting a cached alternate — the route cache is built and unit-tested, but nothing populates it per job yet
+- [ ] **F5** REROUTE on a genuine route change — A4 covers the negative (unchanged means PROCEED); the positive needs a route that actually moves
+- [ ] **G3-G6** the yield-spot cascade on containers — unit-tested; pinning which spot is chosen would be asserting the map rather than the rule
+- [ ] **E3** two bots driving head-on down a whole corridor — the contest itself is covered by E4, G1 and G7
+- [ ] The obstruction path is synthetic: `RobotState.fault` is a flat string, so
+      the node in an `OBSTACLE` warning is lost and nothing builds an
+      obstruction from what a robot reported
+
+---

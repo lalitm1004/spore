@@ -55,6 +55,11 @@ class AdminServicer(fleet_pb2_grpc.AdminServiceServicer):
             reservations=_held_claims(b),
         )
 
+    def InjectObstruction(self, request: fleet_pb2.ObstructionMsg, context: grpc.ServicerContext):
+        """Push a blockage into the planner, or clear one with level 0."""
+        self._bot.set_obstruction(request.node_id, request.level)
+        return fleet_pb2.Empty()
+
     def InjectRobotState(self, request: fleet_pb2.RobotStateMsg, context: grpc.ServicerContext):
         src = self._bot._robot_source
         # Duck-typed on purpose: in a container `bot.py` runs as __main__, so

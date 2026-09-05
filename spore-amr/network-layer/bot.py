@@ -86,7 +86,7 @@ from planning.planner import Planner
 from planning.routes import RouteCache
 from planning.server import RobotLink
 from planning.topology import Topology
-from planning.types import Goal, Request, Reservation, SelfState
+from planning.types import Goal, Obstruction, Request, Reservation, SelfState
 from planning.types import from_env as planning_config
 from reservations import now_ms
 from reservations.ledger import ReservationLedger
@@ -281,6 +281,10 @@ class Bot:
         #: Alternatives held for the current job, as diffs (planning/routes.py).
         self.routes: RouteCache | None = None
         self._last_target: int | None = None
+        #: Blockages the planner routes around, keyed by node. Reported ones
+        #: would land here too, once the robot link carries the node id -- today
+        #: only AdminService fills it (see ObstructionMsg in fleet.proto).
+        self.obstructions: dict[int, float] = {}
         self._nav_node: int = 0
         self._nav_since: float = time.monotonic()
         self._nav_strikes: int = 0
@@ -596,6 +600,10 @@ class Bot:
             self.graph, observations, now=now, config=self.planning,
             kinematics=self.planner.kinematics,
             hop_cost=self.planner.kinematics.cruise_ms(self.graph.node_spacing),
+            obstructions=tuple(
+                Obstruction(node_id=node, level=level)
+                for node, level in sorted(self.obstructions.items())
+            ),
             exclude_bot_id=self.bot_id,
         )
         plan = self.planner.plan(Request(
@@ -620,6 +628,17 @@ class Bot:
         if decision.turn:
             self._last_target = decision.target_node_id
         return decision
+
+    def set_obstruction(self, node_id: int, level: float) -> None:
+        """Mark a node blocked, or clear it with a level of zero."""
+        if level <= 0:
+            self.obstructions.pop(node_id, None)
+        else:
+            self.obstructions[node_id] = level
+        # The route in hand was costed without this, so it is no longer the
+        # cheapest thing we know -- drop it rather than drive it.
+        self.routes = None
+        self._last_target = None
 
     def _observations(self) -> tuple:
         """What we currently know about the other robots, in one shape.

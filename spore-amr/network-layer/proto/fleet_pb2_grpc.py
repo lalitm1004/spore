@@ -444,6 +444,11 @@ class AdminServiceStub:
                 request_serializer=fleet__pb2.RobotStateMsg.SerializeToString,
                 response_deserializer=fleet__pb2.Empty.FromString,
                 _registered_method=True)
+        self.InjectObstruction = channel.unary_unary(
+                '/fleet.AdminService/InjectObstruction',
+                request_serializer=fleet__pb2.ObstructionMsg.SerializeToString,
+                response_deserializer=fleet__pb2.Empty.FromString,
+                _registered_method=True)
 
 
 class AdminServiceServicer:
@@ -466,6 +471,12 @@ class AdminServiceServicer:
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
+    def InjectObstruction(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
 
 def add_AdminServiceServicer_to_server(servicer, server):
     rpc_method_handlers = {
@@ -477,6 +488,11 @@ def add_AdminServiceServicer_to_server(servicer, server):
             'InjectRobotState': grpc.unary_unary_rpc_method_handler(
                     servicer.InjectRobotState,
                     request_deserializer=fleet__pb2.RobotStateMsg.FromString,
+                    response_serializer=fleet__pb2.Empty.SerializeToString,
+            ),
+            'InjectObstruction': grpc.unary_unary_rpc_method_handler(
+                    servicer.InjectObstruction,
+                    request_deserializer=fleet__pb2.ObstructionMsg.FromString,
                     response_serializer=fleet__pb2.Empty.SerializeToString,
             ),
     }
@@ -538,6 +554,33 @@ class AdminService:
             target,
             '/fleet.AdminService/InjectRobotState',
             fleet__pb2.RobotStateMsg.SerializeToString,
+            fleet__pb2.Empty.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def InjectObstruction(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/fleet.AdminService/InjectObstruction',
+            fleet__pb2.ObstructionMsg.SerializeToString,
             fleet__pb2.Empty.FromString,
             options,
             channel_credentials,
