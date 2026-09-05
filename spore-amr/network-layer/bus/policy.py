@@ -96,8 +96,11 @@ class VirtualNetworkInterceptor(grpc.ServerInterceptor):
             return caller_role == "leader"
         if service == "fleet.MigrationJoinService":
             return caller_id in bot.pending_incoming
-        if service == "fleet.JobService":
-            return True  # authenticated is enough; routing decides the rest
+        if service in ("fleet.JobService", "controlplane.ControlPlaneService"):
+            # Authenticated is enough; routing decides the rest. The control
+            # plane is not a bot and has no region -- it is an order source
+            # outside the fleet, and every bot is a legitimate door in.
+            return True
         if service == "fleet.BotService":
             return caller_role == "leader"
         if service == "spore.network.v1.RobotNetwork":

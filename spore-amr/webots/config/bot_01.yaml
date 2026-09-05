@@ -21,9 +21,9 @@ optics:
   - 0
   border_tolerance: 0.3
   camera_footprint: 0.09268
-  camera_x: 0.095
+  camera_x: 0.295
   code_size: 0.06
-  color_sensor_x: 0.125
+  color_sensor_x: 0.325
   enabled: true
   ir_array_x: 0.07
   tile_length: 0.1

@@ -46,8 +46,10 @@ import pytest  # noqa: E402
 
 from bot import Bot  # noqa: E402
 from bus.policy import VirtualNetworkInterceptor, rpc_metadata  # noqa: E402
+from proto import controlplane_pb2_grpc  # noqa: E402
 from bus.heartbeat import RegionServicer  # noqa: E402
 from bus.jobs import JobServicer, BotServicer  # noqa: E402
+from bus.control_plane import ControlPlaneServicer  # noqa: E402
 from bus.leader_exchange import LeaderExchangeServicer  # noqa: E402
 from bus.migration import MigrationJoinServicer  # noqa: E402
 from election import priority as prio  # noqa: E402
@@ -111,6 +113,11 @@ def start_server(bot: Bot, port: int) -> grpc.Server:
     fleet_pb2_grpc.add_JobServiceServicer_to_server(JobServicer(bot), server)
     fleet_pb2_grpc.add_BotServiceServicer_to_server(BotServicer(bot), server)
     fleet_pb2_grpc.add_ReservationServiceServicer_to_server(ReservationServicer(bot.ledger), server)
+    # Every service a real bot serves, so a test cannot pass against a fleet
+    # that is missing one. This list is the thing most likely to drift from
+    # `Bot._start_grpc_server`.
+    controlplane_pb2_grpc.add_ControlPlaneServiceServicer_to_server(
+        ControlPlaneServicer(bot), server)
     if server.add_insecure_port(f"0.0.0.0:{port}") == 0:
         raise RuntimeError(f"could not bind test server to port {port}")
     server.start()

@@ -76,6 +76,7 @@ from bus.jobs import (
     CS_PICKUP, CS_EN_ROUTE, CS_DROPOFF, CS_DELIVERED,
 )
 from bus.admin import AdminServicer
+from bus.control_plane import ControlPlaneServicer
 from peers.table import PeerTable, Peer, Leader, Ledger
 from planning import decide as decide_module
 from planning import traffic as traffic_module
@@ -91,7 +92,7 @@ from reservations.ledger import ReservationLedger
 from reservations.sender import ReservationSender
 from reservations.server import ReservationServicer
 from planning.robot_service import RobotNetworkServicer
-from proto import fleet_pb2, fleet_pb2_grpc, robot_pb2_grpc
+from proto import controlplane_pb2_grpc, fleet_pb2, fleet_pb2_grpc, robot_pb2_grpc
 from warehouse.map import WarehouseMap
 
 # Messages already carry "bot-N:"; one process is one bot, so no prefix here
@@ -1011,6 +1012,10 @@ class Bot:
         fleet_pb2_grpc.add_BotServiceServicer_to_server(BotServicer(self), self._grpc_server)
         fleet_pb2_grpc.add_ReservationServiceServicer_to_server(ReservationServicer(self.ledger), self._grpc_server)
         fleet_pb2_grpc.add_AdminServiceServicer_to_server(AdminServicer(self), self._grpc_server)
+        # Where cargo orders enter the fleet. Served by every bot because the
+        # control plane knows no leaders -- see bus/control_plane.py.
+        controlplane_pb2_grpc.add_ControlPlaneServiceServicer_to_server(
+            ControlPlaneServicer(self), self._grpc_server)
         # The robot link. On this bot's own server, so a robot talks to its own
         # coordinator and nothing else -- see docs/boundary.md.
         self._robot_service = RobotNetworkServicer(

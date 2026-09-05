@@ -1156,6 +1156,81 @@ message MigrationJoinAck {
 
 ---
 
+### 11.2 Orders in — `proto/controlplane.proto`
+
+Where cargo orders enter the fleet, and the one proto here that is **not ours**.
+`spore-control-plane` owns it and we implement it, so an order system never has
+to speak `fleet.Job` — a shape carrying `owner_region`, `assignee` and `status`,
+none of which an order source can fill in or should know about.
+
+Served by **every** bot, because the control plane knows no leaders and no
+regions. It hands an order to any bot it can reach; a non-leader forwards to its
+leader, and a leader resolves the pickup's region from its own map and forwards
+there. That resolution can only be correct inside the fleet at dispatch time,
+because bots migrate and leaders rotate. `order_id` is the idempotency key, and
+it is what makes the control plane's own retry loop safe.
+
+`bus/control_plane.py` is a translation and nothing else: an `Order` becomes a
+`Job`, and `bus.jobs` answers. The copy of the file in `proto/` is guarded by a
+test against the control plane's original.
+
+```protobuf
+syntax = "proto3";
+
+package controlplane;
+
+// A cargo order: move goods from one QR node to another.
+//
+// This proto is owned by the control plane. The network layer implements it;
+// the dependency is one-way and there is no import of (or coupling to) the
+// fleet's own wire schema.
+message Order {
+  // Cargo/order identifier. A UUID minted by the control plane — orders are
+  // minted by an external system, so the id cannot come from a central
+  // sequential allocator. Doubles as the idempotency key: re-submitting the
+  // same order_id is a no-op, which is what makes retries safe.
+  string order_id = 1;
+
+  // The QR node where the order starts / cargo is collected.
+  int32 pickup_node = 2;
+
+  // The QR node where cargo is delivered.
+  int32 dropoff_node = 3;
+
+  // Unix epoch millis, informational.
+  int64 timestamp = 4;
+}
+
+message DispatchAck {
+  // True iff the fleet accepted the order (not necessarily assigned yet —
+  // it may be queued for a later retry).
+  bool accepted = 1;
+
+  // The region whose leader now owns the order (reported back by the fleet —
+  // the control plane never computes this itself).
+  int32 owner_region = 2;
+
+  // Present iff a bot was assigned immediately. `optional` gives real
+  // presence because bot_id 0 is a valid bot.
+  optional int32 assignee = 3;
+
+  // Human-readable outcome: "queued", "forwarded", or an error detail.
+  string note = 4;
+}
+
+service ControlPlaneService {
+  // Submit an order to ANY bot.
+  //
+  // Routing is entirely the fleet's job: the control plane knows no regions
+  // and no leaders. A non-leader forwards to its leader; a leader resolves
+  // pickup_node's region from its own map and forwards to that region's
+  // leader. Idempotent on order_id.
+  rpc DispatchOrder(Order) returns (DispatchAck);
+}
+```
+
+---
+
 ### 11.1 The robot link — `proto/robot.proto`
 
 A second file, and deliberately so: `fleet.proto` is bot to bot, this is bot to

@@ -48778,6 +48778,9 @@ DEF BOT_01 LineBot {
   sensorCount 3
   sensorSpacing 0.02
   sensorHeight 0.015
+  bodyLength 0.5
+  bodyWidth 0.5
+  bodyHeight 0.1
 }
 DEF BOT_02 LineBot {
   translation -42.0 -27.0 0.02
@@ -48787,6 +48790,9 @@ DEF BOT_02 LineBot {
   sensorCount 3
   sensorSpacing 0.02
   sensorHeight 0.015
+  bodyLength 0.5
+  bodyWidth 0.5
+  bodyHeight 0.1
 }
 DEF BOT_03 LineBot {
   translation -36.0 -27.0 0.02
@@ -48796,6 +48802,9 @@ DEF BOT_03 LineBot {
   sensorCount 3
   sensorSpacing 0.02
   sensorHeight 0.015
+  bodyLength 0.5
+  bodyWidth 0.5
+  bodyHeight 0.1
 }
 DEF BOT_04 LineBot {
   translation -30.0 -27.0 0.02
@@ -48805,6 +48814,9 @@ DEF BOT_04 LineBot {
   sensorCount 3
   sensorSpacing 0.02
   sensorHeight 0.015
+  bodyLength 0.5
+  bodyWidth 0.5
+  bodyHeight 0.1
 }
 DEF BOT_05 LineBot {
   translation -24.0 -27.0 0.02
@@ -48814,6 +48826,9 @@ DEF BOT_05 LineBot {
   sensorCount 3
   sensorSpacing 0.02
   sensorHeight 0.015
+  bodyLength 0.5
+  bodyWidth 0.5
+  bodyHeight 0.1
 }
 DEF BOT_06 LineBot {
   translation -18.0 -27.0 0.02
@@ -48823,6 +48838,9 @@ DEF BOT_06 LineBot {
   sensorCount 3
   sensorSpacing 0.02
   sensorHeight 0.015
+  bodyLength 0.5
+  bodyWidth 0.5
+  bodyHeight 0.1
 }
 DEF BOT_07 LineBot {
   translation -12.0 -27.0 0.02
@@ -48832,6 +48850,9 @@ DEF BOT_07 LineBot {
   sensorCount 3
   sensorSpacing 0.02
   sensorHeight 0.015
+  bodyLength 0.5
+  bodyWidth 0.5
+  bodyHeight 0.1
 }
 DEF BOT_08 LineBot {
   translation -6.0 -27.0 0.02
@@ -48841,6 +48862,9 @@ DEF BOT_08 LineBot {
   sensorCount 3
   sensorSpacing 0.02
   sensorHeight 0.015
+  bodyLength 0.5
+  bodyWidth 0.5
+  bodyHeight 0.1
 }
 DEF BOT_09 LineBot {
   translation 0.0 -27.0 0.02
@@ -48850,6 +48874,9 @@ DEF BOT_09 LineBot {
   sensorCount 3
   sensorSpacing 0.02
   sensorHeight 0.015
+  bodyLength 0.5
+  bodyWidth 0.5
+  bodyHeight 0.1
 }
 DEF BOT_10 LineBot {
   translation 6.0 -27.0 0.02
@@ -48859,6 +48886,9 @@ DEF BOT_10 LineBot {
   sensorCount 3
   sensorSpacing 0.02
   sensorHeight 0.015
+  bodyLength 0.5
+  bodyWidth 0.5
+  bodyHeight 0.1
 }
 DEF SUPERVISOR Robot {
   name "supervisor"

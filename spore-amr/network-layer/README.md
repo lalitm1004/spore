@@ -133,7 +133,12 @@ default logs at ERROR and keeps events in `Bot.alerts`.
 ```bash
 # -I. so the generated stubs import `from proto import ...` rather than a
 # bare `fleet_pb2`, which only resolves if proto/ happens to be on the path.
-uv run python -m grpc_tools.protoc -I. --python_out=. --grpc_python_out=. proto/fleet.proto proto/robot.proto
+# controlplane.proto is the control plane's, vendored here because the Docker
+# build context is this directory alone. Copy it across before regenerating;
+# tests/test_control_plane.py fails if the two differ.
+cp ../../spore-control-plane/proto/controlplane.proto proto/
+uv run python -m grpc_tools.protoc -I. --python_out=. --grpc_python_out=. \
+    proto/fleet.proto proto/robot.proto proto/controlplane.proto
 sed -i 's/^import fleet_pb2/from proto import fleet_pb2/' proto/fleet_pb2_grpc.py
 ```
 

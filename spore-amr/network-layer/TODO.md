@@ -53,6 +53,10 @@ refer to `PROTOCOL.md`.
 
 ## Jobs (§14)
 
+- [x] Orders enter over `ControlPlaneService.DispatchOrder`, served by every bot.
+  The control plane owns that proto and knows no regions or leaders; routing
+  stays inside the fleet where it is the only place it can be right
+
 - [x] Submit → best free follower (charge, then distance); robot commanded to pickup; **bot-0 assignable**
 - [x] Busy / low-battery / faulted bots not free; leader is last resort and self-observes its own job
 - [x] Routed from a follower to its leader; routed to the pickup node's region leader
