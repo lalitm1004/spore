@@ -14,7 +14,8 @@
 #   ./fleet.sh goals       what the network layer has told each robot to do
 #   ./fleet.sh robots      per-robot: distance, state, and whether it is moving
 #   ./fleet.sh journal     follow the network layer's durable state
-#   ./fleet.sh replay      build a watchable replay of the run just recorded
+#   ./fleet.sh replay      build a flat replay of the run just recorded
+#   ./fleet.sh replay3d    build a 3D replay you can orbit, fly and follow
 #   ./fleet.sh gen         regenerate the world from fleet.yaml
 #   ./fleet.sh build       rebuild the controller image
 #
@@ -200,6 +201,16 @@ PYTHON
     # from the supervisor: what you watch is what actually happened.
     shift
     uv run python -m tools.make_replay "$@"
+    ;;
+
+  replay3d)
+    # The same recording, lit and in three dimensions: orbit, zoom, follow one
+    # robot. Everything is geometry generated from warehouse.json, so the whole
+    # 881-node warehouse is about a megabyte -- against the 924 MB of marker
+    # texture Webots' own viewer would ask the browser to expand for the same
+    # map. It is a recording, so how slowly the run went does not matter either.
+    shift
+    uv run python -m tools.make_replay3d "$@"
     ;;
 
   journal)
