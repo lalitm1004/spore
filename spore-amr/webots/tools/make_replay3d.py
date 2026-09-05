@@ -151,6 +151,9 @@ PAGE = r"""<title>Fleet replay 3D</title>
     <select id="follow"><option value="-1">free camera</option></select></label>
   <label class="sub">size
     <input type="range" id="scale" min="1" max="12" step="0.5" value="__SCALE__"></label>
+  <label class="sub">lanes
+    <input type="range" id="lanew" min="0.02" max="0.5" step="0.01" value="0.13"></label>
+  <label class="sub"><input type="checkbox" id="grid" checked> grid</label>
   <label class="sub"><input type="checkbox" id="trails" checked> trails</label>
 </div>
 <script src="__THREE__"></script>
@@ -222,13 +225,29 @@ floor.position.set(cx, 0, D(cy));
 floor.receiveShadow=true;
 scene.add(floor);
 
-const grid=new THREE.GridHelper(span*2.2, Math.round(span*2.2/2), 0x1e252c, 0x1a2027);
+// 10 m cells, not 2 m: at node spacing the grid competes with the lane graph
+// and you end up reading the floor instead of the map. Dim enough to give
+// depth and nothing else.
+const grid=new THREE.GridHelper(span*2.2, Math.max(2,Math.round(span*2.2/10)),
+                                0x1b2229, 0x181e24);
 grid.position.set(cx, 0.002, D(cy));
 scene.add(grid);
 
 // ---- lanes: one merged geometry, so 952 lanes are one draw call ------------
-{
-  const pos=[], LW=0.055;
+// The world generator paints these at 20 mm in near-black ink. Reproducing that
+// faithfully gives you an invisible map, so they are drawn wide and bright --
+// exaggerated for the same reason the robots are. Emissive, so a lane reads the
+// same on the far side of the hall as it does under the light.
+//
+// Rebuilt on the width slider rather than fixed at generation time: how wide a
+// lane needs to be to read depends on how far out the camera is, and that is a
+// thing to judge by looking rather than to guess and regenerate.
+const laneMaterial=new THREE.MeshStandardMaterial({
+  color:0x9fb6cd, emissive:0x53708c, emissiveIntensity:1.0, roughness:0.55});
+let lanes=null;
+
+function buildLanes(LW){
+  const pos=[];
   for(const [a,b] of EDGES){
     const A=NODES[a], B=NODES[b]; if(!A||!B) continue;
     const dx=B.x-A.x, dy=B.y-A.y, len=Math.hypot(dx,dy)||1;
@@ -241,10 +260,25 @@ scene.add(grid);
   const g=new THREE.BufferGeometry();
   g.setAttribute("position", new THREE.Float32BufferAttribute(pos,3));
   g.computeVertexNormals();
-  // Matches the lane ink the world generator paints, lifted a shade so it
-  // still reads against the floor under this lighting.
-  const lanes=new THREE.Mesh(g, new THREE.MeshBasicMaterial({color:0x3a4650}));
+  if(lanes){ scene.remove(lanes); lanes.geometry.dispose(); }
+  lanes=new THREE.Mesh(g, laneMaterial);
+  lanes.receiveShadow=true;
   scene.add(lanes);
+}
+buildLanes(0.13);
+
+// A junction is where the eye goes, and four lane ends meeting leave a notch.
+// A disc under each node fills it, so the graph reads as continuous track.
+{
+  const cap=new THREE.CircleGeometry(0.075, 12);
+  const m=new THREE.Matrix4(), rot=new THREE.Matrix4().makeRotationX(-Math.PI/2);
+  const ids=Object.keys(NODES);
+  const caps=new THREE.InstancedMesh(cap, laneMaterial, ids.length);
+  ids.forEach((id,i)=>{
+    const n=NODES[id];
+    caps.setMatrixAt(i, m.makeTranslation(W(n.x), 0.0055, D(n.y)).multiply(rot));
+  });
+  scene.add(caps);
 }
 
 // ---- nodes -----------------------------------------------------------------
@@ -399,6 +433,8 @@ $("scale").addEventListener("input", e=>{
   const v=+e.target.value; robots.forEach(r=>r.scale.setScalar(v)); });
 $("trails").addEventListener("change", e=>{
   trails.forEach(t=>t.line.visible=e.target.checked); });
+$("lanew").addEventListener("input", e=>buildLanes(+e.target.value));
+$("grid").addEventListener("change", e=>grid.visible=e.target.checked);
 
 const scrub=$("scrub");
 scrub.max=Math.max(0,NFRAMES-1);
