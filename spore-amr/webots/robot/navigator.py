@@ -14,7 +14,7 @@ testable without either.
 import json
 import math
 import pathlib
-from typing import Dict, Optional
+from typing import Optional
 
 from robot.network import Decision, Query
 from tools.track.graph import Edge, Graph, Node
@@ -49,9 +49,8 @@ def load_map(path: pathlib.Path) -> Graph:
 class Navigator:
     """Turns a marker arrival into a heading to turn to."""
 
-    def __init__(self, graph: Graph, turn_tolerance_deg: float = 45.0):
+    def __init__(self, graph: Graph):
         self.graph = graph
-        self.turn_tolerance_deg = turn_tolerance_deg
         self.query_id = 0
         self.last_node: Optional[int] = None
         self.bad_answers = 0
@@ -72,13 +71,7 @@ class Navigator:
 
         exact = self.heading_into(node_id)
         heading = exact if exact is not None else heading_rad
-        # `turns_from` resolves left/straight/right against the arrival
-        # heading, which is what excludes the lane we came in on. Only the
-        # destinations travel: the names are the robot's own working, and the
-        # wire carries nodes.
-        turns: Dict[str, int] = self.graph.turns_from(
-            node_id, heading, tolerance_deg=self.turn_tolerance_deg)
-        available = tuple(sorted(turns.values()))
+        available = self.graph.exits_from(node_id, heading)
 
         node = self.graph.nodes[node_id]
         self.query_id += 1

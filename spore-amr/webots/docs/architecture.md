@@ -346,8 +346,8 @@ quantisation surprises surface in simulation rather than on hardware.
 |---|---|
 | `qr-code.schema.json` | **conforms exactly** — all 83 payloads validate |
 | `warehouse.json` shape | **matches** — same keys, `units: cm`, `node_spacing: 200` |
-| `robot-to-network.schema.json` | **not used** — see below |
-| `network-to-robot.schema.json` | **not used** — see below |
+| `robot-to-network.schema.json` | the up-link, as `RobotToNetwork` in `network-layer/proto/robot.proto` |
+| `network-to-robot.schema.json` | the answer, as `NetworkToRobot` in the same file |
 
 The junction handshake invented its own `Query`/`Decision` types rather than
 using the two message schemas, and that gap is worth closing deliberately:
@@ -365,8 +365,24 @@ using the two message schemas, and that gap is worth closing deliberately:
 
 ## 12. Open work, in dependency order
 
-1. **Align the junction messages** to `robot-to-network` / `network-to-robot`,
-   after agreeing the above with whoever owns the schemas.
+1. ~~**Align the junction messages** to `robot-to-network` /
+   `network-to-robot`.~~ **Done.** They are one message now, in one file:
+   `network-layer/proto/robot.proto`, the two schemas rendered field for field
+   plus four fields this fleet adds for *asking* rather than reporting —
+   `available` and `heading_rad` going up, `kind`, `hold_ms` and `because`
+   coming down, and `query_id` both ways.
+
+   The disagreement recorded above was real and it resolved this way: the
+   periodic up-message and the blocking junction question are the same message,
+   told apart by whether `available` is populated. That is what makes it one
+   wire — and it is why the up-link exists at all, because *every* report
+   updates position, not only the ones that ask something. The schemas gained
+   the extra fields rather than the junction keeping its own shapes, because a
+   destination alone cannot say "hold 800 ms" and silence is the one answer a
+   blind robot cannot recover from.
+
+   `network-layer/tests/test_proto_contract.py` fails if either side gains a
+   field the other has not declared.
 2. **Measure turn accuracy.** `robot/turn.py` is unit-tested but has never been
    checked against ground truth. `tools/spike_turn.py` and
    `spike_turn_truth.py` exist for exactly this and have never completed a run

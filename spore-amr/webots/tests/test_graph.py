@@ -236,7 +236,21 @@ def test_a_dead_end_spur_offers_the_way_back():
     graph = Graph(nodes, [Edge(1, 2)])
 
     arrived_heading = graph.bearing(1, 2)          # drove east into the bay
-    turns = graph.turns_from(2, arrived_heading)
+    exits = graph.exits_from(2, arrived_heading)
 
-    assert turns, "a robot in a charging bay was offered nowhere to go"
-    assert set(turns.values()) == {1}
+    assert exits, "a robot in a charging bay was offered nowhere to go"
+    assert exits == (1,)
+
+
+def test_an_ordinary_junction_does_not_offer_the_lane_just_driven():
+    """The rule the dead end is the exception to. A robot has no business
+    calling the way it came a legal move."""
+    from tools.track.graph import lattice
+
+    graph = lattice(rows=3, columns=3, spacing=2.0)
+    arrived_heading = graph.bearing(3, 4)          # into the centre from the west
+
+    exits = graph.exits_from(4, arrived_heading)
+
+    assert 3 not in exits, "it was offered the lane it just drove down"
+    assert set(exits) == set(graph.neighbours(4)) - {3}

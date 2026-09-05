@@ -180,6 +180,35 @@ class Graph:
 
     # -------------------------------------------------------- ground truth --
 
+    def exits_from(self, node_id: int, heading: float) -> Tuple[int, ...]:
+        """The nodes a robot at `node_id` can legally drive to next.
+
+        `heading` is how it arrived. The lane it came in on is excluded: a robot
+        that has just driven into a node has no business calling the way it came
+        a legal move, and on a one-way lane it would be a wrong-way entry.
+
+        **Unless that is the only lane there is.** Every charging and parking bay
+        on this floor is a degree-1 spur, and the fleet spawns in them. Excluding
+        the arrival lane there leaves nothing, the companion reports "nowhere to
+        go from here", and the network layer is never even asked -- so a robot
+        that drives into a bay stays in it for the rest of the run. Reversing out
+        is a legal move and the only one, so it is offered.
+
+        This used to name each lane left, straight or right and match it to an
+        ideal bearing within 45 degrees. The names were thrown away by the only
+        caller -- the wire carries node ids, because left and right never cross
+        it -- and the matching is what dropped the dead end: a lane 180 degrees
+        behind is 135 degrees outside every window, so the candidate was there
+        and no turn could be named for it. Nothing was gained by naming, and a
+        robot sat in a charging bay for a whole run because of it.
+        """
+        back = wrap_pi(heading + math.pi)
+        exits = [n for n in self._adjacency[node_id]
+                 if abs(wrap_pi(self.bearing(node_id, n) - back)) >= math.radians(1.0)]
+        return tuple(sorted(exits or self._adjacency[node_id]))
+
+    # -------------------------------------------------------- ground truth --
+
     def turns_from(self, node_id: int, heading: float,
                    tolerance_deg: float = 45.0) -> Dict[str, int]:
         """Which of left/straight/right lead somewhere, and to which node.

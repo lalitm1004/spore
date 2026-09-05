@@ -86,8 +86,10 @@ refer to `PROTOCOL.md`.
 - [x] Claims keep flowing when the leader is killed — the §7 property *(Docker)*
 - [x] A paused bot's claims lapse and stop blocking *(Docker)*
 - [x] Two bots injected onto one node settle on a single holder *(Docker)*
-- [ ] Claiming a **route** rather than the node underfoot — needs something deciding where the robot goes next (see below)
-- [ ] `may_enter` gating actual movement — nothing drives the robot from this repo yet (see below)
+- [ ] Claiming a **route** rather than the node underfoot. Now possible: the bot
+  knows where the robot is and where it told it to go
+- [x] `may_enter` gates actual movement: a robot is answered `WAIT` and holds,
+  and the firmware honours the hold rather than driving on when it times out
 
 ## Pathfinding (§16)
 
@@ -109,8 +111,9 @@ refer to `PROTOCOL.md`.
 - [x] `Decision` carries a kind, so WAIT is sayable rather than implied by silence
 - [x] Every query gets an answer — bad JSON, a planner error and a map disagreement all reply
 - [x] Jobs set a navigation goal; the robot is driven a node at a time, not sent a destination
-- [ ] Measured against ground truth in the Webots fleet — the bots and the robots now
-      run in the same containers, but a full ten-robot run has not been timed
+- [x] Run in the Webots fleet: ten robots, ten bots, real QR reads reaching the
+      roster and real claims between them. Not yet *timed* — the host is arm64
+      and the Webots image is amd64, so the numbers would be emulation's
 
 The stand-in router and the placeholder glue project are both gone: each robot
 container runs a real `bot.py`, and `spore-amr/webots/robot/network.py` is now
@@ -135,8 +138,8 @@ test has no row, so the contract cannot quietly stop being true.
 - [ ] **F5** REROUTE on a genuine route change — A4 covers the negative (unchanged means PROCEED); the positive needs a route that actually moves
 - [ ] **G3-G6** the yield-spot cascade on containers — unit-tested; pinning which spot is chosen would be asserting the map rather than the rule
 - [ ] **E3** two bots driving head-on down a whole corridor — the contest itself is covered by E4, G1 and G7
-- [ ] The obstruction path is synthetic: `RobotState.fault` is a flat string, so
-      the node in an `OBSTACLE` warning is lost and nothing builds an
-      obstruction from what a robot reported
+- [x] Obstructions come from what a robot reported: `Fault.warning.obstacle`
+      carries the node it was seen at, and the bot blocks the lane it last sent
+      that robot down. `InjectObstruction` is gone
 
 ---

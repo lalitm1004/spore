@@ -61,7 +61,11 @@ def test_the_doc_is_honest_about_its_gaps():
     that stops being true when someone closes a gap."""
     text = DOC.read_text()
     assert "What is not covered" in text
-    for known_gap in ("synthetic", "F1", "compressed"):
+    # Closing a gap means editing this list, on purpose. "synthetic" was here
+    # while obstructions were pushed in through an admin RPC; a robot reports
+    # them now, so the word is gone and so is the entry. That is the guard
+    # working -- it made someone come here and say the gap had been closed.
+    for known_gap in ("camera", "F1", "compressed"):
         assert known_gap in text, f"the doc no longer mentions {known_gap!r}"
 
 

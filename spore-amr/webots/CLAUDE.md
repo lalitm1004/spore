@@ -41,13 +41,14 @@ spore-warehouse-layout/output/
    │ robot/companion.py  "the Pi"     │   holds the map, reports which node
    │  sets speed, never wheel values  │   it is at, turns the answer into a
    └──────────────┬───────────────────┘   bearing
-                  │ newline JSON over a unix socket  (robot/navigator.py)
+                  │ gRPC: RobotNetwork.Session  (robot/uplink.py)
                   │   up:   latest_node_id   "I am at node 116"
                   │   down: target_node_id   "go to node 70"
    ┌──────────────┴───────────────────┐
-   │ spore-amr/network-layer/bot.py   │   one bot per robot, not one shared
-   │  SIPP routing, reservations,     │   service; elects a region leader,
-   │  jobs, leader election           │   takes jobs, reserves nodes
+   │ spore-amr/network-layer/bot.py   │   one bot per robot, in its own
+   │  SIPP routing, reservations,     │   container -- this image is Python
+   │  jobs, leader election           │   3.10 and the planner needs 3.11+.
+   │  (service <robot>-bot:50051)     │   docs/boundary.md says why per-robot
    └──────────────────────────────────┘
 ```
 

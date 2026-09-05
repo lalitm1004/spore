@@ -151,12 +151,6 @@ the scenarios above and are unchanged.
 
 Being straight about the holes is the point of writing this down.
 
-- **The obstruction path is synthetic.** F2 and F3 push a blockage in through
-  `AdminService`. The real path does not exist: `robot-to-network.schema.json`
-  carries the node in its `OBSTACLE` warning, but `RobotState.fault` is a flat
-  string, so the node is lost on the way in and nothing builds an obstruction
-  from what a robot actually reported. These prove how the planner *responds* to
-  a blockage, not how it hears about one.
 - **F1, promoting a cached alternate, has no test because the fleet does not
   work that way.** Holding alternatives pays off when losing a route means
   paying for a fresh search. The robot asks at every node and a plan costs under
@@ -172,6 +166,11 @@ Being straight about the holes is the point of writing this down.
 - **The first decision after migrating is uninformed.** A follower's roster
   covers its own region only, so a route into another one is planned
   optimistically. Accepted, not solved.
+- **No scenario here runs a camera.** Every robot in this tier speaks the real
+  wire and reports honestly, but none of them reads a QR code: the `cv2` decode
+  and the physics belong to the Webots tier, which is slower and separate. What
+  that leaves untested here is the step *before* a report — whether the node in
+  it was read correctly — and nothing else.
 
 ## What compressed timings do and do not prove
 
@@ -184,3 +183,31 @@ right. A scenario that only passes on the fast clock belongs in a
 production-timing tier, not in a version of itself tuned until it passes. All
 timings come from one `FAST_TIMINGS` dict in `tests/test_docker.py` so no
 scenario can quietly invent its own.
+
+The shared fleets take one further change, `SHARED_TIMINGS`, which lengthens the
+stall clock. A bot on a shared fleet is put where a scenario wants it and then
+stands there while the scenario asks its questions, and the fleet is right to
+call that a stall — but it is a fact about a fleet nobody is driving, not about
+anything under test. D1–D3, which *are* about stalling, launch their own fleet
+on the short clock.
+
+## How a robot is put somewhere
+
+Every scenario here places a robot by **telling the truth about where it is**,
+over `RobotNetwork.Session` — the same stream a companion speaks, and the only
+thing one can say.
+
+It was not always so. These scenarios used to use an admin RPC that pushed a
+whole robot snapshot straight into the bot, around the QR read, the companion
+and the wire. That cost more than it looked: injection supplied by hand the one
+thing production never supplied, so no test could see that the fleet had never
+learned a single robot's position. It also let a scenario put two robots on one
+node, which driving cannot do — and the invariant that forbids it then failed,
+correctly, on a state the harness had invented.
+
+Two consequences, both load-bearing. A robot moves one hop per `_hop_seconds()`,
+derived from the same kinematics the claim window is, because a harness that
+moves robots faster than robots move makes every claim overlap. And an
+obstruction is *reported* rather than pushed: a robot says "I am here and
+something is in front of me", and the network layer blocks the lane it last sent
+that robot down, because it is the one that knows which lane that was.
