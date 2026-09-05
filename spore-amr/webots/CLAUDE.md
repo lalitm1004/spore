@@ -153,6 +153,18 @@ one — summary at zero steps — and the first row written after release raised
 own `held` flag for exactly this reason. Two states that both stop the motors
 are not the same state.
 
+**A stale `out/*.status.json` is scored as this run's first marker.** It is how
+a robot tells the supervisor what it last read, and the supervisor computes
+localisation error the moment a new `(node_id, t)` appears. A file left behind
+by the previous run is a new one to a fresh supervisor, so it scores a node the
+robot read minutes ago against a robot standing at its charging bay: measured,
+18 m of "localisation error" and 90 degrees of "heading error" that never
+happened. It shows up as exactly one bad sample per robot, always the first,
+with the medians healthy — and it is indistinguishable at a glance from the
+heading-frame bug below, which is real and looks identical. `./fleet.sh up`
+clears `out/` for this reason. If a score has one wild first read per robot and
+sane medians, suspect the artefacts before the robots.
+
 **A `TURN` is an absolute bearing, so the firmware's heading frame has to be
 right.** `robot/turn.py` says its estimate "was corrected by the marker the
 robot is standing on" — it never was. The marker supplies position only, and
@@ -302,11 +314,28 @@ spot for 96 seconds. `MarkerCrossing.reset()` exists for this and for turns.
 Always from the repo root — the volume mount is `./:/project`, so `./` is your
 shell's directory, not the compose file's.
 
+`./fleet.sh` is the front door and owns the flags that are easy to get wrong —
+it regenerates when `fleet.yaml` has changed, clears the previous run's
+artefacts, always passes `--remove-orphans`, and anchors itself to this
+directory so the `./:/project` mount cannot pick up the wrong tree.
+
+```bash
+./fleet.sh up          # regenerate if needed, clear out/, bring the fleet up
+./fleet.sh score       # score the run against the supervisor's ground truth
+./fleet.sh goals       # what the network layer has told each robot to do
+./fleet.sh status      # what is running, and how far through the run
+./fleet.sh logs bot_01 # follow one robot; no argument follows them all
+./fleet.sh down        # tear it down
+#   viewer: http://localhost:1234/index.html
+```
+
+`MODE`, `RENDERING` and `MISSION_DURATION` override its defaults. The
+underlying commands, when you want them by hand:
+
 ```bash
 uv run python -m tools.gen_fleet          # after ANY fleet.yaml edit
 MODE=fast RENDERING=off MISSION_DURATION=900 \
   docker compose -f compose.yml -f compose.fleet.yml up -d
-#   viewer: http://localhost:1234/index.html
 docker compose -f compose.yml -f compose.fleet.yml down --remove-orphans
 ```
 

@@ -11,6 +11,17 @@ file's.
 ## Start
 
 ```bash
+./fleet.sh up
+```
+
+That regenerates the world if `fleet.yaml` has changed, clears the previous
+run's artefacts, and brings everything up with the flags below already set.
+`./fleet.sh help` lists the rest; `MODE`, `RENDERING` and `MISSION_DURATION`
+override its defaults, e.g. `MISSION_DURATION=600 ./fleet.sh up`.
+
+By hand, if you would rather:
+
+```bash
 uv run python -m tools.gen_fleet
 MODE=fast RENDERING=off MISSION_DURATION=600 \
   docker compose -f compose.yml -f compose.fleet.yml up -d
@@ -42,8 +53,11 @@ simulation seconds, so neither depends on how fast the host runs.
 ## Stop
 
 ```bash
-docker compose -f compose.yml -f compose.fleet.yml down --remove-orphans
+./fleet.sh down
 ```
+
+which is `docker compose -f compose.yml -f compose.fleet.yml down
+--remove-orphans`.
 
 `--remove-orphans` matters when you change the robot count: dropping from ten
 to two leaves eight containers running against a world that no longer has
