@@ -415,6 +415,10 @@ def main(argv=None):
     border_now = False
     awaiting_turn = False
     awaiting_since = 0.0
+    # Set by a HOLD: when to ask again, and what to ask about. `held_marker` is
+    # the last marker read, kept so the question can be repeated verbatim.
+    hold_until = None
+    held_marker = None
     # A turn has to happen *about the node*. The code decodes while the robot
     # is still approaching, so at the read its origin is still a boom length
     # short of the junction; `advance_to` is the odometer reading at which it
@@ -542,6 +546,7 @@ def main(argv=None):
             print("{}: {}".format(config.name, marker_read.summary), flush=True)
             write_status(status_path, config.name, now, distance, marker_read,
                          fix=fix, theta=heading, drifted_theta=drifted_theta)
+            held_marker = marker_read
             if link is not None:
                 link.send(Message(kind="EVT", name="MARKER", fields={
                     "t": round(now, 4),
@@ -663,7 +668,24 @@ def main(argv=None):
             # node, the timeout fired six seconds after that, and it carried
             # straight on through the junction instead of turning. It left the
             # lane, lost the line and halted.
-            if (pending_bearing is None
+            if (hold_until is not None and now >= hold_until
+                    and pending_bearing is None and held_marker is not None
+                    and link is not None):
+                # The hold is up. Ask again, exactly as on arrival: the
+                # companion speaks when a marker is reported, so reporting it
+                # again is the question asked again.
+                hold_until = None
+                awaiting_since = now
+                link.send(Message(kind="EVT", name="MARKER", fields={
+                    "t": round(now, 4),
+                    "node": held_marker.node_id,
+                    "kind": held_marker.kind,
+                    "x_cm": held_marker.x_cm,
+                    "y_cm": held_marker.y_cm,
+                    "region": held_marker.region_id,
+                    "heading": round(odometry.pose.theta, 5),
+                }))
+            elif (pending_bearing is None
                     and now - awaiting_since > control.junction_timeout_s):
                 print("{}: no decision after {:.0f}s, carrying on".format(
                     config.name, control.junction_timeout_s), flush=True)

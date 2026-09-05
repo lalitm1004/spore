@@ -90,3 +90,22 @@ def test_a_partial_tail_waits_for_the_rest(pty):
     os.write(secondary, payload[-4:])
     (event,) = drain(reader, primary, 1)
     assert event.fields["node"] == 42
+
+
+# ---- the answer the protocol could not give ---------------------------------
+
+def test_hold_is_a_command_the_firmware_is_told_in_milliseconds(pty):
+    """`WAIT` only means anything if the robot honours it.
+
+    It was sent and ignored: the firmware had no HOLD branch at all, so a robot
+    told to wait 2 s sat there until its own junction timeout fired six seconds
+    later and then drove on -- into whatever the wait existed to avoid. That
+    made WAIT indistinguishable from silence, which is the exact failure
+    `kind` was added to prevent (PROTOCOL.md §16.2).
+    """
+    primary, secondary = pty
+    os.write(secondary, encode(Message(kind="CMD", name="HOLD", fields={"ms": 800})))
+
+    (command,) = drain(LineReader(), primary, 1)
+    assert command.name == "HOLD"
+    assert command.fields["ms"] == 800
