@@ -508,6 +508,9 @@ DirectionalLight {{
   sensorCount {count}
   sensorSpacing {spacing}
   sensorHeight {height}
+  bodyLength {body_l}
+  bodyWidth {body_w}
+  bodyHeight {body_h}
 }}
 '''.format(
             def_name=config["name"].upper(),
@@ -518,6 +521,9 @@ DirectionalLight {{
             count=robot_block.get("sensor_count", 3),
             spacing=robot_block.get("sensor_spacing", 0.02),
             height=robot_block.get("sensor_height", 0.015),
+            body_l=robot_block.get("body_length", 0.50),
+            body_w=robot_block.get("body_width", 0.50),
+            body_h=robot_block.get("body_height", 0.10),
         ))
 
     body.append("""DEF SUPERVISOR Robot {
@@ -536,8 +542,9 @@ DirectionalLight {{
 # geometry is written into each config from the same manifest that builds the
 # world, and the two cannot drift apart.
 PROTO_OPTICS = {
-    "color_sensor_x": 0.125,
-    "camera_x": 0.095,
+    "color_sensor_x": 0.325,
+    "camera_x": 0.295,
+    "ir_array_x": 0.07,
     "camera_mast": 0.060,
     "camera_fov": 1.05,
     "camera_resolution": 512,
@@ -568,7 +575,7 @@ def optics_config(manifest: dict) -> dict:
     return {
         "enabled": has_markers,
         "color_sensor_x": geometry["color_sensor_x"],
-        "ir_array_x": 0.07,
+        "ir_array_x": geometry["ir_array_x"],
         "camera_x": geometry["camera_x"],
         "camera_footprint": round(footprint, 5),
         "tile_length": markers.spec.tile_mm / 1000.0,
