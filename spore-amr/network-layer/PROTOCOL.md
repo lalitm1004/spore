@@ -720,6 +720,9 @@ If a bot is mid-election and receives an Elect RPC from a higher-priority peer:
 
 ### Must NOT do
 
+> Why there is no central service at all, and what that costs:
+> **[`docs/boundary.md`](docs/boundary.md)**.
+
 - Hold the only copy of any state — every bot caches the roster independently
 - Be required for safety-critical paths — reservations, collision avoidance, energy shutoff work without the leader
 - Accumulate history — no log, no journal, only "who's alive right now"

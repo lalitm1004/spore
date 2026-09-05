@@ -10,6 +10,10 @@ network; no broker, no registry, no central server.
 **Read [`PROTOCOL.md`](PROTOCOL.md) for the design.** This file is about
 running and extending the code. **[`TODO.md`](TODO.md)** tracks which use
 cases are covered and what is still open.
+**[`docs/scenarios.md`](docs/scenarios.md)** is what the fleet does, situation
+by situation, with the container test that proves each answer.
+**[`docs/boundary.md`](docs/boundary.md)** is why there is one process per robot
+and no central service — read it before proposing otherwise.
 
 ## Layout
 
