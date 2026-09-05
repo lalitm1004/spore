@@ -41,10 +41,24 @@ class ControlConfig:
     max_speed: float = 20.0
     steering_limit: float = 6.0
     lost_line_timeout_s: float = 2.0
+    # How long the line must actually be gone before the firmware reports it.
+    # A 16 ms dropout is noise -- three ticks after a crossing ends, the array
+    # is not always back over the lane yet -- and the companion answers every
+    # report by cutting speed, so undebounced blips ratcheted robots down to
+    # the floor. Well under `lost_line_timeout_s`, which handles real losses.
+    lost_line_debounce_s: float = 0.1
+    # And the way back up: this much clean line wins back one speed step.
+    speed_recover_after_s: float = 5.0
     # How long to hold a junction waiting for the network layer before giving
     # up and carrying straight on. A robot that is never answered must not
     # block a lane for the rest of the run.
     junction_timeout_s: float = 6.0
+    # Sim seconds to sit still before leaving the start node. The fleet is
+    # released one robot at a time so bay-mates do not reach their shared
+    # junction together; the firmware holds this itself rather than waiting to
+    # be told, because the companion attaches some time after boot and a robot
+    # that moved in the meantime has already left its bay.
+    start_delay_s: float = 0.0
     turn_tolerance_deg: float = 2.0
     turn_rate: float = 4.0
     pid: PIDGains = field(default_factory=PIDGains)
@@ -111,6 +125,14 @@ class OdometryConfig:
 
     wheel_radius: float = 0.020
     track_width: float = 0.0994
+    # The heading the robot is placed on, in world radians. A `TURN` carries an
+    # absolute bearing off the map and the turn controller's only feedback is
+    # this odometry, so the two must share a frame. Booting at 0 regardless of
+    # placement put every robot on the warehouse window out by its bay's
+    # bearing -- +/-90 degrees, measured against the supervisor -- and turned
+    # every junction onto the wrong lane. A docked robot knows which way its
+    # bay faces; that is commissioning data, not a sensor.
+    start_theta: float = 0.0
 
 
 @dataclass(frozen=True)

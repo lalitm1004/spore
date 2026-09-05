@@ -41,9 +41,27 @@ TypeScript layer means changing what listens on the socket and nothing else.
 **The split is a policy boundary, not just a process boundary.** The companion
 sets setpoints and can never command a wheel velocity. When it sees
 `LINE_LOST` it concludes the robot is going too fast and lowers the target
-speed — a decision with no business inside a control loop. The firmware has no
+speed, and when the line has been clean for `speed_recover_after_s` it gives
+the step back — a decision with no business inside a control loop. Both
+directions matter: while the throttle only went down, one transient early in a
+run left a robot at a quarter of cruise for the rest of it. The firmware has no
 network code at all: it reports "I am at node 7" and receives "turn to 90
 degrees".
+
+That exchange only works because both halves share a heading frame. `TURN`
+carries an *absolute* bearing off the map, and the firmware's only feedback is
+its odometry, so the companion sends the heading the robot arrived on — the
+bearing of the lane it came down, which is exact — and the firmware seeds the
+frame at boot from `odometry.start_theta`. Neither half owns the frame alone,
+which is why a mismatch was invisible in both.
+
+**The wire names nodes, never directions.** `RobotToNetwork` carries
+`latest_node_id` and `NetworkToRobot` carries `target_node_id`; both schemas
+set `additionalProperties: false`, so there is no room for a menu of turns
+going up or a `left`/`right` coming down. The network layer routes and holds
+the map for it; the robot holds the map as well and derives the bearing to the
+node it was named. That is exact — lanes are straight — so a direction on the
+wire would be a second, weaker description of geometry both ends already have.
 
 **One network layer per robot, not one shared service.** A single service
 answering every robot would be a control plane wearing a hat. Per-robot also
@@ -138,24 +156,39 @@ the world without running anything first.
 
 ## 5. The warehouse window
 
-The full layout is 120 x 70 m, 881 nodes, 952 edges. It cannot be simulated at
-line-following resolution, and the arithmetic is worth keeping because it is
-the first thing anyone will want to change:
+The whole layout runs: **881 nodes, 952 edges, 34 charging bays** over 114 x
+60 m. It did not always, and the arithmetic that used to forbid it is worth
+keeping, because it was wrong in an instructive way.
 
-- One floor texture at 512 px/m would be **61440 x 35840 px**, against a GPU
-  limit usually around 16384.
-- A 1024x1024 QR tile for each of 881 nodes is roughly **3.7 GB** of texture
-  memory.
+The old sums:
 
-So `tools/track/warehouse.load_window` takes a rectangle of it — real node ids,
-names, types, regions and edges, just fewer of them. Positions are rebased so
-the window's centre is the world origin. Edges with only one end inside are
-dropped, and nodes left with no lane are dropped with them: a marker tile no
-robot can reach is worse than no tile.
+- One floor texture at line-following resolution would be **32768 x 16384 px**
+  — 2.1 GB — against a texture limit Webots hits well before that.
+- A 1024x1024 QR tile for each of 881 nodes is another **3.7 GB**.
 
-The current window is 32 x 16 m at (8200, 600) cm, chosen by searching every
-2 m offset for the most charging bays: **83 nodes, 10 of them charging**, and
-8192 x 4096 px at 256 px/m — both powers of two, so Webots does not rescale it.
+Both numbers were real and both were self-inflicted. The floor was that big
+only because it carried the guide line, and a 20 mm line needs several pixels
+across to be followable; the lanes are geometry now, so the floor is a picture
+and 64 px/m is plenty. The tiles were that big only because nobody had measured
+what the camera can actually resolve — 5.52 px/mm, against tiles drawn at
+10.24.
+
+What it costs now:
+
+| | |
+|---|---|
+| floor, 7680 x 4224 at 64 px/m | 130 MB |
+| 881 marker tiles at 512 x 512 | 924 MB |
+| 1833 lane and node pieces, as geometry | 0 |
+| **total** | **1.05 GB** |
+
+`tools/track/warehouse.load_window` still takes a rectangle, because the window
+is also what gives the floor a margin: it is the node span plus a metre, and
+the plane is that plus `margin_m` again on every side. A node on the plane's
+edge is a robot that can drive off the world — see the trap in `CLAUDE.md`.
+Positions are rebased so the window's centre is the world origin. Edges with
+only one end inside are dropped, and nodes left with no lane go with them: a
+marker tile no robot can reach is worse than no tile.
 
 ## 6. The floor is the warehouse's own drawing
 
@@ -218,24 +251,33 @@ robot around. It costs nothing now that `track_width` is calibrated.
 firmware                companion                    network layer
    |                        |                            |
    | EVT MARKER node=7 -->  |                            |
-   | (stops on the tile)    | turns_from(7, heading) --> |
-   |                        | {"available":{"left":9}}   |
-   |                        |                <-- {"turn":"left","target":9}
+   | (rolls onto the node)  | {"latest_node_id":7,...}-> |
+   |                        |                            | (holds the map,
+   |                        |                <-- {"target_node_id":9}  picks 9)
+   |                        | bearing(7 -> 9)            |
    |  <-- CMD TURN bearing  |                            |
    | (rotates, reacquires)  |                            |
 ```
 
-The robot sends **which turns exist**, not just where it is. A blind pick from
-left/straight/right names a lane that is not there — at a corner two of three
-answers are walls — and the retry loop that fixes that is more complicated than
-the field that avoids it.
+The robot sends **where it is**, and is told **where to go next**. It does not
+send the turns that exist and it is not answered with a direction: both fields
+are absent from `shared/schemas/`, which sets `additionalProperties: false` on
+each message. The network layer holds the map because routing is what it is
+for; the robot holds it too, so `bearing(7 -> 9)` is a local calculation and
+exact, because lanes are straight.
 
-`Graph.turns_from` is the load-bearing part. It excludes the lane the robot
-arrived on, matches each of left/straight/right to the closest lane within 45
-degrees, and refuses to offer one neighbour for two turns. One exception: at a
-**dead end** it offers the way back. Every charging bay in the real warehouse
-is a degree-1 spur, so excluding the arrival lane left nothing and a robot
-routed into a bay would have sat there for the rest of the run.
+That narrowness earned itself. While the robot resolved the turns, the menu it
+offered was filtered to within 45 degrees of left, straight and right — and the
+way back out of a degree-1 charging bay is 180 degrees, which matched none of
+them. The menu came back empty, the companion reported "nowhere to go from
+here", and a robot routed into a bay sat in it for the whole run: measured, 90%
+of one. Routing by node has no such case. A bay has one neighbour, it is the
+junction, and there is nothing to filter.
+
+`RandomRouter` still avoids sending a robot straight back the way it came, but
+that is now a routing preference on the routing side rather than a geometric
+filter on the robot's, and it is a preference rather than a rule — at a dead
+end the way back is the only answer there is.
 
 `query_id` is echoed back so a fresh answer is distinguishable from a late
 answer to the previous junction — two junctions can share a target, which is
@@ -314,12 +356,12 @@ using the two message schemas, and that gap is worth closing deliberately:
   {target_node_id, timestamp}` is enough — the robot knows its current node and
   derives the bearing from the map, so the `turn` field is redundant. It needs
   `query_id` added, or `timestamp` used for the same purpose.
-- **Their up-message is a different conversation.** `RobotToNetwork` is
-  periodic telemetry — battery, mission, faults, position. The junction query
-  is a blocking question with a list of legal exits. Those are not competing
-  designs; a real system needs both, but the schema has no field for available
-  turns, so somebody has to decide whether it gains one or whether junction
-  queries are a separate message type.
+- **Settled: the junction query *is* `RobotToNetwork`.** It used to be a
+  blocking question carrying a list of legal exits, which the schema has no
+  field for. Rather than add one, the query was narrowed to what the schema
+  already says — `latest_node_id` — and the answer to `target_node_id`. A real
+  system will still want periodic telemetry on the same message; that is a
+  cadence question now, not a shape one.
 
 ## 12. Open work, in dependency order
 

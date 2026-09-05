@@ -13,10 +13,21 @@ track:
   # not rescale it. The window is centred on the charging strip, which runs
   # along y = 800-1200 cm in the real layout.
   warehouse:
-    source: ../spore/spore-warehouse-layout/output/warehouse.json
-    origin_cm: [8200, 600]
-    size_m: [32, 16]
-    pixels_per_metre: 256
+    source: ../../spore-warehouse-layout/output/warehouse.json
+    # The whole warehouse: all 881 nodes, 952 lanes, 34 charging bays. The
+    # window is the exact node span (x 400-11600, y 600-6400 cm) and the floor
+    # extends `margin_m` beyond it.
+    # A metre of slack around the node span (x 400-11600, y 600-6400 cm):
+    # `load_window` drops a node sitting exactly on the boundary, which cost
+    # 58 of the 881 when the window was the span exactly.
+    origin_cm: [300, 500]
+    size_m: [114, 60]
+    # The floor texture is the warehouse *drawing* and nothing senses it: the
+    # lanes are geometry, exact and free. So this sets how good the picture
+    # looks, not how well a robot follows a line, and 64 px/m over the full
+    # 128 x 64 m warehouse is one 8192x4096 texture rather than the 32768x16384
+    # -- 2.1 GB -- that carrying the lanes in pixels would have cost.
+    pixels_per_metre: 64
   line_width: 0.02
 
 robot:
@@ -37,7 +48,16 @@ markers:
     tile_mm: 100.0        # 92.7 mm of this is inside the camera's footprint
     qr_mm: 60.0           # 49 modules -> 6.8 camera px per module at 512 px
     margin_mm: 5.0
-    pixels_per_mm: 10.24  # 100 mm -> exactly 1024 px, a power of two
+    # 5.12, not 10.24. The camera resolves 512 px over a 92.7 mm footprint --
+    # 5.52 px/mm -- so a tile drawn at 10.24 px/mm carries roughly twice the
+    # detail the optics can ever sample, and 881 of those is 3.7 GB against a
+    # machine with 5 GB free. Measured through the camera's own crop-and-
+    # resample on 81 real node payloads: 1024 px decoded 80/81, 768 px 81/81,
+    # 512 px 81/81, 384 px 79/81. So this is a 4x saving that costs nothing,
+    # and the floor is somewhere between 384 and 512 rather than below it.
+    # Re-measure with tests/test_marker.py::test_survives_the_camera_resolution
+    # after any change to the camera or the payload.
+    pixels_per_mm: 5.12   # 100 mm -> exactly 512 px, a power of two
     border_rgb: [255, 122, 0]
 
 defaults:
@@ -58,7 +78,13 @@ defaults:
     pid: {kp: 150.0, ki: 0.0, kd: 4.0}
   resources:
     memory: 256m
-    cpus: "0.5"
+    # The simulator is synchronized: every tick waits on the slowest
+    # controller, so a throttled robot throttles the whole world. A controller
+    # idles around 1% of a core but spikes to ~30% while OpenCV decodes a QR,
+    # and a 0.5 cap is close enough to that spike to be worth avoiding. This
+    # is headroom against a stall, not a speed multiplier -- measured, the
+    # bottleneck is the simulator process (270-460% CPU) and not the robots.
+    cpus: "1.0"
 
 # Robots start at charging bays, which is where a fleet would be at the start
 # of a shift. Poses come from the track itself, so changing the window cannot
@@ -66,6 +92,16 @@ defaults:
 robots:
   count: 10
   spawn: charging
+  # Released one at a time rather than all on tick zero. Bays are degree-1
+  # spurs pairing onto a shared junction, and a simultaneous start puts both
+  # bay-mates into that junction together. Spawns are ordered so a pair is
+  # five slots apart -- 20 s here, against the 16.7 s a robot needs to cover
+  # its 2 m spur at cruise -- so the pair never meets.
+  #
+  # The last robot leaves at 36 s. MISSION_DURATION runs from t=0 for every
+  # robot, so allow for that when setting it: at the 120 s default bot_10 gets
+  # 84 s of driving.
+  start_interval_s: 4.0
 
 # Obstacles for the forward-lidar reflex. Unlike marker tiles these carry a
 # boundingObject, so a ray has something to hit.

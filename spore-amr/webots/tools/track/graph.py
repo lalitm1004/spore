@@ -15,11 +15,15 @@ Pure: no I/O, no Webots, no rendering.
 """
 
 import math
+from collections import deque
 from dataclasses import dataclass
 from typing import Dict, Iterable, List, Optional, Sequence, Tuple
 
-# Which way a robot turns, relative to the heading it arrived on.
+#: The whole vocabulary a robot is ever offered. It never gets the lane it
+#: arrived on, so a degree-4 node still has exactly three choices.
 TURNS = ("left", "straight", "right")
+
+# Which way a robot turns, relative to the heading it arrived on.
 
 
 @dataclass(frozen=True)
@@ -106,6 +110,75 @@ class Graph:
         return sum(self.length(e.a, e.b) for e in self.edges)
 
     # ------------------------------------------------------------- turning --
+
+    def path(self, start: int, goal: int) -> Optional[List[int]]:
+        """Fewest-hop route from `start` to `goal`, inclusive of both.
+
+        Breadth-first, not Dijkstra: lanes in this warehouse are a grid at a
+        uniform 2 m node spacing, so hop count *is* distance and the weights
+        would all be equal. Returns None when the goal is unreachable, which
+        beats routing a robot at an island.
+
+        This is what makes a standing goal work. The network layer names a
+        destination once; the robot walks this hop by hop, and every step is a
+        lane by construction.
+        """
+        if start not in self._adjacency or goal not in self._adjacency:
+            return None
+        if start == goal:
+            return [start]
+
+        previous = {start: None}
+        queue = deque([start])
+        while queue:
+            node = queue.popleft()
+            for neighbour in self._adjacency[node]:
+                if neighbour in previous:
+                    continue
+                previous[neighbour] = node
+                if neighbour == goal:
+                    route = [goal]
+                    while previous[route[-1]] is not None:
+                        route.append(previous[route[-1]])
+                    return route[::-1]
+                queue.append(neighbour)
+        return None
+
+    def far_nodes(self, start: int, minimum_hops: int = 1) -> List[int]:
+        """Every node at least `minimum_hops` lanes away, sorted.
+
+        Hops, not metres. Two nodes either side of a rack are close in a
+        straight line and a long way apart to drive, and a destination picked
+        on straight-line distance would sometimes be a short trip round a
+        corner. One breadth-first sweep answers it for every node at once.
+        """
+        if start not in self._adjacency:
+            return []
+
+        depth = {start: 0}
+        queue = deque([start])
+        while queue:
+            node = queue.popleft()
+            for neighbour in self._adjacency[node]:
+                if neighbour not in depth:
+                    depth[neighbour] = depth[node] + 1
+                    queue.append(neighbour)
+        return sorted(n for n, hops in depth.items()
+                      if hops >= minimum_hops and n != start)
+
+    def next_hop(self, start: int, goal: int) -> Optional[int]:
+        """The one node to drive to next on the way to `goal`.
+
+        Recomputed at every marker rather than cached, so a robot that was
+        pushed off its route by the obstacle reflex re-plans from where it
+        actually is instead of resuming a route it is no longer on.
+        """
+        route = self.path(start, goal)
+        if route is None or len(route) < 2:
+            return None
+        return route[1]
+
+    # -------------------------------------------------------- ground truth --
 
     def turns_from(self, node_id: int, heading: float,
                    tolerance_deg: float = 45.0) -> Dict[str, int]:

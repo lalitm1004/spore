@@ -19,7 +19,8 @@ if [ "${ROLE:-robot}" = "supervisor" ]; then
     --port=1234 \
     --robot-name=supervisor \
     /project/robot/supervisor.py \
-    --duration "${MISSION_DURATION}"
+    --duration "${MISSION_DURATION}" \
+    --replay "${REPLAY:-/project/out/replay.csv}"
 fi
 
 FIRMWARE_TTY="/tmp/${ROBOT_NAME}-firmware"
@@ -33,7 +34,9 @@ done
 
 # Each robot runs its own network-layer bot. One shared service answering every
 # robot would be a control plane wearing a hat, and per-robot means killing a
-# single robot's coordinator is a real thing to demonstrate.
+# single robot's coordinator is a real thing to demonstrate. The argument for
+# that, against the fleet-wide service this branch merged past, is written down
+# in spore-amr/network-layer/docs/boundary.md.
 #
 # This is the real thing: it elects a region leader, keeps a roster, takes cargo
 # jobs, reserves nodes against its neighbours, and answers the companion's

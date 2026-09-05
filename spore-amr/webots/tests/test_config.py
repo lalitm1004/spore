@@ -70,3 +70,17 @@ def test_sensor_config_carries_adc_and_sampling_settings():
     # Calibration references are in ADC counts now, not raw simulator units.
     assert config.sensors.white_ref == 1023
     assert config.sensors.black_ref == 205
+
+
+def test_start_delay_defaults_to_leaving_immediately():
+    config = ControllerConfig.from_dict(
+        {"name": "bot_01", "sensors": SENSORS, "control": {}})
+
+    assert config.control.start_delay_s == 0.0
+
+
+def test_start_delay_is_read_from_the_generated_document():
+    config = ControllerConfig.from_dict(
+        {"name": "bot_04", "sensors": SENSORS, "control": {"start_delay_s": 12.0}})
+
+    assert config.control.start_delay_s == 12.0

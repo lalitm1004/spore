@@ -8,6 +8,7 @@ This is the only module that imports the Webots API.
 """
 
 import argparse
+from dataclasses import replace
 import errno
 import json
 import math
@@ -49,6 +50,15 @@ def build_columns(sensor_count):
 # lost. One tile length plus margin: if the lane were there, it would have been
 # found by now.
 RECOVERY_BUDGET_M = 0.15
+
+# How far the array may read entirely dark before that stops being a line.
+# Crossing a perpendicular lane saturates it for the lane's own width, and a
+# marker tile for its length -- 100 mm, which this comfortably clears. Beyond
+# that there is no line under the robot, however certain the weighted mean
+# sounds: off the ground plane every sensor reads `black_ref`, which the
+# estimator renders as "perfectly centred, maximum confidence". One robot drove
+# 150 s and 18 m off the map on that reading, reporting no lost time at all.
+SATURATED_BUDGET_M = 0.30
 
 # EWMA weight for the steering average held across a crossing.
 STEERING_AVERAGE_ALPHA = 0.04
@@ -327,6 +337,10 @@ def main(argv=None):
         wheel_radius=config.odometry.wheel_radius,
         track_width=config.odometry.track_width,
     )
+    # The turn controller drives to an absolute bearing off the map, and this
+    # is the only frame it has. A robot that boots believing theta=0 whatever
+    # way it was parked turns every junction onto the wrong lane.
+    odometry.reset(Pose(theta=config.odometry.start_theta))
     have_encoders = all(encoder is not None for encoder in encoders.values())
 
     lidar = webots_robot.getDevice("lidar") if config.lidar.enabled else None
@@ -373,7 +387,7 @@ def main(argv=None):
     # at 0.04 m/s just oscillates.
     reverse_pid = PID(kp=control.pid.kp * 0.4, ki=0.0, kd=control.pid.kd * 0.4,
                       output_limit=control.steering_limit)
-    detector = EventDetector()
+    detector = EventDetector(lost_debounce_s=control.lost_line_debounce_s)
     turner = TurnController(TurnConfig(
         tolerance_rad=math.radians(control.turn_tolerance_deg),
         max_rate=control.turn_rate,
@@ -385,7 +399,12 @@ def main(argv=None):
     log = TelemetryLog(telemetry_path, build_columns(len(sensors)))
 
     base_speed = control.base_speed
-    running = True
+    # Sequential start: sit on the bay until this robot's slot comes up. The
+    # timer is local on purpose. The companion attaches some time after the
+    # firmware boots, so a robot waiting to be told to hold would already have
+    # left its bay by the time the order arrived.
+    held = control.start_delay_s > 0.0
+    running = not held
     finished = False
     summary = None
     started = None
@@ -396,6 +415,12 @@ def main(argv=None):
     border_now = False
     awaiting_turn = False
     awaiting_since = 0.0
+    # A turn has to happen *about the node*. The code decodes while the robot
+    # is still approaching, so at the read its origin is still a boom length
+    # short of the junction; `advance_to` is the odometer reading at which it
+    # is finally on it, and the turn waits for that.
+    advance_to = None
+    pending_bearing = None
     turns_done = 0
     degraded = False
     turn_recovering = False
@@ -403,6 +428,7 @@ def main(argv=None):
     turn_recovered_from = 0.0
     reading_lost_last = False
     recovery_from = None
+    saturated_from = None
     trip_distance = None
 
     while webots_robot.step(timestep) != -1:
@@ -411,6 +437,12 @@ def main(argv=None):
             started = now
         if args.duration is not None and now - started >= args.duration:
             break
+
+        if held and now - started >= control.start_delay_s:
+            held = False
+            running = True
+            print("{}: released after {:.1f}s".format(
+                config.name, control.start_delay_s), flush=True)
 
         if link is not None:
             for command in link.poll():
@@ -427,11 +459,24 @@ def main(argv=None):
                 elif command.name == "TURN":
                     # The network layer has answered. Rotate in place to the
                     # absolute heading it named, then pick the line back up.
-                    turner.start(float(command.fields.get("bearing", 0.0)), now)
-                    awaiting_turn = False
+                    #
+                    # The companion may also send the heading we arrived on --
+                    # the bearing of the lane from the previous node, which is
+                    # exact. Adopt it before turning: the target is absolute,
+                    # so a drifted frame turns to the wrong place. This is the
+                    # marker-derived correction turn.py has always assumed.
+                    true_heading = command.fields.get("heading")
+                    if true_heading is not None:
+                        odometry.reset(Pose(x=odometry.pose.x,
+                                            y=odometry.pose.y,
+                                            theta=float(true_heading),
+                                            distance=odometry.pose.distance))
+                    # Held, not started: the robot may still be rolling the
+                    # last of the boom length onto the node.
+                    pending_bearing = float(command.fields.get("bearing", 0.0))
                     print("{}: turning to {:.0f} deg for node {}".format(
                         config.name,
-                        math.degrees(float(command.fields.get("bearing", 0.0))),
+                        math.degrees(pending_bearing),
                         command.fields.get("node")), flush=True)
 
         if have_encoders:
@@ -479,10 +524,21 @@ def main(argv=None):
                 if guard is None or not guard.blocked:
                     trip_distance = None
             optics.previous_fix = (marker_read.x_mm, marker_read.y_mm)
-            # Stop and wait for a decision. Driving on and turning later would
-            # mean turning somewhere that is not the junction.
+            # Wait for a decision rather than driving on and turning later,
+            # which would mean turning somewhere that is not the junction.
+            #
+            # But the code is read on the way in, not on the node: the colour
+            # trigger fires 175 mm short of it and the code decodes ~80 mm
+            # after that, so the robot's origin is still ~95 mm short. Turning
+            # there rotates about a point beside the lane it turns onto, and a
+            # 20 mm line under an array spanning +/-40 mm is then not under the
+            # robot at all -- it drives parallel to the lane it wanted until
+            # the lost-line search spins it onto a different one. So the wait
+            # begins by rolling the rest of the lever arm onto the node.
             awaiting_turn = True
             awaiting_since = now
+            lever = optics.crossing.lever_arm(distance)
+            advance_to = distance + max(0.0, lever if lever is not None else 0.0)
             print("{}: {}".format(config.name, marker_read.summary), flush=True)
             write_status(status_path, config.name, now, distance, marker_read,
                          fix=fix, theta=heading, drifted_theta=drifted_theta)
@@ -520,6 +576,19 @@ def main(argv=None):
         # Bounded, though: holding indefinitely just drives a circle back onto
         # the same tile, which is how this first presented -- the same marker
         # read over and over.
+        # An array reading entirely dark is a line the robot cannot be on, once
+        # it has lasted longer than any lane crossing or tile could explain.
+        # Treated as a loss rather than a special case, so the existing timeout
+        # and halt apply and a robot stops instead of leaving the world.
+        if reading.saturated:
+            if saturated_from is None:
+                saturated_from = distance
+            elif distance - saturated_from > SATURATED_BUDGET_M:
+                if not reading.lost:
+                    reading = replace(reading, lost=True)
+        else:
+            saturated_from = None
+
         reading_lost_last = reading.lost
         if turn_recovering and reading.lost:
             crossing_blind = True
@@ -552,6 +621,13 @@ def main(argv=None):
             elif distance - turn_recovered_from > RECOVERY_BUDGET_M:
                 turn_recovering = False
 
+        if (pending_bearing is not None and not turner.active
+                and (advance_to is None or distance >= advance_to)):
+            turner.start(pending_bearing, now)
+            pending_bearing = None
+            awaiting_turn = False
+            advance_to = None
+
         if turner.active:
             # Turning owns the motors. There is no line to follow mid-rotation,
             # so the heading estimate is the only feedback -- which is why the
@@ -576,15 +652,52 @@ def main(argv=None):
             counts = front_end.update(now, [s.getValue() for s in sensors])
             reading = estimator.estimate(counts)
         elif awaiting_turn:
-            # Stopped on the node, waiting to be told where to go. The wait is
-            # bounded: a robot that is never answered should not hold a
-            # junction for the rest of the run.
-            if now - awaiting_since > control.junction_timeout_s:
+            # Waiting on the node. The wait is bounded: a robot that is never
+            # answered should not hold a junction for the rest of the run.
+            #
+            # Only while it is genuinely unanswered, though. Once a bearing has
+            # arrived the robot is not waiting to be told where to go, it is
+            # waiting for room to go there -- and timing out then throws away a
+            # turn the network layer already decided. Measured: a robot was
+            # answered, the reflex stopped it 48 ms later mid-roll onto the
+            # node, the timeout fired six seconds after that, and it carried
+            # straight on through the junction instead of turning. It left the
+            # lane, lost the line and halted.
+            if (pending_bearing is None
+                    and now - awaiting_since > control.junction_timeout_s):
                 print("{}: no decision after {:.0f}s, carrying on".format(
                     config.name, control.junction_timeout_s), flush=True)
                 awaiting_turn = False
+                advance_to = None
             error, output = 0.0, pid.update(error=0.0, dt=dt)
-            steering, base = 0.0, 0.0
+            if guard is not None and guard.blocked and advance_to is not None:
+                # Something is in the way of the last few centimetres onto the
+                # node. Give the turn up rather than wait it out: `distance` is
+                # path length, so a retreat *increases* it and would report the
+                # node reached while the robot is further away than when it
+                # started -- it would then turn from the wrong place.
+                #
+                # Nothing is lost by giving up. The destination is standing, so
+                # once the reflex has cleared the robot re-approaches, reads the
+                # same marker and is handed the same goal. Letting go here is
+                # only possible because the network layer names a place rather
+                # than a direction.
+                print("{}: blocked short of node, re-approaching".format(
+                    config.name), flush=True)
+                awaiting_turn = False
+                advance_to = None
+                pending_bearing = None
+                if optics is not None:
+                    optics.crossing.reset()
+                steering, base = 0.0, 0.0
+            elif advance_to is not None and distance < advance_to:
+                # Still short of the junction. Roll the rest of the boom
+                # length on blind, holding the steering the approach ended
+                # with -- the tile is under the array, so there is nothing to
+                # follow, and this is the same dead reckoning a crossing uses.
+                steering, base = steering_average, base_speed
+            else:
+                steering, base = 0.0, 0.0
             lost_since = None
             counts = front_end.update(now, [s.getValue() for s in sensors])
             reading = estimator.estimate(counts)
@@ -726,6 +839,14 @@ def main(argv=None):
 
         if running:
             log.record(row)
+        elif held:
+            # Waiting for our slot in the sequential start. `running` is false
+            # here for the opposite reason to the branch below -- the run has
+            # not begun rather than ended -- and closing the log now would end
+            # it before the first step. That is exactly what happened: the
+            # summary printed at zero steps and the first row after release
+            # raised "I/O operation on closed file".
+            pass
         elif not finished:
             # The run ended when the companion said stop. Keep stepping so the
             # simulation does not stall on a synchronized robot, but stop

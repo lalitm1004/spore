@@ -69,3 +69,51 @@ def test_readings_outside_the_calibrated_range_are_clamped():
 
     assert reading.normalised == pytest.approx((1.0, 0.0, 1.0))
     assert reading.position == pytest.approx(0.0)
+
+
+# ------------------------------------------------------- too much of a line --
+
+def test_an_array_seeing_only_black_is_flagged_as_saturated():
+    """Off the edge of the ground plane every sensor reads `black_ref`, and a
+    weighted mean of the offsets is then exactly zero at maximum confidence:
+    the estimator reports a perfectly centred line with total certainty. A
+    robot drove 150 s off the map that way, reporting it was on the line the
+    whole time. Nothing was too little; there was too much."""
+    estimator = LineEstimator(offsets=(0.02, 0.0, -0.02), white_ref=1023,
+                              black_ref=205, min_confidence=0.15)
+
+    reading = estimator.estimate([205, 205, 205])
+
+    assert reading.lost is False        # it really is confident
+    assert reading.position == pytest.approx(0.0)
+    assert reading.saturated is True    # and that is exactly the problem
+
+
+def test_a_normal_line_is_not_saturated():
+    estimator = LineEstimator(offsets=(0.02, 0.0, -0.02), white_ref=1023,
+                              black_ref=205, min_confidence=0.15)
+
+    assert estimator.estimate([957, 603, 956]).saturated is False
+
+
+def test_an_array_seeing_no_line_at_all_is_not_saturated():
+    """Saturation is the opposite failure from a lost line, and the two must
+    not be confused: this one is already handled by `lost`."""
+    estimator = LineEstimator(offsets=(0.02, 0.0, -0.02), white_ref=1023,
+                              black_ref=205, min_confidence=0.15)
+
+    reading = estimator.estimate([1023, 1023, 1023])
+
+    assert reading.lost is True
+    assert reading.saturated is False
+
+
+def test_a_lane_crossing_is_saturated_too_and_that_is_correct():
+    """All three sensors are legitimately dark crossing a perpendicular lane.
+    The reading is identical to being off the world; only how long it lasts
+    tells them apart, which is why the firmware measures distance rather than
+    treating one sample as a fault."""
+    estimator = LineEstimator(offsets=(0.02, 0.0, -0.02), white_ref=1023,
+                              black_ref=205, min_confidence=0.15)
+
+    assert estimator.estimate([210, 208, 209]).saturated is True

@@ -38,6 +38,9 @@ def answer_junction(navigator, network, event):
         print("node {} is not in the map".format(node_id), flush=True)
         return []
 
+    # Before `arrived` overwrites it: the heading the robot came in on, which is
+    # the lane bearing from the previous node and owes nothing to odometry.
+    arrived_on = navigator.heading_into(node_id)
     navigator.arrived(node_id)
 
     if not query.available:
@@ -64,11 +67,19 @@ def answer_junction(navigator, network, event):
             node_id, decision.turn, decision.target_node_id), flush=True)
         return []
 
-    return [Message(kind="CMD", name="TURN", fields={
+    fields = {
         "bearing": round(bearing, 5),
         "node": decision.target_node_id,
         "turn": decision.turn,
-    })]
+    }
+    # The firmware turns to an *absolute* bearing and its only feedback is the
+    # odometry heading, so the two have to share a frame. Without this it turns
+    # in a drifted one and lands on a lane nobody chose -- measured against the
+    # supervisor, all ten robots were out by exactly their spawn bearing.
+    if arrived_on is not None:
+        fields["heading"] = round(arrived_on, 5)
+
+    return [Message(kind="CMD", name="TURN", fields=fields)]
 
 
 def main(argv=None):

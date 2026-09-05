@@ -7,13 +7,13 @@ control:
     kd: 4.0
     ki: 0.0
     kp: 150.0
+  start_delay_s: 0.0
   steering_limit: 8.0
 lidar:
   enabled: true
 name: bot_01
 odometry:
-  track_width: 0.0994
-  wheel_radius: 0.02
+  start_theta: 1.5708
 optics:
   border_rgb:
   - 255

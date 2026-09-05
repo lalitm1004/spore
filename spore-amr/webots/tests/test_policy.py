@@ -62,3 +62,46 @@ def test_the_stop_command_is_only_sent_once():
     pilot.on_event(status(t=10.0))
 
     assert pilot.on_event(status(t=11.0)) == []
+
+
+# --------------------------------------------------------- getting it back ---
+
+def test_a_clean_run_of_line_restores_the_speed_that_was_given_up():
+    """The throttle used to be a one-way ratchet: nothing ever raised the
+    speed again, so a single transient left the robot at the floor for the
+    whole run. Slowing down is a response to conditions, and conditions pass."""
+    pilot = policy(recover_after_s=1.0, speedup=2.0)
+    pilot.start()
+    pilot.on_event(line_lost(t=5.0))          # 6.0 -> 3.0
+
+    assert pilot.on_event(status(t=5.5)) == []          # not long enough yet
+    (command,) = pilot.on_event(status(t=6.0))
+
+    assert command.name == "SET_SPEED"
+    assert command.fields["value"] == pytest.approx(6.0)
+
+
+def test_recovery_never_exceeds_the_cruise_speed():
+    pilot = policy(recover_after_s=1.0, speedup=2.0)
+    pilot.start()
+    pilot.on_event(line_lost(t=5.0))
+
+    pilot.on_event(status(t=6.0))             # back to cruise
+    assert pilot.on_event(status(t=7.0)) == []
+
+
+def test_losing_the_line_again_restarts_the_clean_run():
+    pilot = policy(recover_after_s=1.0, speedup=2.0)
+    pilot.start()
+    pilot.on_event(line_lost(t=5.0))
+    pilot.on_event(line_lost(t=5.5))          # 3.0 -> 2.0 (floor)
+
+    assert pilot.on_event(status(t=6.0)) == []   # clock restarted at 5.5
+
+
+def test_recovery_is_off_by_default():
+    pilot = policy()
+    pilot.start()
+    pilot.on_event(line_lost(t=5.0))
+
+    assert pilot.on_event(status(t=50.0)) == []

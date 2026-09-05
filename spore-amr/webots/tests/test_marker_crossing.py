@@ -249,3 +249,44 @@ def test_a_crossing_can_be_ended_when_the_line_never_returns():
 
     crossing.reset()
     assert crossing.state is Crossing.CLEAR
+
+
+# ------------------------------------------------- turning about the node ----
+
+def test_the_robot_is_short_of_the_node_when_it_reads_the_code():
+    """The QR decodes while the robot is still approaching: the colour trigger
+    fires 175 mm before the node centre and the code is readable ~80 mm later,
+    so the robot's own origin is still short of the junction. Turning there
+    rotates about a point beside the new lane, not on it."""
+    crossing = MarkerCrossing(CrossingConfig())
+    crossing.update(distance=0.0, sees_border=True)
+
+    lever = crossing.lever_arm(distance=0.080)
+
+    assert lever > 0.05          # short of the node by most of a boom length
+    assert lever < 0.15
+
+
+def test_advancing_by_the_lever_arm_puts_the_origin_on_the_node():
+    """Which is the distance a robot has to roll forward before it may turn.
+    Rotating anywhere else leaves it beside the lane it turned onto, and the
+    IR array spans +/-20 mm against a 20 mm line -- it never sees it, drives
+    parallel to it, and the lost-line search spins it onto some other lane."""
+    crossing = MarkerCrossing(CrossingConfig())
+    crossing.update(distance=0.0, sees_border=True)
+
+    read_at = 0.080
+    lever = crossing.lever_arm(read_at)
+
+    assert crossing.lever_arm(read_at + lever) == pytest.approx(0.0)
+
+
+def test_the_lever_arm_is_independent_of_where_in_the_window_it_was_read():
+    """A code decodes anywhere in a ~40 mm window, so the advance has to be
+    computed per read rather than assumed constant."""
+    crossing = MarkerCrossing(CrossingConfig())
+    crossing.update(distance=0.0, sees_border=True)
+
+    for read_at in (0.060, 0.080, 0.100):
+        assert crossing.lever_arm(read_at + crossing.lever_arm(read_at)) == \
+            pytest.approx(0.0)
