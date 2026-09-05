@@ -1,16 +1,37 @@
 // The robot <-> network link.
 //
-// The authoritative contract for every payload is the shared JSON schema, not
-// the fields of this envelope. There are two directions, each with its own
-// schema, both defined in schemas/:
+// These messages are the shared JSON schemas expressed as protobuf, field for
+// field:
 //
-//   robot-to-network.schema.json   -- a robot reporting status upward
-//   network-to-robot.schema.json   -- the network commanding a robot
+//   schemas/robot-to-network.schema.json   -- a robot reporting status upward
+//   schemas/network-to-robot.schema.json   -- the network commanding a robot
 //
-// The envelope is deliberately opaque so the schemas can evolve without
-// touching the transport, and so a network layer written in any language can
-// validate the JSON against the same schema files. `schema` names the document
-// a payload must validate against; `json` is that payload, serialised.
+// The schemas remain the ground-truth contract; this file is a second
+// rendering of them for a typed, binary wire. Both directions share Id,
+// Timestamp, CargoId, CargoState, Cargo and Mission because both schemas
+// define them identically, so they are declared once here.
+//
+// **Left and right never cross this wire.** `RobotToNetwork` carries
+// `latest_node_id` and `NetworkToRobot` carries `target_node_id`. Neither has
+// a field for a turn, and neither has a field for a menu of legal exits. The
+// network layer routes and holds the map; the robot holds the map too and
+// derives the bearing to the node it was named. That is exact -- lanes are
+// straight -- so a direction on the wire would be a second, weaker description
+// of geometry both ends already have.
+//
+// Two places where proto3 cannot say what JSON Schema says, both handled below
+// rather than left as traps:
+//
+//   `required`  proto3 has no such keyword, and every Id and Timestamp has
+//               `minimum: 0`, so zero is a legal value and an absent field is
+//               indistinguishable from a present zero. Required scalars are
+//               therefore declared `optional`, which buys explicit presence:
+//               a receiver can tell "bot 0" from "nobody said". This costs
+//               nothing on the wire.
+//
+//   `oneOf`     maps to `oneof`, which is exact. `Fault` is deliberately NOT a
+//               oneof: its schema requires nothing and forbids nothing, so a
+//               fault may carry a warning, an error, both, or neither.
 
 syntax = "proto3";
 
@@ -20,18 +41,144 @@ service RobotNetwork {
   // One long-lived bidirectional stream per robot. The robot (the companion,
   // acting for its robot) is the client; the network layer is the server.
   //
+  // The stream types name the direction, so there is no envelope and no
+  // `schema` discriminator to get wrong: what a robot may send and what it may
+  // receive are different types, and the compiler enforces it.
+  //
   // A stream is ordered and reliable, so no sequence numbers: a command and a
-  // status can never be reordered, and the `timestamp` field inside each
-  // payload is a data value, not a transport concern.
-  rpc Session(stream Message) returns (stream Message);
+  // status can never be reordered, and `timestamp` is a data value, not a
+  // transport concern.
+  rpc Session(stream RobotToNetwork) returns (stream NetworkToRobot);
 }
 
-message Message {
-  // Which schema the `json` field validates against. One of:
-  //   "robot-to-network"
-  //   "network-to-robot"
-  string schema = 1;
+// --- Shared types -----------------------------------------------------------
 
-  // The payload, serialised as compact JSON.
-  string json = 2;
+// Schema `Mission`: one of five, exactly one set.
+//
+// Four variants carry no data -- the schema gives them a `type` const and
+// nothing else -- so they are empty messages. The variant is the field that is
+// set; there is no separate `type` string to keep in agreement with it.
+message Mission {
+  oneof kind {
+    Park park = 1;
+    Charge charge = 2;
+    Hold hold = 3;
+    Idle idle = 4;
+    Cargo cargo = 5;
+  }
+}
+
+message Park {}
+message Charge {}
+message Hold {}
+message Idle {}
+
+// Schema `MissionCargo` flattened: its `type` const is the `Mission.cargo`
+// case, leaving the cargo itself.
+message Cargo {
+  // Schema `CargoId`: a UUID, intentionally not an `Id`. Orders are minted by
+  // an external system, so their identifiers cannot come from a central
+  // sequential allocator. The UUID pattern stays the schema's to enforce;
+  // protobuf has no such type.
+  optional string cargo_id = 1;
+
+  optional CargoState state = 2;
+}
+
+enum CargoState {
+  // Not in the schema: proto3 requires a zero value, and it doubles as the
+  // "field absent or unrecognised" sentinel that `required` would otherwise
+  // have caught.
+  CARGO_STATE_UNSPECIFIED = 0;
+  CARGO_STATE_PICKUP = 1;
+  CARGO_STATE_DROPOFF = 2;
+  CARGO_STATE_EN_ROUTE = 3;
+}
+
+// --- robot -> network -------------------------------------------------------
+
+message RobotToNetwork {
+  // Schema `Id`: integer, minimum 0. Zero is a legal bot, region and node, so
+  // these are `optional` to keep "absent" distinguishable from "zero".
+  optional uint32 bot_id = 1;
+  optional uint32 region_id = 2;
+
+  // The last node whose marker this robot read. Its whole report of where it
+  // is: the network layer is told a node, never a pose.
+  optional uint32 latest_node_id = 3;
+
+  optional Mission mission = 4;
+  optional Telemetry telemetry = 5;
+
+  // Optional in the schema too: absent means nothing is wrong.
+  optional Fault fault = 6;
+
+  // Schema `Timestamp`: integer, minimum 0.
+  optional uint64 timestamp = 7;
+}
+
+message Telemetry {
+  optional Battery battery = 1;
+}
+
+message Battery {
+  // Schema: `number`, 0 to 100 -- a JSON number, not an integer, so double.
+  optional double percentage = 1;
+}
+
+// Schema `Fault`: both members optional, neither required. Not a oneof --
+// a robot may report a warning and an error at once, and the schema allows an
+// empty fault.
+message Fault {
+  optional Warning warning = 1;
+  optional Error error = 2;
+}
+
+// Schema `Warning`: one of two, exactly one set.
+message Warning {
+  oneof kind {
+    LowBattery low_battery = 1;
+    Obstacle obstacle = 2;
+  }
+}
+
+message LowBattery {
+  // 0 to 100. Distinct from `Battery.percentage`: this one is the level that
+  // tripped the warning, at the moment it tripped.
+  optional double percentage = 1;
+}
+
+message Obstacle {
+  // Where the robot was when it saw the obstacle. A node, not a pose, for the
+  // same reason as `latest_node_id`.
+  optional uint32 current_node_id = 1;
+}
+
+// Schema `Error` is an object wrapping the enum rather than the bare enum. Kept
+// as a message so it matches the schema and has somewhere to grow -- a detail
+// string, a timestamp -- without changing `Fault`.
+message Error {
+  optional ErrorType type = 1;
+}
+
+enum ErrorType {
+  ERROR_TYPE_UNSPECIFIED = 0;
+  ERROR_TYPE_MOTOR_ERROR = 1;
+  ERROR_TYPE_CAMERA_ERROR = 2;
+  ERROR_TYPE_LIDAR_ERROR = 3;
+  ERROR_TYPE_LOCATION_UNKNOWN = 4;
+  ERROR_TYPE_MISC_ERROR = 5;
+}
+
+// --- network -> robot -------------------------------------------------------
+
+message NetworkToRobot {
+  // Where to go. Not how to get there, and not which way to turn: the robot
+  // derives the bearing from the map it already holds.
+  optional uint32 target_node_id = 1;
+
+  // Optional in the schema: absent leaves the robot's current mission alone.
+  optional Mission set_mission = 2;
+
+  optional uint64 timestamp = 3;
 }
