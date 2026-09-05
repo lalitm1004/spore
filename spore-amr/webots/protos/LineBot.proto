@@ -4,6 +4,20 @@
 #
 # The robot origin sits at wheel-axle height, so `translation` z should equal
 # the wheel radius (0.02) to rest the wheels on the ground.
+#
+# The deck is 500 x 500 mm -- a real warehouse AMR -- but every downward sensor
+# rides a boom ahead of it. That is not styling. The line is 20 mm and the
+# marker tiles are 100 mm, both fixed by the warehouse, so the IR spacing and
+# the camera's 92.7 mm footprint are matched to them and cannot scale with the
+# body. A 500 mm deck would simply occlude sensors mounted where a 120 mm deck
+# left them in the clear, and the deck sits 10 mm off the floor while the
+# sensors work at 15 mm, so tucking them underneath is not available either.
+#
+# Everything on the boom therefore moved forward by exactly 200 mm together:
+# the array, the colour trigger, the camera and the lidar keep their *relative*
+# spacing, which is what the firmware's crossing geometry is written against.
+# Only their distance from the wheel axle changed, and that is a single number
+# the firmware already reads from its config (`optics.camera_x`).
 
 PROTO LineBot [
   field SFVec3f    translation      0 0 0.02
@@ -12,27 +26,31 @@ PROTO LineBot [
   field SFString   controller       "<extern>"
   field MFString   controllerArgs   []
   field SFBool     synchronization  TRUE
+  field SFFloat    bodyLength       0.50      # 500 x 500 deck; see the boom note
+  field SFFloat    bodyWidth        0.50
+  field SFFloat    bodyHeight       0.10
   field SFInt32    sensorCount      3
   field SFFloat    sensorSpacing    0.02      # lateral gap between sensors
   field SFFloat    sensorHeight     0.015     # sensor height above the floor
   field SFFloat    sensorAperture   0.5       # cone angle; sets the footprint
   field SFInt32    sensorRays       5         # >1 gives an analog reading
+  field SFFloat    frontArrayX      0.27      # ahead of the deck edge at 0.25
   field SFBool     hasRearArray     TRUE      # so reversing can follow the line
-  field SFFloat    rearArrayX       -0.07
+  field SFFloat    rearArrayX       -0.27
   field SFBool     hasOptics        TRUE      # colour trigger + QR camera
-  field SFFloat    colorSensorX     0.125     # on the forward boom, clear of the chassis
+  field SFFloat    colorSensorX     0.325     # on the forward boom, clear of the chassis
   field SFFloat    colorSensorFov   0.5
-  field SFFloat    cameraX          0.095     # must clear the chassis; see the occlusion note
+  field SFFloat    cameraX          0.295     # must clear the chassis; see the occlusion note
   field SFFloat    cameraMast       0.06      # camera height above robot origin
   field SFFloat    cameraFov        1.05
   field SFInt32    cameraResolution 512     # 57-module codes need this
   field SFBool     hasLidar         TRUE      # forward obstacle reflex only
-  field SFFloat    lidarX           0.062
+  field SFFloat    lidarX           0.262
   field SFFloat    lidarZ           0.012     # above the deck, below the boom
   field SFFloat    lidarFov         1.5
   field SFFloat    lidarRange       1.0
   field SFInt32    lidarPoints      32
-  field SFFloat    casterX          0.045     # ball transfers, fore and aft
+  field SFFloat    casterX          0.200     # ball transfers, fore and aft
   field SFFloat    casterRadius     0.010
 ]
 {
@@ -47,6 +65,15 @@ PROTO LineBot [
 
     // A ball transfer's centre sits one radius above the floor.
     const casterZ = fields.casterRadius.value - WHEEL_RADIUS;
+
+    // The deck's centre, so its underside keeps DECK_CLEARANCE above the floor
+    // whatever `bodyHeight` is. This used to be a hardcoded 0.005, which is
+    // what this expression gives for the original 30 mm deck -- and which
+    // buries a 100 mm deck 25 mm into the ground. A robot beached on its belly
+    // still turns its wheels, so odometry reported 65 m of travel while ground
+    // truth had it 0.000 m from where it started.
+    const DECK_CLEARANCE = 0.01;
+    const deckZ = fields.bodyHeight.value / 2 - WHEEL_RADIUS + DECK_CLEARANCE;
 
     // Over white the ray travels `height`; over black the reflection factor is
     // 0.2, so the effective distance is five times that. The table must span
@@ -85,7 +112,7 @@ PROTO LineBot [
     synchronization IS synchronization
     children [
       DEF CHASSIS Pose {
-        translation 0 0 0.005
+        translation 0 0 %<= deckZ >%
         children [
           Shape {
             appearance PBRAppearance {
@@ -94,7 +121,7 @@ PROTO LineBot [
               metalness 0
             }
             geometry Box {
-              size 0.12 0.09 0.03
+              size %<= fields.bodyLength.value >% %<= fields.bodyWidth.value >% %<= fields.bodyHeight.value >%
             }
           }
         ]
@@ -188,7 +215,7 @@ PROTO LineBot [
           }
         }
       }
-      %< const arrays = [["", 0.07]]; >%
+      %< const arrays = [["", fields.frontArrayX.value]]; >%
       %< if (fields.hasRearArray.value) { arrays.push(["b", fields.rearArrayX.value]); } >%
       %< for (const [tag, ax] of arrays) { >%
       %< for (let i = 0; i < count; i++) { >%
@@ -338,10 +365,10 @@ PROTO LineBot [
     boundingObject Group {
       children [
         Pose {
-          translation 0 0 0.005
+          translation 0 0 %<= deckZ >%
           children [
             Box {
-              size 0.12 0.09 0.03
+              size %<= fields.bodyLength.value >% %<= fields.bodyWidth.value >% %<= fields.bodyHeight.value >%
             }
           ]
         }

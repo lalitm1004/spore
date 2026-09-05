@@ -18,7 +18,12 @@ from typing import Optional, Tuple
 
 
 def wrap(angle: float) -> float:
-    """To (-pi, pi]. Turning uses the shortest way round, always."""
+    """To [-pi, pi). Turning uses the shortest way round, always.
+
+    Half-open at the negative end, not the positive: exactly pi comes back as
+    -pi. The two name the same bearing, so nothing downstream can tell, but the
+    range is worth stating correctly for anyone reaching for the boundary.
+    """
     return (angle + math.pi) % (2 * math.pi) - math.pi
 
 

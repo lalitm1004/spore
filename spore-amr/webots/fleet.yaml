@@ -34,6 +34,27 @@ robot:
   sensor_count: 3
   sensor_spacing: 0.02
   sensor_height: 0.015
+  # The deck, in metres. 500 x 500 is a real warehouse AMR rather than the
+  # 120 x 90 breadboard this started as. It is only the *body*: the line is
+  # 20 mm and the tiles are 100 mm, so the IR spacing and the camera footprint
+  # stay matched to those and ride a boom ahead of the deck instead of scaling
+  # with it. See the note at the top of protos/LineBot.proto.
+  body_length: 0.50
+  body_width: 0.50
+  body_height: 0.10
+  # Measured cost of the change, against the 120 x 90 chassis it replaced:
+  # median fix error 4 -> 6 mm and median heading 0.2 -> 0.1 deg, which is a
+  # wash, but worst-case heading went from 1.5 deg to 4 deg typical and has
+  # been seen at 13.9 deg. The cause is inertia, not calibration -- the deck
+  # has 22x the rotational inertia at the same mass, and TurnController stops
+  # the wheels at the edge of a 4 deg band that a coasting body crosses in
+  # 2.7 control steps. See tests/test_turn.py for what was tried.
+  #
+  # `body_height` is not free styling: the deck is centred so its underside
+  # keeps 10 mm of clearance, and LineBot.proto derives that. An earlier
+  # hardcoded centre buried a 100 mm deck 25 mm into the floor -- the robots
+  # sat on their bellies, wheels spinning, odometry cheerfully reporting 65 m
+  # while ground truth had them 0.000 m from the start line.
 
 # Floor markers. Each is its own textured plane, not pixels in the track
 # texture: at 512 px/m a QR module would be a single texel and Webots would
@@ -75,6 +96,15 @@ defaults:
     steering_limit: 8.0
     lost_line_timeout_s: 2.0
     # Error is in metres and steering is in rad/s, so kp is large by design.
+    #
+    # Left at 150 through the move to a 500 mm deck, having measured that
+    # scaling it with the boom is wrong. The reasoning that failed: the PID
+    # steers on lateral offset at the IR array, offset for heading error theta
+    # is about L*theta, so moving the array 70 -> 270 mm looks like a 3.86x
+    # gain increase and kp "should" drop to 38.9. Measured, that is much worse
+    # -- median fix error 6 mm -> 43 mm, median heading 0.2 -> 8.2 deg. The
+    # longer arm gives the loop lead, not just gain: the array sees a deviation
+    # earlier, which the derivative term uses. Cutting kp only made it slow.
     pid: {kp: 150.0, ki: 0.0, kd: 4.0}
   resources:
     memory: 256m
