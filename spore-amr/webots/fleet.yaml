@@ -1,0 +1,78 @@
+# Single source of truth for the track and the robot fleet.
+# Regenerate with:  uv run python -m tools.make_track && uv run python -m tools.gen_fleet
+
+track:
+  # A window of the real warehouse, not a generated lattice. The full
+  # 120 x 70 m layout cannot be simulated at line-following resolution: one
+  # texture would be 61440 x 35840 px against a GPU limit around 16384, and a
+  # QR tile for each of its 881 nodes would want roughly 3.7 GB of texture
+  # memory. This window keeps real node ids, names, types, regions and edges
+  # -- 83 nodes of which 10 are charging bays.
+  #
+  # 32 x 16 m at 256 px/m is 8192 x 4096, both powers of two, so Webots does
+  # not rescale it. The window is centred on the charging strip, which runs
+  # along y = 800-1200 cm in the real layout.
+  warehouse:
+    source: ../spore/spore-warehouse-layout/output/warehouse.json
+    origin_cm: [8200, 600]
+    size_m: [32, 16]
+    pixels_per_metre: 256
+  line_width: 0.02
+
+robot:
+  sensor_count: 3
+  sensor_spacing: 0.02
+  sensor_height: 0.015
+
+# Floor markers. Each is its own textured plane, not pixels in the track
+# texture: at 512 px/m a QR module would be a single texel and Webots would
+# mipmap the finder patterns away.
+#
+# `at` is normalised arclength along the centerline, so markers sit on the
+# line and move with the track. The QR payload carries absolute position, so
+# the fleet's graph is emergent -- no robot is ever handed a map.
+markers:
+  # Nodes come from the graph; only the tile's geometry is set here.
+  spec:
+    tile_mm: 100.0        # 92.7 mm of this is inside the camera's footprint
+    qr_mm: 60.0           # 49 modules -> 6.8 camera px per module at 512 px
+    margin_mm: 5.0
+    pixels_per_mm: 10.24  # 100 mm -> exactly 1024 px, a power of two
+    border_rgb: [255, 122, 0]
+
+defaults:
+  sensors:
+    # In ADC counts: the firmware sees 10-bit counts, not raw simulator units.
+    white_ref: 1023
+    black_ref: 205
+    min_confidence: 0.15
+    sample_period_s: 0.016
+    latency_s: 0.0
+    adc: {bits: 10, full_scale: 1000.0}
+  control:
+    base_speed: 6.0          # rad/s at the wheels (~0.12 m/s)
+    max_speed: 20.0
+    steering_limit: 8.0
+    lost_line_timeout_s: 2.0
+    # Error is in metres and steering is in rad/s, so kp is large by design.
+    pid: {kp: 150.0, ki: 0.0, kd: 4.0}
+  resources:
+    memory: 256m
+    cpus: "0.5"
+
+# Robots start at charging bays, which is where a fleet would be at the start
+# of a shift. Poses come from the track itself, so changing the window cannot
+# leave stale coordinates behind.
+robots:
+  count: 10
+  spawn: charging
+
+# Obstacles for the forward-lidar reflex. Unlike marker tiles these carry a
+# boundingObject, so a ray has something to hit.
+#
+# Placed 1.24 m into the lap -- far enough that the robot is tracking the line
+# properly before it meets one. At spawn it would trip on the first tick, which
+# is correct behaviour and a useless demonstration of it.
+# No static obstacles: with ten robots on the grid they are each other's
+# obstacles, which is the case worth watching.
+obstacles: []

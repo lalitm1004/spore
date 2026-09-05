@@ -1,0 +1,23 @@
+# The simulator. Robot brains live in compose.fleet.yml, generated from
+# fleet.yaml, so that world and container robot names cannot drift apart.
+#
+#   docker compose -f compose.yml -f compose.fleet.yml up
+#   then open http://localhost:1234/index.html
+services:
+  sim:
+    image: sih2026/sim:dev
+    build:
+      context: .
+      dockerfile: docker/sim.Dockerfile
+    ports:
+      - "1234:1234"
+    volumes:
+      - ./:/project
+    working_dir: /project
+    init: true
+    user: "${DOCKER_USER:-1000:1000}"
+    environment:
+      WORLD: "${WORLD:-worlds/track.wbt}"
+      MODE: "${MODE:-realtime}"
+      RENDERING: "${RENDERING:-on}"
+      STREAM_MODE: "${STREAM_MODE:-w3d}"

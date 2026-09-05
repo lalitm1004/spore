@@ -1,0 +1,30 @@
+[project]
+name = "temp-network-interface"
+version = "0.1.0"
+description = "The AMR network-layer interface: robot<->network gRPC following the shared JSON schemas"
+readme = "README.md"
+authors = [
+    { name = "lalitm1004", email = "lalitm1004@gmail.com" }
+]
+requires-python = ">=3.13"
+dependencies = [
+    "grpcio>=1.83.1",
+    "jsonschema>=4.26.0",
+]
+
+[project.scripts]
+temp-network-interface = "temp_network_interface.__main__:main"
+
+[build-system]
+requires = ["uv_build>=0.12.3,<0.13.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "grpcio-tools>=1.83.1",
+    "pytest>=9.1.1",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]

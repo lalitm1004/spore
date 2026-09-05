@@ -1,0 +1,23 @@
+out/
+__pycache__/
+*.pyc
+.venv/
+node_modules/
+*.tmp
+
+# Machine-specific UID/GID for the container user. compose.yml already
+# defaults to 1000:1000, so this file only exists to override it locally.
+.env
+
+# Webots editor state -- window layout and view position, written by the GUI.
+*.wbproj
+
+# TypeScript network-layer scaffold. No source under it, and the real network
+# layer lives elsewhere in the repo -- an empty second copy here would only
+# drift from it.
+net/
+
+# Intermediate floor texture. The world references the content-addressed copy
+# (track-<hash>.png) so a regenerated floor cannot be served from a browser
+# cache under a URL it already has.
+textures/track.png
