@@ -218,3 +218,25 @@ def test_the_furthest_corner_of_a_lattice_is_the_furthest_node():
     far = graph.far_nodes(0, minimum_hops=6)
 
     assert far == [15]      # the only node six hops from the opposite corner
+
+
+def test_a_dead_end_spur_offers_the_way_back():
+    """Every charging bay on this floor is a degree-1 spur, and the fleet spawns
+    in them. A robot offered no turn sits there for the rest of the run.
+
+    The arrival lane is excluded from an ordinary junction on purpose -- a robot
+    has no business calling the way it came a legal turn -- but at a dead end it
+    is the only way there is, and reversing out is 180 degrees from anything
+    left/straight/right can name.
+    """
+    from tools.track.graph import Edge, Graph, Node
+
+    nodes = [Node(node_id=1, x=0.0, y=0.0, kind="PT", name="corridor"),
+             Node(node_id=2, x=2.0, y=0.0, kind="CH", name="bay")]
+    graph = Graph(nodes, [Edge(1, 2)])
+
+    arrived_heading = graph.bearing(1, 2)          # drove east into the bay
+    turns = graph.turns_from(2, arrived_heading)
+
+    assert turns, "a robot in a charging bay was offered nowhere to go"
+    assert set(turns.values()) == {1}

@@ -242,6 +242,22 @@ class Graph:
                 claimed[neighbour] = turn
             result.pop(loser, None)
 
+        if not result and candidates:
+            # Nothing landed within tolerance of left, straight or right, and
+            # there is exactly one way to go: this is a dead-end spur and the
+            # only lane is the one behind. Reversing out is a 180 degree turn,
+            # which is 135 degrees outside any tolerance we would want for an
+            # ordinary junction -- so it has to be handled here rather than by
+            # widening one.
+            #
+            # Found in a real run: a robot drove into a charging bay, was
+            # offered no turn at all, and sat in it for the rest of the shift.
+            # Every bay on this floor is a degree-1 spur and the fleet *spawns*
+            # in them, so without this no robot ever leaves the one it starts
+            # in. `straight` because the robot turns to an absolute bearing and
+            # does not care what we call it.
+            result["straight"] = min(candidates, key=lambda c: c[0])[0]
+
         return result
 
     # -------------------------------------------------------- ground truth --
