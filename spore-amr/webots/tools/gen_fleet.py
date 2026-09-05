@@ -543,7 +543,7 @@ DirectionalLight {{
 PROTO_OPTICS = {
     "color_sensor_x": 0.325,
     "camera_x": 0.295,
-    "ir_array_x": 0.27,
+    "ir_array_x": 0.07,
     "camera_mast": 0.060,
     "camera_fov": 1.05,
     "camera_resolution": 512,

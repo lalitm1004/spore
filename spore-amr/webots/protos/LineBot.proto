@@ -13,11 +13,19 @@
 # left them in the clear, and the deck sits 10 mm off the floor while the
 # sensors work at 15 mm, so tucking them underneath is not available either.
 #
-# Everything on the boom therefore moved forward by exactly 200 mm together:
-# the array, the colour trigger, the camera and the lidar keep their *relative*
-# spacing, which is what the firmware's crossing geometry is written against.
-# Only their distance from the wheel axle changed, and that is a single number
-# the firmware already reads from its config (`optics.camera_x`).
+# The colour trigger, camera and lidar therefore ride a boom 200 mm further
+# out than they did. The IR arrays do not, and that distinction is the whole
+# point. An array L ahead of the wheels turns a residual heading error e into
+# L*sin(e) of lateral offset, and the line is only +/-10 mm wide: at 70 mm the
+# turn controller's 2 deg tolerance left 4.1x margin, and at 270 mm it left
+# 1.1x -- a turn was allowed to finish exactly where the sensor left the line.
+# One robot spent 513 consecutive seconds lost that way.
+#
+# So the arrays stay at +/-70 mm and the deck is lifted to 25 mm of clearance
+# to see past it. Only the camera and the colour trigger genuinely need the
+# height that puts them out on the boom. `MarkerCrossing` takes the two as a
+# difference (`color_sensor_x - ir_array_x`), so it follows either spacing
+# without being told.
 
 PROTO LineBot [
   field SFVec3f    translation      0 0 0.02
@@ -34,9 +42,9 @@ PROTO LineBot [
   field SFFloat    sensorHeight     0.015     # sensor height above the floor
   field SFFloat    sensorAperture   0.5       # cone angle; sets the footprint
   field SFInt32    sensorRays       5         # >1 gives an analog reading
-  field SFFloat    frontArrayX      0.27      # ahead of the deck edge at 0.25
+  field SFFloat    frontArrayX      0.07      # under the deck; see the lever-arm note
   field SFBool     hasRearArray     TRUE      # so reversing can follow the line
-  field SFFloat    rearArrayX       -0.27
+  field SFFloat    rearArrayX       -0.07
   field SFBool     hasOptics        TRUE      # colour trigger + QR camera
   field SFFloat    colorSensorX     0.325     # on the forward boom, clear of the chassis
   field SFFloat    colorSensorFov   0.5
@@ -72,7 +80,7 @@ PROTO LineBot [
     // buries a 100 mm deck 25 mm into the ground. A robot beached on its belly
     // still turns its wheels, so odometry reported 65 m of travel while ground
     // truth had it 0.000 m from where it started.
-    const DECK_CLEARANCE = 0.01;
+    const DECK_CLEARANCE = 0.025;
     const deckZ = fields.bodyHeight.value / 2 - WHEEL_RADIUS + DECK_CLEARANCE;
 
     // Over white the ray travels `height`; over black the reflection factor is
