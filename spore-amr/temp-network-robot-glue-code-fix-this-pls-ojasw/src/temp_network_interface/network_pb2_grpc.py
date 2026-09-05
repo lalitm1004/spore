@@ -36,8 +36,8 @@ class RobotNetworkStub:
         """
         self.Session = channel.stream_stream(
                 '/spore.network.v1.RobotNetwork/Session',
-                request_serializer=network__pb2.Message.SerializeToString,
-                response_deserializer=network__pb2.Message.FromString,
+                request_serializer=network__pb2.RobotToNetwork.SerializeToString,
+                response_deserializer=network__pb2.NetworkToRobot.FromString,
                 _registered_method=True)
 
 
@@ -48,9 +48,13 @@ class RobotNetworkServicer:
         """One long-lived bidirectional stream per robot. The robot (the companion,
         acting for its robot) is the client; the network layer is the server.
 
+        The stream types name the direction, so there is no envelope and no
+        `schema` discriminator to get wrong: what a robot may send and what it may
+        receive are different types, and the compiler enforces it.
+
         A stream is ordered and reliable, so no sequence numbers: a command and a
-        status can never be reordered, and the `timestamp` field inside each
-        payload is a data value, not a transport concern.
+        status can never be reordered, and `timestamp` is a data value, not a
+        transport concern.
         """
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
@@ -61,8 +65,8 @@ def add_RobotNetworkServicer_to_server(servicer, server):
     rpc_method_handlers = {
             'Session': grpc.stream_stream_rpc_method_handler(
                     servicer.Session,
-                    request_deserializer=network__pb2.Message.FromString,
-                    response_serializer=network__pb2.Message.SerializeToString,
+                    request_deserializer=network__pb2.RobotToNetwork.FromString,
+                    response_serializer=network__pb2.NetworkToRobot.SerializeToString,
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
@@ -90,8 +94,8 @@ class RobotNetwork:
             request_iterator,
             target,
             '/spore.network.v1.RobotNetwork/Session',
-            network__pb2.Message.SerializeToString,
-            network__pb2.Message.FromString,
+            network__pb2.RobotToNetwork.SerializeToString,
+            network__pb2.NetworkToRobot.FromString,
             options,
             channel_credentials,
             insecure,

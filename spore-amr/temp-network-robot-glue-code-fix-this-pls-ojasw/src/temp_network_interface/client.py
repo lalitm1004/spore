@@ -21,7 +21,10 @@ import threading
 from typing import Optional
 
 from temp_network_interface.messages import NetworkToRobot, RobotState, RobotToNetwork
-from temp_network_interface.transport import decode, encode_robot_to_network
+from temp_network_interface.transport import (
+    decode_network_to_robot,
+    encode_robot_to_network,
+)
 
 # A sentinel pushed onto the inbound queue when the stream ends, so `recv`
 # returns None instead of blocking forever after the network goes away.
@@ -114,16 +117,19 @@ class NetworkClient:
 
     def _drain(self) -> None:
         """Consume the response stream on a thread, decoding into the inbound
-        queue and updating `state`. A malformed payload is dropped, never fatal."""
+        queue and updating `state`. A malformed payload is dropped, never fatal.
+
+        The response stream is typed `NetworkToRobot`, so there is nothing to
+        dispatch on and no way to receive the other direction by mistake -- what
+        used to be an isinstance check is now the stream's own type."""
         try:
-            for envelope in self._responses:
+            for command in self._responses:
                 try:
-                    message = decode(envelope)
+                    message = decode_network_to_robot(command)
                 except Exception:
                     continue
-                if isinstance(message, NetworkToRobot):
-                    self.state = RobotState.from_command(message)
-                    self._inbound.put(message)
+                self.state = RobotState.from_command(message)
+                self._inbound.put(message)
         except Exception:
             # Closing the channel cancels the stream; that is the normal exit,
             # not an error the caller needs to see.

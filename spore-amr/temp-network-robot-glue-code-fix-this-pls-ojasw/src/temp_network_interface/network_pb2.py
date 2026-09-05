@@ -24,15 +24,47 @@ _sym_db = _symbol_database.Default()
 
 
 
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\rnetwork.proto\x12\x10spore.network.v1\"\'\n\x07Message\x12\x0e\n\x06schema\x18\x01 \x01(\t\x12\x0c\n\x04json\x18\x02 \x01(\t2S\n\x0cRobotNetwork\x12\x43\n\x07Session\x12\x19.spore.network.v1.Message\x1a\x19.spore.network.v1.Message(\x01\x30\x01\x62\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\rnetwork.proto\x12\x10spore.network.v1\"\xdf\x01\n\x07Mission\x12&\n\x04park\x18\x01 \x01(\x0b\x32\x16.spore.network.v1.ParkH\x00\x12*\n\x06\x63harge\x18\x02 \x01(\x0b\x32\x18.spore.network.v1.ChargeH\x00\x12&\n\x04hold\x18\x03 \x01(\x0b\x32\x16.spore.network.v1.HoldH\x00\x12&\n\x04idle\x18\x04 \x01(\x0b\x32\x16.spore.network.v1.IdleH\x00\x12(\n\x05\x63\x61rgo\x18\x05 \x01(\x0b\x32\x17.spore.network.v1.CargoH\x00\x42\x06\n\x04kind\"\x06\n\x04Park\"\x08\n\x06\x43harge\"\x06\n\x04Hold\"\x06\n\x04Idle\"g\n\x05\x43\x61rgo\x12\x15\n\x08\x63\x61rgo_id\x18\x01 \x01(\tH\x00\x88\x01\x01\x12\x30\n\x05state\x18\x02 \x01(\x0e\x32\x1c.spore.network.v1.CargoStateH\x01\x88\x01\x01\x42\x0b\n\t_cargo_idB\x08\n\x06_state\"\xe3\x02\n\x0eRobotToNetwork\x12\x13\n\x06\x62ot_id\x18\x01 \x01(\rH\x00\x88\x01\x01\x12\x16\n\tregion_id\x18\x02 \x01(\rH\x01\x88\x01\x01\x12\x1b\n\x0elatest_node_id\x18\x03 \x01(\rH\x02\x88\x01\x01\x12/\n\x07mission\x18\x04 \x01(\x0b\x32\x19.spore.network.v1.MissionH\x03\x88\x01\x01\x12\x33\n\ttelemetry\x18\x05 \x01(\x0b\x32\x1b.spore.network.v1.TelemetryH\x04\x88\x01\x01\x12+\n\x05\x66\x61ult\x18\x06 \x01(\x0b\x32\x17.spore.network.v1.FaultH\x05\x88\x01\x01\x12\x16\n\ttimestamp\x18\x07 \x01(\x04H\x06\x88\x01\x01\x42\t\n\x07_bot_idB\x0c\n\n_region_idB\x11\n\x0f_latest_node_idB\n\n\x08_missionB\x0c\n\n_telemetryB\x08\n\x06_faultB\x0c\n\n_timestamp\"H\n\tTelemetry\x12/\n\x07\x62\x61ttery\x18\x01 \x01(\x0b\x32\x19.spore.network.v1.BatteryH\x00\x88\x01\x01\x42\n\n\x08_battery\"1\n\x07\x42\x61ttery\x12\x17\n\npercentage\x18\x01 \x01(\x01H\x00\x88\x01\x01\x42\r\n\x0b_percentage\"{\n\x05\x46\x61ult\x12/\n\x07warning\x18\x01 \x01(\x0b\x32\x19.spore.network.v1.WarningH\x00\x88\x01\x01\x12+\n\x05\x65rror\x18\x02 \x01(\x0b\x32\x17.spore.network.v1.ErrorH\x01\x88\x01\x01\x42\n\n\x08_warningB\x08\n\x06_error\"v\n\x07Warning\x12\x33\n\x0blow_battery\x18\x01 \x01(\x0b\x32\x1c.spore.network.v1.LowBatteryH\x00\x12.\n\x08obstacle\x18\x02 \x01(\x0b\x32\x1a.spore.network.v1.ObstacleH\x00\x42\x06\n\x04kind\"4\n\nLowBattery\x12\x17\n\npercentage\x18\x01 \x01(\x01H\x00\x88\x01\x01\x42\r\n\x0b_percentage\"<\n\x08Obstacle\x12\x1c\n\x0f\x63urrent_node_id\x18\x01 \x01(\rH\x00\x88\x01\x01\x42\x12\n\x10_current_node_id\"@\n\x05\x45rror\x12.\n\x04type\x18\x01 \x01(\x0e\x32\x1b.spore.network.v1.ErrorTypeH\x00\x88\x01\x01\x42\x07\n\x05_type\"\xab\x01\n\x0eNetworkToRobot\x12\x1b\n\x0etarget_node_id\x18\x01 \x01(\rH\x00\x88\x01\x01\x12\x33\n\x0bset_mission\x18\x02 \x01(\x0b\x32\x19.spore.network.v1.MissionH\x01\x88\x01\x01\x12\x16\n\ttimestamp\x18\x03 \x01(\x04H\x02\x88\x01\x01\x42\x11\n\x0f_target_node_idB\x0e\n\x0c_set_missionB\x0c\n\n_timestamp*t\n\nCargoState\x12\x1b\n\x17\x43\x41RGO_STATE_UNSPECIFIED\x10\x00\x12\x16\n\x12\x43\x41RGO_STATE_PICKUP\x10\x01\x12\x17\n\x13\x43\x41RGO_STATE_DROPOFF\x10\x02\x12\x18\n\x14\x43\x41RGO_STATE_EN_ROUTE\x10\x03*\xb8\x01\n\tErrorType\x12\x1a\n\x16\x45RROR_TYPE_UNSPECIFIED\x10\x00\x12\x1a\n\x16\x45RROR_TYPE_MOTOR_ERROR\x10\x01\x12\x1b\n\x17\x45RROR_TYPE_CAMERA_ERROR\x10\x02\x12\x1a\n\x16\x45RROR_TYPE_LIDAR_ERROR\x10\x03\x12\x1f\n\x1b\x45RROR_TYPE_LOCATION_UNKNOWN\x10\x04\x12\x19\n\x15\x45RROR_TYPE_MISC_ERROR\x10\x05\x32\x61\n\x0cRobotNetwork\x12Q\n\x07Session\x12 .spore.network.v1.RobotToNetwork\x1a .spore.network.v1.NetworkToRobot(\x01\x30\x01\x62\x06proto3')
 
 _globals = globals()
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)
 _builder.BuildTopDescriptorsAndMessages(DESCRIPTOR, 'network_pb2', _globals)
 if not _descriptor._USE_C_DESCRIPTORS:
   DESCRIPTOR._loaded_options = None
-  _globals['_MESSAGE']._serialized_start=35
-  _globals['_MESSAGE']._serialized_end=74
-  _globals['_ROBOTNETWORK']._serialized_start=76
-  _globals['_ROBOTNETWORK']._serialized_end=159
+  _globals['_CARGOSTATE']._serialized_start=1484
+  _globals['_CARGOSTATE']._serialized_end=1600
+  _globals['_ERRORTYPE']._serialized_start=1603
+  _globals['_ERRORTYPE']._serialized_end=1787
+  _globals['_MISSION']._serialized_start=36
+  _globals['_MISSION']._serialized_end=259
+  _globals['_PARK']._serialized_start=261
+  _globals['_PARK']._serialized_end=267
+  _globals['_CHARGE']._serialized_start=269
+  _globals['_CHARGE']._serialized_end=277
+  _globals['_HOLD']._serialized_start=279
+  _globals['_HOLD']._serialized_end=285
+  _globals['_IDLE']._serialized_start=287
+  _globals['_IDLE']._serialized_end=293
+  _globals['_CARGO']._serialized_start=295
+  _globals['_CARGO']._serialized_end=398
+  _globals['_ROBOTTONETWORK']._serialized_start=401
+  _globals['_ROBOTTONETWORK']._serialized_end=756
+  _globals['_TELEMETRY']._serialized_start=758
+  _globals['_TELEMETRY']._serialized_end=830
+  _globals['_BATTERY']._serialized_start=832
+  _globals['_BATTERY']._serialized_end=881
+  _globals['_FAULT']._serialized_start=883
+  _globals['_FAULT']._serialized_end=1006
+  _globals['_WARNING']._serialized_start=1008
+  _globals['_WARNING']._serialized_end=1126
+  _globals['_LOWBATTERY']._serialized_start=1128
+  _globals['_LOWBATTERY']._serialized_end=1180
+  _globals['_OBSTACLE']._serialized_start=1182
+  _globals['_OBSTACLE']._serialized_end=1242
+  _globals['_ERROR']._serialized_start=1244
+  _globals['_ERROR']._serialized_end=1308
+  _globals['_NETWORKTOROBOT']._serialized_start=1311
+  _globals['_NETWORKTOROBOT']._serialized_end=1482
+  _globals['_ROBOTNETWORK']._serialized_start=1789
+  _globals['_ROBOTNETWORK']._serialized_end=1886
 # @@protoc_insertion_point(module_scope)

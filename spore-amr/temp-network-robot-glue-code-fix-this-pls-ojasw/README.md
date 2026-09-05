@@ -19,10 +19,18 @@ Two directions, one schema each:
 | network → robot | `network-to-robot.schema.json` | `target_node_id`, optional `set_mission`, `timestamp` |
 
 The schemas are the ground-truth contract (canonical copies of
-`spore-amr/shared/schemas/`). The gRPC service is a deliberate thin envelope —
-`proto/network.proto` ships each payload as validated JSON — so the schemas can
-evolve without touching the transport, and a network layer written in any
-language validates against the same files.
+`spore-amr/shared/schemas/`). `proto/network.proto` expresses both of them as
+typed protobuf, field for field, and the service takes typed streams — so the
+direction is in the type system rather than in a string, and a message can only
+be built in a shape the schema allows.
+
+The schemas stay authoritative and are still validated at the wire. Protobuf
+enforces *shape*; it cannot enforce `required` (proto3 has no such keyword, and
+every `Id` has `minimum: 0`, so an absent field and a present zero are the same
+bytes), nor `minimum`/`maximum` on a percentage, nor the UUID pattern on a cargo
+id. Those are the schemas' to keep, which makes validation more load-bearing
+here, not redundant. `tests/test_proto_matches_schemas.py` fails if the two
+definitions ever drift.
 
 ```
 robot (companion) ──gRPC bidi stream──► network layer
@@ -34,7 +42,7 @@ robot (companion) ──gRPC bidi stream──► network layer
 ## Layout
 
 ```
-proto/network.proto         the gRPC service + opaque Message envelope
+proto/network.proto         the gRPC service + both schemas as typed messages
 schemas/*.schema.json       the two shared contracts (copies)
 src/temp_network_interface/
   messages.py               typed domain messages (pure)
@@ -43,12 +51,12 @@ src/temp_network_interface/
   store.py                  Journal: append-only JSONL durability (pure)
   relay.py                  routes commands to the right robot's stream (pure)
   policy.py                 pluggable Policy (stub: HoldPolicy, NoopPolicy)
-  transport.py              domain <-> envelope marshalling, validates at the wire
+  transport.py              domain <-> protobuf marshalling, validates at the wire
   client.py                 NetworkClient (robot side, for the companion)
   server.py                 NetworkService + serve()
   __main__.py               CLI: serve / probe
 tools/gen_proto.py          regenerate the gRPC stubs
-tests/                      35 host tests, including live loopback round trips
+tests/                      73 host tests, including live loopback round trips
 ```
 
 ## Install & run
@@ -73,8 +81,9 @@ uv run pytest -q
 
 - **Schemas are authoritative.** Every payload is validated against its schema
   at the boundary where it crosses the wire (`transport.py`); a payload that
-  fails validation never leaves the process, and an unknown schema name is
-  refused rather than guessed at.
+  fails validation never leaves the process. The wire being typed does not
+  retire this: protobuf cannot express `required`, numeric ranges, or the cargo
+  id's UUID pattern, so the schema is the only thing enforcing them.
 - **Pure core, thin grpc adapter.** Only `transport.py`, `client.py` and
   `server.py` import `grpc`. Everything else — messages, world state, durability,
   relay — is pure and host-testable, the same boundary the Webots implementation

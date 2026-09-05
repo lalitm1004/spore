@@ -57,19 +57,30 @@ serial line, and is unreferenced.)
 
 ```proto
 service RobotNetwork {
-  rpc Session(stream Message) returns (stream Message);
-}
-
-message Message {
-  string schema = 1;   // "robot-to-network" | "network-to-robot"
-  string json   = 2;   // the payload, as compact JSON
+  rpc Session(stream RobotToNetwork) returns (stream NetworkToRobot);
 }
 ```
 
-The envelope is **opaque** on purpose: the payload is validated JSON, and the
-`schema` field names the JSON Schema document it must satisfy. This keeps the
-JSON schemas authoritative (they can evolve without touching the transport) and
-lets a network layer written in any language validate against the same files.
+Both schemas are expressed as typed messages, field for field. The stream types
+name the direction, so there is no envelope and no `schema` discriminator to get
+wrong: what a robot may send and what it may receive are different types.
+
+Two things proto3 cannot say, handled in the file rather than left as traps:
+
+- **`required`** does not exist, and every `Id`/`Timestamp` has `minimum: 0`, so
+  zero is legal and an absent field would be indistinguishable from a present
+  zero. Required scalars are declared `optional`, which buys explicit presence
+  at no cost on the wire. This makes required-ness *weaker* at the protobuf
+  level — an empty message is structurally valid — so the JSON Schema
+  validation in `transport.py` is what still enforces it.
+- **`oneOf`** maps to `oneof` exactly, for `Mission` and `Warning`. `Fault` is
+  deliberately not a oneof: its schema requires nothing and forbids nothing, so
+  a robot may report a warning and an error at once.
+
+The schemas remain the ground-truth contract, and a network layer written in any
+language can validate against the same files. There are two definitions of this
+interface now where the envelope had one; `tests/test_proto_matches_schemas.py`
+is what catches them drifting.
 
 ### 2.2 The domain model (`messages.py`)
 
@@ -93,9 +104,16 @@ immediately rather than surfacing as a schema error at the wire.
 ### 2.3 Validation at the boundary (`schemas.py`, `transport.py`)
 
 `schemas.py` compiles the two JSON Schemas into cached draft-2020-12 validators.
-`transport.py` marshals domain messages into the envelope and validates every
+`transport.py` marshals domain messages into protobuf and validates every
 payload as it crosses the wire — a payload that fails validation never leaves
-the process, and an unknown schema name is refused rather than guessed at.
+the process.
+
+**The schema document is the pivot.** Encoding goes domain → document →
+validate → protobuf, and decoding goes protobuf → document → validate → domain.
+Nothing converts a domain object to a protobuf directly, so validation stays at
+the boundary, `messages.py` needs no protobuf awareness, and a required field
+missing from the wire surfaces as a schema error naming the field rather than as
+a silent zero.
 
 ### 2.4 The robot side (`client.py`)
 
@@ -220,7 +238,7 @@ harmless).
 | `store.py` | `Journal` (append-only JSONL durability) | no |
 | `relay.py` | routes commands to the right robot's stream | no |
 | `policy.py` | `Policy` protocol + `HoldPolicy` / `NoopPolicy` stubs | no |
-| `transport.py` | domain ↔ envelope marshalling, validates at the wire | **yes** |
+| `transport.py` | domain ↔ protobuf marshalling, validates at the wire | **yes** |
 | `client.py` | `NetworkClient` (robot side) | **yes** |
 | `server.py` | `NetworkService` + `serve()` (network side) | **yes** |
 | `__main__.py` | CLI (`serve`, `probe`) | lazy |
@@ -241,7 +259,7 @@ uv run temp-network-interface probe --target localhost:50051 --bot-id 1
 
 ## 6. Boundaries & invariants
 
-- **Schemas are authoritative.** The gRPC envelope is opaque; the JSON payloads
+- **Schemas are authoritative.** The wire is typed protobuf; the documents
   are validated against the shared schemas at the wire.
 - **The network layer knows the fleet; the firmware knows only itself.** A robot
   holds its own `RobotState` and nothing else.

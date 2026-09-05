@@ -28,12 +28,14 @@ from concurrent import futures
 import grpc
 
 from temp_network_interface import network_pb2_grpc
-from temp_network_interface.messages import RobotToNetwork
 from temp_network_interface.policy import HoldPolicy
 from temp_network_interface.relay import Relay
 from temp_network_interface.state import Fleet
 from temp_network_interface.store import Journal
-from temp_network_interface.transport import decode, encode_network_to_robot
+from temp_network_interface.transport import (
+    decode_robot_to_network,
+    encode_network_to_robot,
+)
 
 # How long a connection loop blocks waiting for an outbound command before it
 # re-checks the inbox and the stream's liveness. Commands arrive on the order of
@@ -60,8 +62,8 @@ class NetworkService(network_pb2_grpc.RobotNetworkServicer):
 
         def consume():
             try:
-                for envelope in request_iterator:
-                    inbox.put(envelope)
+                for status in request_iterator:
+                    inbox.put(status)
             except Exception:
                 pass  # the stream ended or was cancelled; that is not an error
             finally:
@@ -74,14 +76,12 @@ class NetworkService(network_pb2_grpc.RobotNetworkServicer):
                 # 1. Fold in everything the robot has reported so far.
                 while True:
                     try:
-                        envelope = inbox.get_nowait()
+                        status = inbox.get_nowait()
                     except queue.Empty:
                         break
                     try:
-                        message = decode(envelope)
+                        message = decode_robot_to_network(status)
                     except Exception:
-                        continue
-                    if not isinstance(message, RobotToNetwork):
                         continue
 
                     if bot_id is None:
