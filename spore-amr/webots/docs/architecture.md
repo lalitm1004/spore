@@ -34,9 +34,10 @@ Each robot is three OS processes in one container.
 
 The firmware and companion are joined by a `socat` pty pair, so both sides open
 a real serial device path exactly as they would on hardware. The companion and
-network layer are joined by a unix socket carrying newline-delimited JSON —
-a real serialisation boundary, so replacing the stand-in with the real
-TypeScript layer means changing what listens on the socket and nothing else.
+network layer are joined by a gRPC stream — `RobotNetwork.Session`, defined in
+`network-layer/proto/robot.proto` — and the bot is in its own container, so the
+boundary is a real network hop between two processes that could be on different
+machines. On hardware they would be: a Pi and whatever runs the fleet.
 
 **The split is a policy boundary, not just a process boundary.** The companion
 sets setpoints and can never command a wheel velocity. When it sees
@@ -274,10 +275,11 @@ here", and a robot routed into a bay sat in it for the whole run: measured, 90%
 of one. Routing by node has no such case. A bay has one neighbour, it is the
 junction, and there is nothing to filter.
 
-`RandomRouter` still avoids sending a robot straight back the way it came, but
-that is now a routing preference on the routing side rather than a geometric
-filter on the robot's, and it is a preference rather than a rule — at a dead
-end the way back is the only answer there is.
+The robot still declines to offer the lane it just drove down, and that is a
+geometric filter on its side rather than a routing preference on the network's
+— it knows the heading it arrived on. But it is a rule with one exception, and
+the exception matters: at a dead end the way back is the only answer there is,
+and every charging bay on this floor is one.
 
 `query_id` is echoed back so a fresh answer is distinguishable from a late
 answer to the previous junction — two junctions can share a target, which is
@@ -333,7 +335,8 @@ genuinely fails to decode rather than being modelled as failing — which is how
 the error-correction level was chosen.
 
 **The process split is real.** Ten robots are thirty processes over real pty
-pairs and real unix sockets, each independently killable.
+pairs and real gRPC connections, in twenty-one containers, each independently
+killable — and killing one robot's network layer is a thing you can watch.
 
 What is simulated is rigid-body physics, which is not what this project is
 about. The MCU-like HAL (`robot/hal.py`) deliberately quantises to 10-bit ADC

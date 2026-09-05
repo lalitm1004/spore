@@ -148,7 +148,7 @@ bot_01: turning to 90 deg for node 114
 ```
 
 Three processes speaking in turn: the firmware decodes a QR and stops on the
-node; the companion reports **which node** the robot is at over a unix socket;
+node; the companion reports **which node** the robot is at over its gRPC stream;
 this robot's own network-layer bot plans against its neighbours' claims and
 answers with **which node** to head for; the companion turns that into a bearing and the firmware rotates to
 it. Nothing on the wire says left or right — both ends hold the map, so the
