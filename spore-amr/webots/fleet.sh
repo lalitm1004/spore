@@ -13,7 +13,7 @@
 #   ./fleet.sh logs [svc]  follow the logs (default: every robot, no STATUS spam)
 #   ./fleet.sh goals       what the network layer has told each robot to do
 #   ./fleet.sh robots      per-robot: distance, state, and whether it is moving
-#   ./fleet.sh journal     follow the network layer's durable state
+#   ./fleet.sh fleet       leaders, jobs and claims -- the coordination layer
 #   ./fleet.sh replay      build a flat replay of the run just recorded
 #   ./fleet.sh replay3d    build a 3D replay you can orbit, fly and follow
 #   ./fleet.sh gen         regenerate the world from fleet.yaml
@@ -33,6 +33,14 @@ set -euo pipefail
 cd "$(dirname "$(readlink -f "$0")")"
 
 COMPOSE=(docker compose -f compose.yml -f compose.fleet.yml)
+
+# The network-layer containers, one per robot: `bot_01-bot` and friends. Their
+# logs are the coordination layer; the robot services' logs are the driving.
+bot_services() {
+  for config in config/bot_*.yaml; do
+    printf '%s-bot ' "$(basename "$config" .yaml)"
+  done
+}
 VIEWER="http://localhost:1234/index.html"
 
 export MODE="${MODE:-fast}"
@@ -156,13 +164,22 @@ case "${1:-help}" in
     ;;
 
   goals)
-    say "destination the network layer last set for each robot"
+    say "node each robot was last told to head for, and why"
     for config in config/bot_*.yaml; do
       name="$(basename "$config" .yaml)"
-      goal="$("${COMPOSE[@]}" logs "$name" 2>/dev/null \
-              | grep -oE "'goal': [0-9]+" | tail -1 | grep -oE '[0-9]+' || true)"
-      printf '  %-8s -> %s\n' "$name" "${goal:-none yet}"
+      line="$("${COMPOSE[@]}" logs "$name" 2>/dev/null \
+              | grep -oE "'node': [0-9]+" | tail -1 | grep -oE '[0-9]+' || true)"
+      printf '  %-8s -> %s\n' "$name" "${line:-nothing yet}"
     done
+    ;;
+
+  fleet)
+    # The coordination layer, which is a different question from where the
+    # robots are: who leads each region, who holds a job, who is claiming what.
+    say "the network layer: leaders, jobs and claims"
+    "${COMPOSE[@]}" logs --tail=400 $(bot_services) 2>/dev/null \
+      | grep -E "became leader|accepted job|assigned|giving way|obstacle|migrat" \
+      || echo "  nothing yet"
     ;;
 
   robots)
@@ -214,8 +231,11 @@ PYTHON
     ;;
 
   journal)
-    # What the network layer has persisted: every status and every command.
-    tail -f out/fleet.jsonl
+    # There is no journal. The fleet has no central service to keep one -- see
+    # spore-amr/network-layer/docs/boundary.md for why that is the design and
+    # what it costs. Ask a bot instead: each one holds its own whole picture.
+    say "no fleet journal: state lives in the bots. Try 'fleet' or 'robots'."
+    exit 1
     ;;
 
   gen)
