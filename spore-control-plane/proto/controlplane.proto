@@ -1,0 +1,76 @@
+syntax = "proto3";
+
+package controlplane;
+
+// A cargo order: move goods from one QR node to another.
+//
+// This proto is owned by the control plane. The network layer implements it;
+// the dependency is one-way and there is no import of (or coupling to) the
+// fleet's own wire schema.
+message Order {
+  // Cargo/order identifier. A UUID minted by the control plane — orders are
+  // minted by an external system, so the id cannot come from a central
+  // sequential allocator. Doubles as the idempotency key: re-submitting the
+  // same order_id is a no-op, which is what makes retries safe.
+  string order_id = 1;
+
+  // The QR node where the order starts / cargo is collected.
+  int32 pickup_node = 2;
+
+  // The QR node where cargo is delivered.
+  int32 dropoff_node = 3;
+
+  // Unix epoch millis, informational.
+  int64 timestamp = 4;
+}
+
+message DispatchAck {
+  // True iff the fleet accepted the order (not necessarily assigned yet —
+  // it may be queued for a later retry).
+  bool accepted = 1;
+
+  // The region whose leader now owns the order.
+  int32 owner_region = 2;
+
+  // Present iff a bot was assigned immediately. `optional` gives real
+  // presence because bot_id 0 is a valid bot.
+  optional int32 assignee = 3;
+
+  // Human-readable outcome: "queued", "forwarded", or an error detail.
+  string note = 4;
+}
+
+// Who leads a region, as the answering bot knows it.
+message LeaderInfo {
+  int32 region_id = 1;
+  int32 bot_id = 2;
+  string address = 3;  // dialable host:port
+}
+
+message DiscoverLeadersRequest {
+  // When set, the client is interested in this region specifically. The
+  // answerer may still return its full view; the client filters if it wants.
+  optional int32 region_id = 1;
+}
+
+message DiscoverLeadersResponse {
+  // Every leader the answering bot knows (all regions it has met).
+  repeated LeaderInfo leaders = 1;
+
+  // The answering bot's own region and its region's leader (== itself when it
+  // leads). Lets the caller bootstrap a directory from any single bot.
+  int32 self_region_id = 2;
+  int32 self_leader_bot_id = 3;
+  string self_leader_address = 4;
+}
+
+service ControlPlaneService {
+  // Submit an order to ANY bot.
+  //
+  // Routing is the bot's job: a non-leader forwards to its leader; a leader
+  // forwards to the leader of pickup_node's region. Idempotent on order_id.
+  rpc DispatchOrder(Order) returns (DispatchAck);
+
+  // Ask a bot what it knows about region leaders, for direct routing.
+  rpc DiscoverLeaders(DiscoverLeadersRequest) returns (DiscoverLeadersResponse);
+}
