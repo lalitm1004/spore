@@ -32,33 +32,31 @@ for _ in $(seq 1 100); do
   sleep 0.1
 done
 
-# Each robot runs its own network-layer bot. One shared service answering every
-# robot would be a control plane wearing a hat, and per-robot means killing a
-# single robot's coordinator is a real thing to demonstrate. The argument for
-# that, against the fleet-wide service this branch merged past, is written down
-# in spore-amr/network-layer/docs/boundary.md.
+# Each robot runs its own network-layer bot, and it runs in its own container:
+# see the `bot_*` services in compose.fleet.yml. One shared service answering
+# every robot would be a control plane wearing a hat, and per-robot means
+# killing a single robot's coordinator is a real thing to demonstrate. The
+# argument, against the fleet-wide service this branch merged past, is in
+# spore-amr/network-layer/docs/boundary.md.
 #
-# This is the real thing: it elects a region leader, keeps a roster, takes cargo
-# jobs, reserves nodes against its neighbours, and answers the companion's
-# routing questions on the socket below (spore-amr/network-layer/PROTOCOL.md).
-ROBOT_SOCKET="${ROBOT_SOCKET:-/tmp/${ROBOT_NAME}-robot.sock}"
-export ROBOT_SOCKET
+# It used to run *here*, beside the companion, because the robot link was a unix
+# socket and a socket forces co-location. An address does not, and that is what
+# lets the bot live on an image that can actually run it: this one is Ubuntu
+# 22.04, so Python 3.10, and the planner needs 3.11+ for `enum.StrEnum`. Every
+# robot in this fleet has been starting a bot that raised ImportError on its
+# first import, which is why the network layer has never once run here.
+#
+# The companion waits for the bot rather than assuming it: gRPC's
+# `wait_for_ready` handles a slow start, and a robot with nobody to ask sits
+# still rather than inventing somewhere to go.
+NETWORK_ADDRESS="${NETWORK_ADDRESS:-${ROBOT_NAME}-bot:50051}"
 export PYTHONPATH="/network-layer:${PYTHONPATH:-}"
-python3 /network-layer/bot.py &
-
-# Wait for the socket rather than a fixed sleep: the bot binds it after loading
-# the map and starting its gRPC server, and how long that takes varies with how
-# many bots are coming up at once.
-for _ in $(seq 1 200); do
-  [ -S "${ROBOT_SOCKET}" ] && break
-  sleep 0.1
-done
 
 python3 /project/robot/companion.py \
   --link "${COMPANION_TTY}" \
   --config "${CONFIG}" \
   --map "${WAREHOUSE_MAP:-/project/config/warehouse.json}" \
-  --network "${ROBOT_SOCKET}" \
+  --network "${NETWORK_ADDRESS}" \
   --mission-duration "${MISSION_DURATION}" &
 
 exec /usr/local/webots/webots-controller \

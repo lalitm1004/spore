@@ -14,9 +14,38 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
 
 import yaml  # noqa: E402
 
-from robot.navigator import NetworkLink, Navigator, load_map  # noqa: E402
+from robot.navigator import Navigator, load_map  # noqa: E402
+from robot.uplink import Uplink  # noqa: E402
 from robot.policy import CompanionPolicy  # noqa: E402
 from robot.protocol import LineReader, Message, encode  # noqa: E402
+
+
+def report_obstacle(navigator, network, event):
+    """Tell the network layer about something in the lane, or that it has gone.
+
+    The robot's own reflex has already dealt with it -- stop, reverse to the
+    last marker, hold -- so this is not a cry for help. It is the one thing only
+    this robot knows and every robot planning through here needs: that the lane
+    out of this node is not usable.
+
+    The node is the last marker read, which is exactly where the reflex reverses
+    to, so it is where the robot actually is when it reports. Sending it is what
+    makes an obstruction real: the shared schema has always carried
+    `current_node_id` on an OBSTACLE warning and nothing ever filled it in, so
+    the planner only ever heard about blockages through an admin back door.
+
+    `EVT OBSTACLE` fires on every change of state, clearing included. A report
+    with no obstacle in it is how the lane is given back.
+    """
+    if network is None or navigator is None or navigator.last_node is None:
+        return []
+
+    blocked = event.fields.get("state", "CLEAR") != "CLEAR"
+    node = navigator.last_node
+    region = navigator.graph.nodes[node].region_id if node in navigator.graph.nodes else 0
+    network.report(node_id=node, region_id=region,
+                   obstacle_node=node if blocked else None)
+    return []
 
 
 def answer_junction(navigator, network, event):
@@ -70,7 +99,6 @@ def answer_junction(navigator, network, event):
     fields = {
         "bearing": round(bearing, 5),
         "node": decision.target_node_id,
-        "turn": decision.turn,
     }
     # The firmware turns to an *absolute* bearing and its only feedback is the
     # odometry heading, so the two have to share a frame. Without this it turns
@@ -89,8 +117,8 @@ def main(argv=None):
     parser.add_argument("--mission-duration", type=float, default=120.0)
     parser.add_argument("--map", type=pathlib.Path, default=None,
                         help="warehouse.json; without it the robot cannot turn")
-    parser.add_argument("--network", type=pathlib.Path, default=None,
-                        help="unix socket of this robot's network layer")
+    parser.add_argument("--network", default=None,
+                        help="host:port of this robot's own network-layer bot")
     args = parser.parse_args(argv)
 
     document = yaml.safe_load(args.config.read_text())
@@ -108,7 +136,7 @@ def main(argv=None):
     # The map lives here, not in the firmware: the firmware drives and must
     # not acquire a dependency on a file or a socket.
     navigator = Navigator(load_map(args.map)) if args.map and args.map.exists() else None
-    network = NetworkLink(args.network) if args.network else None
+    network = Uplink(args.network) if args.network else None
     if navigator is None:
         print("no map: junctions will not be answered", flush=True)
 
@@ -129,6 +157,9 @@ def main(argv=None):
             for event in reader.feed(chunk):
                 if event.name != "STATUS":
                     print("<- {} {}".format(event.name, event.fields), flush=True)
+
+                if event.name == "OBSTACLE":
+                    report_obstacle(navigator, network, event)
 
                 if event.name == "MARKER" and navigator is not None:
                     for command in answer_junction(navigator, network, event):

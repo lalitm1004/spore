@@ -9,6 +9,12 @@ dependencies = [
     "pyyaml>=6.0",
     "segno>=1.6.6",
     "svglib>=2.2.0",
+    # The companion speaks gRPC to this robot's own network-layer bot. The
+    # contract is `network-layer/proto/robot.proto`, imported from the sibling
+    # project rather than copied here -- a copied client is a client that
+    # drifts. Pinned low: the controller image is Ubuntu 22.04.
+    "grpcio>=1.60",
+    "protobuf>=4.25",
 ]
 
 [dependency-groups]
@@ -18,7 +24,9 @@ dev = [
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-pythonpath = ["."]
+# The sibling network layer, for `proto.robot_pb2`. The container mounts it at
+# /network-layer; from a checkout it is one directory up.
+pythonpath = [".", "../network-layer"]
 
 [tool.uv]
 package = false

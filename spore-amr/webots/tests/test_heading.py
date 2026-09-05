@@ -37,7 +37,7 @@ class FixedGoal:
 
     def ask(self, query):
         self.asked.append(query)
-        return Decision(query_id=query.query_id, turn="", target_node_id=self.goal)
+        return Decision(query_id=query.query_id, target_node_id=self.goal)
 
 
 class Event:

@@ -1,6 +1,7 @@
 import pytest
 
-from tools.gen_fleet import compose_source, robot_configs, sensor_offsets, world_source
+from tools.gen_fleet import (
+    CONTROLLER_IMAGE, compose_source, robot_configs, sensor_offsets, world_source)
 
 MANIFEST = {
     "track": {"plane_size": [4.0, 4.0], "track_size": [3.0, 2.0]},
@@ -111,48 +112,72 @@ def test_mission_duration_can_be_overridden_per_run():
     assert environment["MISSION_DURATION"] == "${MISSION_DURATION:-120}"
 
 
+def robot_services(compose):
+    """The robot halves: firmware plus companion, one per robot in the world.
+
+    Not the `-bot` containers beside them, and not the sim or the supervisor.
+    """
+    return {n: s for n, s in compose["services"].items()
+            if n not in ("sim", "supervisor") and not n.endswith("-bot")}
+
+
 def test_compose_gives_every_robot_its_own_network_layer_bot():
     """The wiring that was missing for the entire life of this fleet.
 
     `compose.fleet.yml` is generated, and the generator could not run: its map
     source path was one directory too high after the repo was restructured, so
     the checked-in file went stale and kept a shape that predated the network
-    layer entirely -- no `/network-layer` mount, no identity, no peers. Every
-    robot therefore started a bot that had no code to run, waited twenty
-    seconds for a socket that never appeared, and drove with nothing answering
-    it. Nothing failed loudly, and nothing here would have noticed.
+    layer entirely -- no identity, no peers, nothing to talk to. Every robot
+    drove with nothing answering it. Nothing failed loudly, and nothing here
+    would have noticed: `ROBOT_NAME` and `mem_limit` were the only things
+    checked, and both were true the whole time the fleet was broken.
 
-    So this asserts the wiring, not just that a service exists. `ROBOT_NAME`
-    and `mem_limit` were the only things checked before, and both were true the
-    whole time the fleet was broken.
+    So this asserts the wiring, for every robot rather than the first.
     """
     compose = compose_source(MANIFEST)
-    names = [n for n in compose["services"] if n not in ("sim", "supervisor")]
-    assert names, "a fleet with no robots is not a fleet"
+    robots = robot_services(compose)
+    assert robots, "a fleet with no robots is not a fleet"
 
-    for index, name in enumerate(names):
-        service = compose["services"][name]
-        environment = service["environment"]
-
-        # The bot runs from the sibling project, mounted read-only.
-        assert "../network-layer:/network-layer:ro" in service["volumes"], name
+    for index, name in enumerate(robots):
+        bot = "{}-bot".format(name)
+        assert bot in compose["services"], "{} has no network layer".format(name)
+        environment = compose["services"][bot]["environment"]
 
         # Identity: without it a bot cannot elect, be assigned to, or be found.
         assert environment["BOT_ID"] == str(index), name
-        assert environment["OWN_ADDRESS"] == "{}:50051".format(name), name
+        assert environment["OWN_ADDRESS"] == "{}:50051".format(bot), name
         assert "REGION_ID" in environment, name
+        assert environment["WAREHOUSE_MAP"], name
 
         # Everyone else, so a bot with no leader yet has somewhere to ask.
         peers = environment["PEER_LEADERS"].split(",")
-        assert "{}:50051".format(name) not in peers, "{} lists itself".format(name)
-        assert len(peers) == len(names) - 1, name
+        assert "{}:50051".format(bot) not in peers, "{} lists itself".format(bot)
+        assert len(peers) == len(robots) - 1, name
 
-        # The robot link, and the map both halves have to agree on.
-        assert environment["ROBOT_SOCKET"] == "/tmp/{}-robot.sock".format(name), name
-        assert environment["WAREHOUSE_MAP"] == "/project/config/warehouse.json", name
+        # And the robot half has to be pointed at its own bot, not any other.
+        assert compose["services"][name]["environment"]["NETWORK_ADDRESS"] == \
+            "{}:50051".format(bot), name
+        assert bot in compose["services"][name]["depends_on"], name
 
 
-def test_compose_does_not_point_at_a_fleet_wide_network_service():
+def test_the_network_layer_runs_on_an_image_that_can_actually_run_it():
+    """The other half of why this fleet never worked.
+
+    The Webots image is Ubuntu 22.04, so Python 3.10, and the planner needs
+    3.11+ for `enum.StrEnum`. While the bot shared a container with the
+    companion it raised ImportError on its first import, every time, silently.
+    Moving the robot link off a unix socket is what allows the split -- a socket
+    forces co-location and an address does not.
+    """
+    compose = compose_source(MANIFEST)
+    for name in robot_services(compose):
+        bot = compose["services"]["{}-bot".format(name)]
+        assert bot["image"] != CONTROLLER_IMAGE, (
+            "{}-bot is on the Webots image, which cannot import the network "
+            "layer".format(name))
+
+
+def test_no_robot_talks_to_a_fleet_wide_network_service():
     """One bot per robot is the architecture, not an implementation detail.
 
     `webots-implementation` wired every companion at a single `network:50051`
@@ -162,12 +187,15 @@ def test_compose_does_not_point_at_a_fleet_wide_network_service():
     by a merge nobody read closely.
     """
     compose = compose_source(MANIFEST)
+    assert "network" not in compose["services"]
 
-    for name, service in compose["services"].items():
-        environment = service.get("environment", {}) or {}
-        assert "NETWORK_ADDRESS" not in environment, name
-        assert "network" not in (service.get("depends_on") or []), name
-        assert not any("temp-network" in v for v in (service.get("volumes") or [])), name
+    addresses = {s["environment"]["NETWORK_ADDRESS"]
+                 for s in robot_services(compose).values()}
+    assert len(addresses) == len(robot_services(compose)), \
+        "two robots share a network layer: {}".format(sorted(addresses))
+
+    for service in compose["services"].values():
+        assert not any("temp-network" in v for v in (service.get("volumes") or []))
 
 
 def test_world_and_compose_agree_on_the_robot_names():
@@ -175,9 +203,7 @@ def test_world_and_compose_agree_on_the_robot_names():
     compose = compose_source(MANIFEST)
     world = world_source(MANIFEST)
 
-    for name in compose["services"]:
-        if name in ("sim", "supervisor"):
-            continue
+    for name in robot_services(compose):
         assert 'name "{}"'.format(name) in world
 
 

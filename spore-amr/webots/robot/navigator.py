@@ -14,7 +14,6 @@ testable without either.
 import json
 import math
 import pathlib
-import socket
 from typing import Dict, Optional
 
 from robot.network import Decision, Query
@@ -73,8 +72,13 @@ class Navigator:
 
         exact = self.heading_into(node_id)
         heading = exact if exact is not None else heading_rad
-        available: Dict[str, int] = self.graph.turns_from(
+        # `turns_from` resolves left/straight/right against the arrival
+        # heading, which is what excludes the lane we came in on. Only the
+        # destinations travel: the names are the robot's own working, and the
+        # wire carries nodes.
+        turns: Dict[str, int] = self.graph.turns_from(
             node_id, heading, tolerance_deg=self.turn_tolerance_deg)
+        available = tuple(sorted(turns.values()))
 
         node = self.graph.nodes[node_id]
         self.query_id += 1
@@ -83,8 +87,6 @@ class Navigator:
             node_id=node_id,
             node_type=node.kind,
             region_id=node.region_id,
-            x_cm=round(node.x * 100, 1),
-            y_cm=round(node.y * 100, 1),
             heading_rad=heading,
             available=available,
         )
@@ -112,74 +114,6 @@ class Navigator:
 
     def arrived(self, node_id: int) -> None:
         self.last_node = node_id
-
-
-class NetworkLink:
-    """A newline-delimited JSON connection to this robot's network layer.
-
-    Deliberately blocking with a timeout rather than async: the companion has
-    nothing else to do while a robot waits at a junction, and a timeout that
-    fires is more useful than a callback that never does.
-    """
-
-    def __init__(self, path: pathlib.Path, timeout_s: float = 5.0):
-        self.path = pathlib.Path(path)
-        self.timeout_s = timeout_s
-        self._socket: Optional[socket.socket] = None
-        self._buffer = b""
-
-    def connect(self) -> bool:
-        try:
-            connection = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-            connection.settimeout(self.timeout_s)
-            connection.connect(str(self.path))
-        except OSError:
-            return False
-        self._socket = connection
-        self._buffer = b""
-        return True
-
-    def ask(self, query: Query) -> Optional[Decision]:
-        """Send a query and wait for its answer.
-
-        Returns None on any failure -- no network layer, a timeout, a dead end
-        it declined to answer. The caller decides what a robot does when
-        nobody tells it where to go; this layer will not guess.
-        """
-        if self._socket is None and not self.connect():
-            return None
-
-        try:
-            self._socket.sendall((query.to_json() + "\n").encode("utf-8"))
-            while b"\n" not in self._buffer:
-                chunk = self._socket.recv(4096)
-                if not chunk:
-                    self.close()
-                    return None
-                self._buffer += chunk
-        except OSError:
-            self.close()
-            return None
-
-        line, _, self._buffer = self._buffer.partition(b"\n")
-        try:
-            decision = Decision.from_json(line.decode("utf-8", "replace"))
-        except (ValueError, KeyError):
-            return None
-
-        if decision.query_id != query.query_id:
-            # A late answer to a previous junction. Two junctions can share a
-            # target, so the id is the only way to tell them apart.
-            return None
-        return decision
-
-    def close(self) -> None:
-        if self._socket is not None:
-            try:
-                self._socket.close()
-            finally:
-                self._socket = None
-        self._buffer = b""
 
 
 def degrees(radians: float) -> float:

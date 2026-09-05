@@ -20,6 +20,7 @@ TOP_DOWN_ORIENTATION = "orientation -0.5774 0.5774 0.5774 2.0944"
 FIELD_OF_VIEW = math.pi / 4
 VIEW_MARGIN = 1.15
 
+BOT_IMAGE = "amr-bot:dev"
 CONTROLLER_IMAGE = "sih2026/controller:dev"
 SIM_IMAGE = "sih2026/sim:dev"
 
@@ -606,17 +607,51 @@ def compose_source(manifest: dict) -> dict:
     for index, config in enumerate(configs):
         name = config["name"]
         resources = config.get("resources") or {}
-        # Each robot runs a real network-layer bot beside its companion: the
-        # thing that elects leaders, takes jobs, reserves nodes and answers the
-        # robot's routing questions. It needs a fleet identity, the addresses of
-        # its peers for bootstrap discovery, and the socket the companion will
-        # connect to (PROTOCOL.md §16).
+        # Two containers per robot, and the split is not arbitrary.
+        #
+        # The *robot* half -- firmware and companion -- runs on the Webots
+        # image, which is Ubuntu 22.04 and therefore Python 3.10. The network
+        # layer needs 3.11+, so for as long as the two shared a container the
+        # bot raised ImportError on startup and the fleet ran with nothing
+        # answering it. A unix socket forced them together; an address does not.
+        #
+        # So each robot's bot gets the image built for it. It is the thing that
+        # elects leaders, takes jobs, reserves nodes and answers this robot's
+        # routing questions, and it needs a fleet identity, its peers' addresses
+        # for bootstrap discovery, and the map (PROTOCOL.md §16). One per robot,
+        # not one for the fleet: spore-amr/network-layer/docs/boundary.md.
+        bot_name = "{}-bot".format(name)
+        services[bot_name] = {
+            "image": BOT_IMAGE,
+            "build": {"context": "../network-layer"},
+            "working_dir": "/app",
+            "init": True,
+            "environment": {
+                "BOT_ID": str(index),
+                # The region the robot spawns in. It migrates on its own once
+                # it scans a QR code somewhere else, so this only has to be
+                # right at boot.
+                "REGION_ID": str(spawn_regions.get(name, 0)),
+                "OWN_ADDRESS": "{}:50051".format(bot_name),
+                "PEER_LEADERS": ",".join(
+                    "{}-bot:50051".format(other)
+                    for other in robot_names if other != name),
+                "WAREHOUSE_MAP": "/project/config/warehouse.json",
+                "GRPC_HOST": "0.0.0.0",
+                "GRPC_PORT": "50051",
+            },
+            "volumes": ["./:/project:ro"],
+            "mem_limit": "192m",
+            "cpus": "0.5",
+        }
+
         services[name] = {
             "image": CONTROLLER_IMAGE,
-            "depends_on": ["sim"],
+            "depends_on": ["sim", bot_name],
             # The network layer is a sibling of this project, so it is outside
             # the `./:/project` mount and needs its own. Mounted rather than
-            # copied: a copied client is a client that drifts.
+            # copied: the companion imports the wire contract from it, and a
+            # copied client is a client that drifts.
             "volumes": ["./:/project", "../network-layer:/network-layer:ro"],
             "working_dir": "/project",
             "user": "${DOCKER_USER:-1000:1000}",
@@ -628,18 +663,8 @@ def compose_source(manifest: dict) -> dict:
                 "SIM_HOST": "sim",
                 "MISSION_DURATION": "${{MISSION_DURATION:-{}}}".format(
                     config.get("mission_duration_s", 120)),
-                # One network-layer bot per robot, not one service for the
-                # fleet. Why, and what it costs, is in
-                # spore-amr/network-layer/docs/boundary.md.
-                "BOT_ID": str(index),
-                # The region the robot spawns in. It migrates on its own once
-                # it scans a QR code somewhere else, so this only has to be
-                # right at boot.
-                "REGION_ID": str(spawn_regions.get(name, 0)),
-                "OWN_ADDRESS": "{}:50051".format(name),
-                "PEER_LEADERS": ",".join(
-                    "{}:50051".format(other) for other in robot_names if other != name),
-                "ROBOT_SOCKET": "/tmp/{}-robot.sock".format(name),
+                # This robot's own bot, by name. Not a fleet-wide service.
+                "NETWORK_ADDRESS": "{}:50051".format(bot_name),
                 "WAREHOUSE_MAP": "/project/config/warehouse.json",
             },
             "mem_limit": resources.get("memory", "256m"),

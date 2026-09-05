@@ -4,15 +4,12 @@ services:
     cpus: '1.0'
     depends_on:
     - sim
+    - bot_01-bot
     environment:
-      BOT_ID: '0'
       CONFIG: /project/config/bot_01.yaml
       MISSION_DURATION: ${MISSION_DURATION:-120}
-      OWN_ADDRESS: bot_01:50051
-      PEER_LEADERS: bot_02:50051,bot_03:50051,bot_04:50051,bot_05:50051,bot_06:50051,bot_07:50051,bot_08:50051,bot_09:50051,bot_10:50051
-      REGION_ID: '3'
+      NETWORK_ADDRESS: bot_01-bot:50051
       ROBOT_NAME: bot_01
-      ROBOT_SOCKET: /tmp/bot_01-robot.sock
       SIM_HOST: sim
       TELEMETRY: /project/out/bot_01.csv
       WAREHOUSE_MAP: /project/config/warehouse.json
@@ -24,19 +21,34 @@ services:
     - ./:/project
     - ../network-layer:/network-layer:ro
     working_dir: /project
+  bot_01-bot:
+    build:
+      context: ../network-layer
+    cpus: '0.5'
+    environment:
+      BOT_ID: '0'
+      GRPC_HOST: 0.0.0.0
+      GRPC_PORT: '50051'
+      OWN_ADDRESS: bot_01-bot:50051
+      PEER_LEADERS: bot_02-bot:50051,bot_03-bot:50051,bot_04-bot:50051,bot_05-bot:50051,bot_06-bot:50051,bot_07-bot:50051,bot_08-bot:50051,bot_09-bot:50051,bot_10-bot:50051
+      REGION_ID: '3'
+      WAREHOUSE_MAP: /project/config/warehouse.json
+    image: amr-bot:dev
+    init: true
+    mem_limit: 192m
+    volumes:
+    - ./:/project:ro
+    working_dir: /app
   bot_02:
     cpus: '1.0'
     depends_on:
     - sim
+    - bot_02-bot
     environment:
-      BOT_ID: '1'
       CONFIG: /project/config/bot_02.yaml
       MISSION_DURATION: ${MISSION_DURATION:-120}
-      OWN_ADDRESS: bot_02:50051
-      PEER_LEADERS: bot_01:50051,bot_03:50051,bot_04:50051,bot_05:50051,bot_06:50051,bot_07:50051,bot_08:50051,bot_09:50051,bot_10:50051
-      REGION_ID: '3'
+      NETWORK_ADDRESS: bot_02-bot:50051
       ROBOT_NAME: bot_02
-      ROBOT_SOCKET: /tmp/bot_02-robot.sock
       SIM_HOST: sim
       TELEMETRY: /project/out/bot_02.csv
       WAREHOUSE_MAP: /project/config/warehouse.json
@@ -48,19 +60,34 @@ services:
     - ./:/project
     - ../network-layer:/network-layer:ro
     working_dir: /project
+  bot_02-bot:
+    build:
+      context: ../network-layer
+    cpus: '0.5'
+    environment:
+      BOT_ID: '1'
+      GRPC_HOST: 0.0.0.0
+      GRPC_PORT: '50051'
+      OWN_ADDRESS: bot_02-bot:50051
+      PEER_LEADERS: bot_01-bot:50051,bot_03-bot:50051,bot_04-bot:50051,bot_05-bot:50051,bot_06-bot:50051,bot_07-bot:50051,bot_08-bot:50051,bot_09-bot:50051,bot_10-bot:50051
+      REGION_ID: '3'
+      WAREHOUSE_MAP: /project/config/warehouse.json
+    image: amr-bot:dev
+    init: true
+    mem_limit: 192m
+    volumes:
+    - ./:/project:ro
+    working_dir: /app
   bot_03:
     cpus: '1.0'
     depends_on:
     - sim
+    - bot_03-bot
     environment:
-      BOT_ID: '2'
       CONFIG: /project/config/bot_03.yaml
       MISSION_DURATION: ${MISSION_DURATION:-120}
-      OWN_ADDRESS: bot_03:50051
-      PEER_LEADERS: bot_01:50051,bot_02:50051,bot_04:50051,bot_05:50051,bot_06:50051,bot_07:50051,bot_08:50051,bot_09:50051,bot_10:50051
-      REGION_ID: '3'
+      NETWORK_ADDRESS: bot_03-bot:50051
       ROBOT_NAME: bot_03
-      ROBOT_SOCKET: /tmp/bot_03-robot.sock
       SIM_HOST: sim
       TELEMETRY: /project/out/bot_03.csv
       WAREHOUSE_MAP: /project/config/warehouse.json
@@ -72,19 +99,34 @@ services:
     - ./:/project
     - ../network-layer:/network-layer:ro
     working_dir: /project
+  bot_03-bot:
+    build:
+      context: ../network-layer
+    cpus: '0.5'
+    environment:
+      BOT_ID: '2'
+      GRPC_HOST: 0.0.0.0
+      GRPC_PORT: '50051'
+      OWN_ADDRESS: bot_03-bot:50051
+      PEER_LEADERS: bot_01-bot:50051,bot_02-bot:50051,bot_04-bot:50051,bot_05-bot:50051,bot_06-bot:50051,bot_07-bot:50051,bot_08-bot:50051,bot_09-bot:50051,bot_10-bot:50051
+      REGION_ID: '3'
+      WAREHOUSE_MAP: /project/config/warehouse.json
+    image: amr-bot:dev
+    init: true
+    mem_limit: 192m
+    volumes:
+    - ./:/project:ro
+    working_dir: /app
   bot_04:
     cpus: '1.0'
     depends_on:
     - sim
+    - bot_04-bot
     environment:
-      BOT_ID: '3'
       CONFIG: /project/config/bot_04.yaml
       MISSION_DURATION: ${MISSION_DURATION:-120}
-      OWN_ADDRESS: bot_04:50051
-      PEER_LEADERS: bot_01:50051,bot_02:50051,bot_03:50051,bot_05:50051,bot_06:50051,bot_07:50051,bot_08:50051,bot_09:50051,bot_10:50051
-      REGION_ID: '3'
+      NETWORK_ADDRESS: bot_04-bot:50051
       ROBOT_NAME: bot_04
-      ROBOT_SOCKET: /tmp/bot_04-robot.sock
       SIM_HOST: sim
       TELEMETRY: /project/out/bot_04.csv
       WAREHOUSE_MAP: /project/config/warehouse.json
@@ -96,19 +138,34 @@ services:
     - ./:/project
     - ../network-layer:/network-layer:ro
     working_dir: /project
+  bot_04-bot:
+    build:
+      context: ../network-layer
+    cpus: '0.5'
+    environment:
+      BOT_ID: '3'
+      GRPC_HOST: 0.0.0.0
+      GRPC_PORT: '50051'
+      OWN_ADDRESS: bot_04-bot:50051
+      PEER_LEADERS: bot_01-bot:50051,bot_02-bot:50051,bot_03-bot:50051,bot_05-bot:50051,bot_06-bot:50051,bot_07-bot:50051,bot_08-bot:50051,bot_09-bot:50051,bot_10-bot:50051
+      REGION_ID: '3'
+      WAREHOUSE_MAP: /project/config/warehouse.json
+    image: amr-bot:dev
+    init: true
+    mem_limit: 192m
+    volumes:
+    - ./:/project:ro
+    working_dir: /app
   bot_05:
     cpus: '1.0'
     depends_on:
     - sim
+    - bot_05-bot
     environment:
-      BOT_ID: '4'
       CONFIG: /project/config/bot_05.yaml
       MISSION_DURATION: ${MISSION_DURATION:-120}
-      OWN_ADDRESS: bot_05:50051
-      PEER_LEADERS: bot_01:50051,bot_02:50051,bot_03:50051,bot_04:50051,bot_06:50051,bot_07:50051,bot_08:50051,bot_09:50051,bot_10:50051
-      REGION_ID: '3'
+      NETWORK_ADDRESS: bot_05-bot:50051
       ROBOT_NAME: bot_05
-      ROBOT_SOCKET: /tmp/bot_05-robot.sock
       SIM_HOST: sim
       TELEMETRY: /project/out/bot_05.csv
       WAREHOUSE_MAP: /project/config/warehouse.json
@@ -120,19 +177,34 @@ services:
     - ./:/project
     - ../network-layer:/network-layer:ro
     working_dir: /project
+  bot_05-bot:
+    build:
+      context: ../network-layer
+    cpus: '0.5'
+    environment:
+      BOT_ID: '4'
+      GRPC_HOST: 0.0.0.0
+      GRPC_PORT: '50051'
+      OWN_ADDRESS: bot_05-bot:50051
+      PEER_LEADERS: bot_01-bot:50051,bot_02-bot:50051,bot_03-bot:50051,bot_04-bot:50051,bot_06-bot:50051,bot_07-bot:50051,bot_08-bot:50051,bot_09-bot:50051,bot_10-bot:50051
+      REGION_ID: '3'
+      WAREHOUSE_MAP: /project/config/warehouse.json
+    image: amr-bot:dev
+    init: true
+    mem_limit: 192m
+    volumes:
+    - ./:/project:ro
+    working_dir: /app
   bot_06:
     cpus: '1.0'
     depends_on:
     - sim
+    - bot_06-bot
     environment:
-      BOT_ID: '5'
       CONFIG: /project/config/bot_06.yaml
       MISSION_DURATION: ${MISSION_DURATION:-120}
-      OWN_ADDRESS: bot_06:50051
-      PEER_LEADERS: bot_01:50051,bot_02:50051,bot_03:50051,bot_04:50051,bot_05:50051,bot_07:50051,bot_08:50051,bot_09:50051,bot_10:50051
-      REGION_ID: '3'
+      NETWORK_ADDRESS: bot_06-bot:50051
       ROBOT_NAME: bot_06
-      ROBOT_SOCKET: /tmp/bot_06-robot.sock
       SIM_HOST: sim
       TELEMETRY: /project/out/bot_06.csv
       WAREHOUSE_MAP: /project/config/warehouse.json
@@ -144,19 +216,34 @@ services:
     - ./:/project
     - ../network-layer:/network-layer:ro
     working_dir: /project
+  bot_06-bot:
+    build:
+      context: ../network-layer
+    cpus: '0.5'
+    environment:
+      BOT_ID: '5'
+      GRPC_HOST: 0.0.0.0
+      GRPC_PORT: '50051'
+      OWN_ADDRESS: bot_06-bot:50051
+      PEER_LEADERS: bot_01-bot:50051,bot_02-bot:50051,bot_03-bot:50051,bot_04-bot:50051,bot_05-bot:50051,bot_07-bot:50051,bot_08-bot:50051,bot_09-bot:50051,bot_10-bot:50051
+      REGION_ID: '3'
+      WAREHOUSE_MAP: /project/config/warehouse.json
+    image: amr-bot:dev
+    init: true
+    mem_limit: 192m
+    volumes:
+    - ./:/project:ro
+    working_dir: /app
   bot_07:
     cpus: '1.0'
     depends_on:
     - sim
+    - bot_07-bot
     environment:
-      BOT_ID: '6'
       CONFIG: /project/config/bot_07.yaml
       MISSION_DURATION: ${MISSION_DURATION:-120}
-      OWN_ADDRESS: bot_07:50051
-      PEER_LEADERS: bot_01:50051,bot_02:50051,bot_03:50051,bot_04:50051,bot_05:50051,bot_06:50051,bot_08:50051,bot_09:50051,bot_10:50051
-      REGION_ID: '3'
+      NETWORK_ADDRESS: bot_07-bot:50051
       ROBOT_NAME: bot_07
-      ROBOT_SOCKET: /tmp/bot_07-robot.sock
       SIM_HOST: sim
       TELEMETRY: /project/out/bot_07.csv
       WAREHOUSE_MAP: /project/config/warehouse.json
@@ -168,19 +255,34 @@ services:
     - ./:/project
     - ../network-layer:/network-layer:ro
     working_dir: /project
+  bot_07-bot:
+    build:
+      context: ../network-layer
+    cpus: '0.5'
+    environment:
+      BOT_ID: '6'
+      GRPC_HOST: 0.0.0.0
+      GRPC_PORT: '50051'
+      OWN_ADDRESS: bot_07-bot:50051
+      PEER_LEADERS: bot_01-bot:50051,bot_02-bot:50051,bot_03-bot:50051,bot_04-bot:50051,bot_05-bot:50051,bot_06-bot:50051,bot_08-bot:50051,bot_09-bot:50051,bot_10-bot:50051
+      REGION_ID: '3'
+      WAREHOUSE_MAP: /project/config/warehouse.json
+    image: amr-bot:dev
+    init: true
+    mem_limit: 192m
+    volumes:
+    - ./:/project:ro
+    working_dir: /app
   bot_08:
     cpus: '1.0'
     depends_on:
     - sim
+    - bot_08-bot
     environment:
-      BOT_ID: '7'
       CONFIG: /project/config/bot_08.yaml
       MISSION_DURATION: ${MISSION_DURATION:-120}
-      OWN_ADDRESS: bot_08:50051
-      PEER_LEADERS: bot_01:50051,bot_02:50051,bot_03:50051,bot_04:50051,bot_05:50051,bot_06:50051,bot_07:50051,bot_09:50051,bot_10:50051
-      REGION_ID: '3'
+      NETWORK_ADDRESS: bot_08-bot:50051
       ROBOT_NAME: bot_08
-      ROBOT_SOCKET: /tmp/bot_08-robot.sock
       SIM_HOST: sim
       TELEMETRY: /project/out/bot_08.csv
       WAREHOUSE_MAP: /project/config/warehouse.json
@@ -192,19 +294,34 @@ services:
     - ./:/project
     - ../network-layer:/network-layer:ro
     working_dir: /project
+  bot_08-bot:
+    build:
+      context: ../network-layer
+    cpus: '0.5'
+    environment:
+      BOT_ID: '7'
+      GRPC_HOST: 0.0.0.0
+      GRPC_PORT: '50051'
+      OWN_ADDRESS: bot_08-bot:50051
+      PEER_LEADERS: bot_01-bot:50051,bot_02-bot:50051,bot_03-bot:50051,bot_04-bot:50051,bot_05-bot:50051,bot_06-bot:50051,bot_07-bot:50051,bot_09-bot:50051,bot_10-bot:50051
+      REGION_ID: '3'
+      WAREHOUSE_MAP: /project/config/warehouse.json
+    image: amr-bot:dev
+    init: true
+    mem_limit: 192m
+    volumes:
+    - ./:/project:ro
+    working_dir: /app
   bot_09:
     cpus: '1.0'
     depends_on:
     - sim
+    - bot_09-bot
     environment:
-      BOT_ID: '8'
       CONFIG: /project/config/bot_09.yaml
       MISSION_DURATION: ${MISSION_DURATION:-120}
-      OWN_ADDRESS: bot_09:50051
-      PEER_LEADERS: bot_01:50051,bot_02:50051,bot_03:50051,bot_04:50051,bot_05:50051,bot_06:50051,bot_07:50051,bot_08:50051,bot_10:50051
-      REGION_ID: '3'
+      NETWORK_ADDRESS: bot_09-bot:50051
       ROBOT_NAME: bot_09
-      ROBOT_SOCKET: /tmp/bot_09-robot.sock
       SIM_HOST: sim
       TELEMETRY: /project/out/bot_09.csv
       WAREHOUSE_MAP: /project/config/warehouse.json
@@ -216,19 +333,34 @@ services:
     - ./:/project
     - ../network-layer:/network-layer:ro
     working_dir: /project
+  bot_09-bot:
+    build:
+      context: ../network-layer
+    cpus: '0.5'
+    environment:
+      BOT_ID: '8'
+      GRPC_HOST: 0.0.0.0
+      GRPC_PORT: '50051'
+      OWN_ADDRESS: bot_09-bot:50051
+      PEER_LEADERS: bot_01-bot:50051,bot_02-bot:50051,bot_03-bot:50051,bot_04-bot:50051,bot_05-bot:50051,bot_06-bot:50051,bot_07-bot:50051,bot_08-bot:50051,bot_10-bot:50051
+      REGION_ID: '3'
+      WAREHOUSE_MAP: /project/config/warehouse.json
+    image: amr-bot:dev
+    init: true
+    mem_limit: 192m
+    volumes:
+    - ./:/project:ro
+    working_dir: /app
   bot_10:
     cpus: '1.0'
     depends_on:
     - sim
+    - bot_10-bot
     environment:
-      BOT_ID: '9'
       CONFIG: /project/config/bot_10.yaml
       MISSION_DURATION: ${MISSION_DURATION:-120}
-      OWN_ADDRESS: bot_10:50051
-      PEER_LEADERS: bot_01:50051,bot_02:50051,bot_03:50051,bot_04:50051,bot_05:50051,bot_06:50051,bot_07:50051,bot_08:50051,bot_09:50051
-      REGION_ID: '3'
+      NETWORK_ADDRESS: bot_10-bot:50051
       ROBOT_NAME: bot_10
-      ROBOT_SOCKET: /tmp/bot_10-robot.sock
       SIM_HOST: sim
       TELEMETRY: /project/out/bot_10.csv
       WAREHOUSE_MAP: /project/config/warehouse.json
@@ -240,6 +372,24 @@ services:
     - ./:/project
     - ../network-layer:/network-layer:ro
     working_dir: /project
+  bot_10-bot:
+    build:
+      context: ../network-layer
+    cpus: '0.5'
+    environment:
+      BOT_ID: '9'
+      GRPC_HOST: 0.0.0.0
+      GRPC_PORT: '50051'
+      OWN_ADDRESS: bot_10-bot:50051
+      PEER_LEADERS: bot_01-bot:50051,bot_02-bot:50051,bot_03-bot:50051,bot_04-bot:50051,bot_05-bot:50051,bot_06-bot:50051,bot_07-bot:50051,bot_08-bot:50051,bot_09-bot:50051
+      REGION_ID: '3'
+      WAREHOUSE_MAP: /project/config/warehouse.json
+    image: amr-bot:dev
+    init: true
+    mem_limit: 192m
+    volumes:
+    - ./:/project:ro
+    working_dir: /app
   supervisor:
     cpus: '0.25'
     depends_on:
