@@ -691,6 +691,18 @@ def compose_source(manifest: dict) -> dict:
                 # This robot's own bot, by name. Not a fleet-wide service.
                 "NETWORK_ADDRESS": "{}:50051".format(bot_name),
                 "WAREHOUSE_MAP": "/project/config/warehouse.json",
+                # Without this the mount above is inert. `robot/uplink.py` does
+                # `from proto import robot_pb2_grpc`, and `/project/proto` holds
+                # only firmware.proto and no `__init__.py`, so Python binds
+                # `proto` to that as a namespace package and the import fails.
+                # `connect()` turns the failure into False, `ask()` into None,
+                # and the companion prints "no answer from the network layer" --
+                # so every robot ran on its junction timeout, driving straight
+                # on at every node. Two of eight drove into the facing charging
+                # bay, off the end of the spur, and halted on a lost line.
+                # `/network-layer/proto` has an `__init__.py`, and a regular
+                # package beats a namespace portion wherever it is found.
+                "PYTHONPATH": "/network-layer",
             },
             "mem_limit": resources.get("memory", "256m"),
             "cpus": resources.get("cpus", "0.5"),

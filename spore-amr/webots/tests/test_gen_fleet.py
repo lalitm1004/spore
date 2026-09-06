@@ -353,3 +353,26 @@ def test_each_robot_is_told_the_heading_it_was_placed_on():
 
     for pose, config in zip(poses, configs):
         assert config["odometry"]["start_theta"] == pytest.approx(pose["theta"])
+
+
+def test_a_robot_can_import_the_wire_contract_it_is_mounted():
+    """The network-layer mount is inert without PYTHONPATH pointing at it.
+
+    `robot/uplink.py` does `from proto import robot_pb2_grpc`. The robot's own
+    `/project/proto` holds firmware.proto and no `__init__.py`, so Python binds
+    `proto` to that as a namespace package; the mounted stubs are never found.
+    The import raised, `connect()` returned False, `ask()` returned None, and
+    the companion reported "no answer from the network layer" at every node --
+    so the whole fleet ran on its junction timeout and drove straight on
+    everywhere. Two robots of eight drove into the facing charging bay, off the
+    end of a degree-1 spur, and halted on a lost line. Nothing in the fleet
+    said "misconfigured"; it read as bad driving.
+    """
+    services = compose_source(MANIFEST)["services"]
+
+    for name in ("bot_01", "bot_02"):
+        service = services[name]
+        assert any(v.startswith("../network-layer:") for v in service["volumes"]), (
+            "{} lost the network-layer mount".format(name))
+        assert service["environment"].get("PYTHONPATH") == "/network-layer", (
+            "{} mounts the wire contract but cannot import it".format(name))
