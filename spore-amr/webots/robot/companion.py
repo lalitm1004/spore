@@ -155,14 +155,27 @@ def answer_junction(navigator, network, event):
             network.cargo_state = "DROPOFF"
             print("node {}: delivered cargo {}".format(
                 node_id, network.cargo_id or "?"), flush=True)
-            # Report the delivery once, then go idle: the network layer reads
-            # "was DROPOFF, now not carrying" as the job being done.
+            # Report the delivery and stop there. Going idle in the same breath
+            # is what broke this: the bot's run loop keeps only the newest
+            # state it was handed (`LatestRobotState`, which counts the ones it
+            # drops), so two reports one after another collapse into one and
+            # the DROPOFF is the one lost. The bot needs to see DROPOFF and
+            # *then* a mission that is no longer CARGO -- that pair is the
+            # whole of "delivered" -- and it never saw the first half. Measured:
+            # 5 jobs accepted, 5 collected, 0 ever marked delivered, and every
+            # robot that finished parked on its delivery node holding the claim,
+            # which is what the others were queued behind.
+            #
+            # So the mission is cleared here but not announced here. The robot
+            # is standing at its goal and asks again within the hold, and that
+            # ask carries the idle mission on its own.
             network.report(node_id, query.region_id)
             network.delivered_cargo_id = network.cargo_id
             network.collected_at = None
             network.mission = ""
             network.cargo_id = ""
             network.cargo_state = ""
+            return []
         network.report(node_id, query.region_id)
 
     if decision.is_wait:

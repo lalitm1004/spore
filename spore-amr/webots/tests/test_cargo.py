@@ -246,3 +246,29 @@ def test_a_different_cargo_id_is_adopted_whole():
 
     assert network.cargo_id == "c-2"
     assert network.cargo_state == "PICKUP", "a new job was refused by the old one's state"
+
+
+def test_the_delivery_is_reported_on_its_own():
+    """The bot keeps only the newest state it was handed, so two reports in a
+    row collapse into one -- and the DROPOFF is the one lost. It needs to see
+    DROPOFF and then a mission that is no longer CARGO; that pair is the whole
+    of "delivered". Measured: 5 jobs collected, 0 ever marked delivered, and
+    every finished robot parked on its delivery node holding the claim."""
+    class AtGoal(CargoNetwork):
+        def ask(self, query):
+            return Decision(query_id=query.query_id, kind="WAIT", hold_ms=2000,
+                            because="at the goal", mission="CARGO",
+                            cargo_id="c-1", cargo_state="EN_ROUTE")
+
+    navigator = navigator_on_a_lattice()
+    navigator.arrived(3)
+    network = AtGoal(pickup=0, dropoff=4)
+    network.mission, network.cargo_state, network.cargo_id = "CARGO", "EN_ROUTE", "c-1"
+    network.collected_at = 0
+
+    answer_junction(navigator, network, marker_at(4))
+
+    assert network.reports, "never reported the delivery at all"
+    assert network.reports[-1][2] == "DROPOFF", \
+        "the DROPOFF was followed by another report and would be dropped"
+    assert network.mission == "", "should be idle now, and say so on the next ask"
