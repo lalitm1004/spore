@@ -298,6 +298,14 @@ LOCAL_ONLY = {
     "RobotState": {"state"},         # the FSM state is not on the wire, by design
 }
 
+#: Fields the robot's own mirror carries that the planner's does not, because
+#: the two are not symmetric. `NetworkToRobot.set_mission` is on the wire and
+#: the robot has to read it -- it is how a robot learns it has a job at all --
+#: but the planner never produces it: `reply_of` fills it in from the bot's own
+#: job, beside the planner's answer rather than inside it. So these are wire
+#: fields the robot decodes and the planner has no business knowing about.
+ROBOT_ONLY_DECISION = {"mission", "cargo_id", "cargo_state"}
+
 
 def _dataclass_fields(cls) -> set[str]:
     return set(cls.__dataclass_fields__)
@@ -321,7 +329,9 @@ def test_the_robot_sides_query_and_decision_match_the_planners():
     from robot.network import Decision as RDecision, Query as RQuery
     from planning.decide import Decision, Query
     assert _dataclass_fields(RQuery) == _dataclass_fields(Query)
-    assert _dataclass_fields(RDecision) == _dataclass_fields(Decision)
+    assert _dataclass_fields(RDecision) - ROBOT_ONLY_DECISION == _dataclass_fields(Decision)
+    assert ROBOT_ONLY_DECISION <= _dataclass_fields(RDecision), \
+        "the robot stopped reading a mission field the wire still carries"
 
 
 def test_robot_state_is_the_wire_flattened_plus_what_we_say_is_local():

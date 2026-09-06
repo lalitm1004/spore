@@ -132,3 +132,97 @@ def test_a_goal_off_the_map_waits_with_a_reason(router):
     reply = router._route(Query(query_id=1, node_id=node, available=lanes))
     assert reply.kind.value == "WAIT"
     assert reply.because, "a wait the robot cannot explain is a wait nobody can debug"
+
+
+# ---- head-on ------------------------------------------------------------------
+
+def _corridor_step(bot):
+    """A node inside a corridor, and the lane on out of it.
+
+    A head-on needs a corridor: somewhere with no way round, which is exactly
+    where two robots meeting cannot recover.
+    """
+    graph = bot.graph
+    for index in range(graph.n):
+        if graph.degree(index) != 2:
+            continue
+        onward = [v for v, _ in graph.neighbours(index)]
+        if len(onward) == 2:
+            return graph.id_of(index), tuple(graph.id_of(v) for v in onward)
+    pytest.skip("this map has no corridor")
+
+
+def _oncoming(bot, node_id, heading, bot_id=99, rank=2):
+    """A peer holding `node_id` and travelling `heading` -- what
+    `traffic.predict` emits for a peer whose trail gives it a direction."""
+    from planning.types import Reservation
+    return botmod.traffic_module.Observation(
+        bot_id=bot_id, node_id=node_id, trail=(node_id,),
+        reservations=(Reservation(node_id=node_id, t_in=0, t_out=10_000, dir=heading),),
+        rank=rank,
+    )
+
+
+def test_a_robot_outranked_in_a_head_on_gives_way(router, monkeypatch):
+    """The conflict per-node reservation cannot see.
+
+    A claim reserves a node and says nothing about the lane leading to it, so
+    two robots one lane apart -- each holding its own node, each legitimately
+    reserved -- can drive into the lane between them from opposite ends. On a
+    single painted line there is no passing. Measured on an eight-robot run,
+    two pairs ended nose to nose at 0.66 m and 0.69 m, both 180 degrees facing,
+    with no claim violated by either.
+
+    The planner already names them (`Diagnostics.corridor_opposing_peers`) and
+    deliberately does not act. Acting is this layer's job, and the answer has to
+    be asymmetric: if both robots refuse the lane that is a livelock, not a fix.
+    """
+    node, lanes = _corridor_step(router)
+    router.nav_goal = Goal.node(_far_goal(router, node))
+    router.obstructions.clear()
+
+    free = router._route(Query(query_id=1, node_id=node, available=lanes))
+    if free.kind.value not in ("PROCEED", "REROUTE"):
+        pytest.skip("no clear lane here to contest")
+
+    # Someone senior coming the other way down the lane we were about to take.
+    from planning.geometry import heading_between
+    graph = router.graph
+    ours = heading_between(graph.position[graph.index(node)],
+                           graph.position[graph.index(free.target_node_id)])
+    monkeypatch.setattr(router, "_observations",
+                        lambda: (_oncoming(router, free.target_node_id, ours.opposite),))
+
+    reply = router._route(Query(query_id=2, node_id=node, available=lanes))
+
+    assert reply.kind.value in ("YIELD", "WAIT"), \
+        "drove into a robot coming the other way"
+    assert "head-on" in reply.because
+
+
+def test_the_robot_with_right_of_way_keeps_going(router, monkeypatch):
+    """The other half, and the reason the ordering matters: exactly one of the
+    two gives way. A rule that stopped both would trade a deadlock for a
+    livelock."""
+    node, lanes = _corridor_step(router)
+    router.nav_goal = Goal.node(_far_goal(router, node))
+    router.obstructions.clear()
+
+    free = router._route(Query(query_id=1, node_id=node, available=lanes))
+    if free.kind.value not in ("PROCEED", "REROUTE"):
+        pytest.skip("no clear lane here to contest")
+
+    from planning.geometry import heading_between
+    graph = router.graph
+    ours = heading_between(graph.position[graph.index(node)],
+                           graph.position[graph.index(free.target_node_id)])
+    # rank 0 and a higher bot id: outranked by us on both counts.
+    monkeypatch.setattr(router, "_observations",
+                        lambda: (_oncoming(router, free.target_node_id, ours.opposite,
+                                           bot_id=99, rank=0),))
+    router.cargo_state = "EN_ROUTE"      # we are carrying, so we outrank
+
+    reply = router._route(Query(query_id=2, node_id=node, available=lanes))
+
+    assert reply.kind.value in ("PROCEED", "REROUTE"), \
+        "gave way when we had right of way -- both stopping is a livelock"

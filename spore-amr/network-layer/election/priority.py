@@ -124,9 +124,25 @@ def job_priority(*, healthy: bool, battery_pct: float, is_leader: bool, has_job:
 
 YIELD_FREE, YIELD_TO_PICKUP, YIELD_CARRYING = 0, 1, 2
 
+#: A robot already backing out of a corridor outranks everything, including a
+#: robot carrying cargo. Not because its errand matters more -- it outranks
+#: *because it is the one that is moving out of the way*, and the fleet's
+#: interest is that it finishes.
+#:
+#: This is what makes a cascade terminate. A robot backing down a corridor is
+#: driving at whatever is behind it, and if that one holds its ground the
+#: retreat cannot complete and both are stuck one lane further back. Giving the
+#: retreat right of way makes the robot behind give way in turn, and the one
+#: behind that, until the chain reaches somewhere with room. Every robot in the
+#: chain is retreating and each defers to the one in front, so the order is
+#: total and no two of them can both think they have priority.
+YIELD_RETREATING = 3
 
-def yield_priority(*, has_job: bool, carrying: bool) -> int:
+
+def yield_priority(*, has_job: bool, carrying: bool, retreating: bool = False) -> int:
     """Right of way: lower yields to higher."""
+    if retreating:
+        return YIELD_RETREATING
     if carrying:
         return YIELD_CARRYING
     return YIELD_TO_PICKUP if has_job else YIELD_FREE

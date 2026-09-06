@@ -207,6 +207,62 @@ def decide(
     here, ahead = plan.path.hops[0], plan.path.hops[1]
     wait_ms = here.wait
 
+    # A head-on, which nothing else in this system can resolve. The planner
+    # already names peers coming the other way down the corridor we are about
+    # to enter (`Diagnostics.corridor_opposing_peers`) and deliberately does
+    # not act on it -- `_opposing_peers` says so, and leaves it "to the layer
+    # that owns the priority ordering". This is that layer.
+    #
+    # It has to be handled here rather than in the search because the search
+    # cannot: a claim reserves a node and says nothing about the lane leading to
+    # it, so two robots one lane apart, each holding its own node, are both
+    # correctly reserved and can still drive into the lane between them from
+    # opposite ends. Measured on an eight-robot run, two pairs ended nose to
+    # nose -- 0.66 m and 0.69 m apart, both 180 degrees facing -- with no claim
+    # violated by either. On a single painted line there is no passing, so
+    # neither could recover.
+    #
+    # Refusing to enter is not the fix: both robots would refuse, and a
+    # symmetric refusal is a livelock rather than a deadlock. So exactly one of
+    # them has to give way, and both have to reach the same answer without
+    # asking each other. `outranked_by` is that answer and it already exists --
+    # higher yield priority wins, so a robot carrying cargo is never asked to
+    # give way to an empty one, and the lower bot id breaks the tie. Both sides
+    # compute it from the roster, so they agree by construction.
+    opposing = getattr(plan.diagnostics, "corridor_opposing_peers", ())
+    if opposing:
+        ranks = {o.bot_id: o.rank for o in observations}
+        if any(outranked_by(my_rank, my_bot_id, ranks.get(b, 0), b) for b in opposing):
+            # Stand aside anywhere but inside the corridor we are refusing to
+            # enter, and not on a node the oncoming robot has claimed.
+            occupied = frozenset(
+                graph.index(claim.node_id)
+                for peer in traffic.peers
+                for claim in peer.reservations
+                if graph.has_id(claim.node_id)
+            )
+            spot = choose_yield_spot(
+                graph, topology, graph.index(here.node_id),
+                radius=config.yield_search_hops, avoid=occupied,
+            )
+            if spot is not None:
+                return Decision(
+                    query_id=query.query_id,
+                    kind=DecisionKind.YIELD,
+                    target_node_id=graph.id_of(spot),
+                    because="head-on: yielding to bot {}".format(min(opposing)),
+                )
+            # Nowhere to pull over. Holding still is the whole of the fix here:
+            # the robot with right of way keeps coming and takes the lane, and
+            # we ask again once it has. Better than entering a corridor we
+            # cannot back out of.
+            return Decision(
+                query_id=query.query_id,
+                kind=DecisionKind.WAIT,
+                hold_ms=config.blocked_hold_ms,
+                because="head-on: holding for bot {}".format(min(opposing)),
+            )
+
     if wait_ms >= config.yield_wait_threshold_ms:
         # Whoever is stopping us is on the node *ahead*, not the one underfoot,
         # and over the window we wanted it rather than the later one the plan

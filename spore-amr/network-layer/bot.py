@@ -258,6 +258,16 @@ class Bot:
         self.jobs = JobLedger()                      # leader: owned jobs; follower: replica from acks
         self.current_job: Job | None = None          # the job *this* bot is executing
         self.cargo_state: str = ""                   # PICKUP → EN_ROUTE → DROPOFF → DELIVERED
+        #: Whether we are currently backing out of somewhere. Set when `_route`
+        #: answers YIELD, cleared the moment it answers with a lane to take.
+        #:
+        #: This is how a robot *behind* us knows: it does not observe us
+        #: retreating, it is told. The flag raises our yield priority, that
+        #: priority is already in every `PeerRecord` the leader distributes, and
+        #: the head-on rule in `planning.decide` already reads it. So a robot
+        #: that meets a retreating one is outranked and gives way in turn, and
+        #: the cascade unwinds without anyone needing a new message for it.
+        self.giving_way: bool = False
         self._delivered_reported = False
         self._last_self_peer: Peer | None = None     # leader self-observation (see _tick_self_job)
         #: Where NEEDS_ATTENTION escalations go. Replace with a real control
@@ -594,6 +604,11 @@ class Bot:
     def _route(self, query: Query) -> Decision:
         """Answer one question from the robot standing at a node.
 
+        Wraps `_route_inner` only to keep `giving_way` honest: it is set the
+        moment we answer YIELD and cleared the moment we answer with a lane, so
+        it always describes the answer the robot is actually acting on rather
+        than one we gave a while ago.
+
         Runs on the robot link's thread, not the run loop's, so a slow plan
         delays this robot rather than the whole bot. Everything it reads is
         either atomic or behind its own lock.
@@ -602,6 +617,11 @@ class Bot:
         stops for the rest of its shift, so "we do not know" has to be said out
         loud as a short WAIT rather than by falling silent.
         """
+        decision = self._route_inner(query)
+        self.giving_way = decision.kind is DecisionKind.YIELD
+        return decision
+
+    def _route_inner(self, query: Query) -> Decision:
         if self.planner is None or self.graph is None or self.topology is None:
             return Decision(
                 query_id=query.query_id, kind=DecisionKind.WAIT,
@@ -743,6 +763,7 @@ class Bot:
         return prio.yield_priority(
             has_job=self.current_job is not None,
             carrying=self.cargo_state in (CS_EN_ROUTE, CS_DROPOFF),
+            retreating=self.giving_way,
         )
 
     def _energy_state(self):
