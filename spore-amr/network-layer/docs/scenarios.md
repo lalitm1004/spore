@@ -188,7 +188,7 @@ production timings would take too long to run often enough to be worth having.
 That means they prove the *logic* holds, not that the production timings are
 right. A scenario that only passes on the fast clock belongs in a
 production-timing tier, not in a version of itself tuned until it passes. All
-timings come from one `FAST_TIMINGS` dict in `tests/test_docker.py` so no
+timings come from one `FAST_TIMINGS` dict in `tests/containers/harness.py` so no
 scenario can quietly invent its own.
 
 The shared fleets take one further change, `SHARED_TIMINGS`, which lengthens the

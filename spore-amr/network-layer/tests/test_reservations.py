@@ -6,7 +6,7 @@ or a round trip — those are exactly what §7 rules out by requiring collision
 avoidance to survive a leader going away.
 
 These are the fast tier. The proof that it works between separate processes on a
-real network lives in `test_docker.py`.
+real network lives in `tests/containers/`.
 """
 from __future__ import annotations
 

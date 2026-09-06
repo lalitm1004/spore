@@ -7,7 +7,7 @@ WHAT
 
 WHERE
     Between `tests/test_planning*.py`, which exercise the search on synthetic
-    maps, and `tests/test_docker.py`, which exercises whole containers. Nothing
+    maps, and `tests/containers/`, which exercises whole containers. Nothing
     used to sit here, and that gap had a cost: the router built a traffic view
     carrying obstructions and then handed the planner a `Request` without them,
     so a robot would drive into a node it had just been told was impassable.

@@ -26,7 +26,7 @@ Covers the full gRPC communication design: topology, message schemas, RPC contra
 | Roster, other-region leaders, migration ledgers | `peers/table.py` | `PeerTable`, `Ledger` |
 | Wire schema | `proto/fleet.proto` | §11; regenerate with `grpc_tools.protoc` |
 | Local orchestration | `up.py`, `down.py` | §13 |
-| Tests | `tests/` | `test_unit.py` (rules), `test_protocol.py` + `test_jobs.py` (live in-process fleets), `test_docker.py` (real containers) |
+| Tests | `tests/` | `test_unit.py` (rules), `test_protocol.py` + `test_jobs.py` (live in-process fleets), `containers/` (real containers, one file per scenario letter) |
 
 Every module's docstring explains *what* it is, *where* it sits, *why* it exists and *how* it works; this document is the cross-cutting view.
 
@@ -1568,7 +1568,7 @@ shelling out.
   `Departure`; peers notice via `T_DEAD`. That is the *hard death* path (§4.5),
   which is what you usually want to exercise locally.
 
-**Docker test harness** (`tests/test_docker.py`): every scenario the
+**Docker test harness** (`tests/containers/`): every scenario the
 in-process suite cannot honestly test runs on real containers and a real
 bridge network — bootstrap, `kill` + restart, `pause` (hung leader: calls
 time out rather than being refused) + split-brain heal, `network disconnect`

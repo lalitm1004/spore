@@ -55,7 +55,7 @@ peers/table.py       roster, other-region leaders, migration ledgers
 warehouse/map.py     warehouse-layout.json → node→region, hop distances
 proto/fleet.proto    the wire schema (+ generated fleet_pb2*.py)
 up.py / down.py      local Docker orchestration
-tests/               pytest: test_unit.py, test_protocol.py, test_jobs.py, test_docker.py
+tests/               pytest: test_unit.py, test_protocol.py, test_jobs.py, containers/ (the scenario tier)
 ```
 
 Every module starts with a *what / where / why / how* docstring.
@@ -157,7 +157,7 @@ sed -i 's/^import fleet_pb2/from proto import fleet_pb2/' proto/fleet_pb2_grpc.p
   macOS does not route to container IPs at all, so without it the whole Docker
   tier is unrunnable there. Bots still reach each other by container name on the
   bridge and never use the published port.
-- `tests/test_docker.py` runs the chaos scenarios (kill, pause, partition,
+- `tests/containers/` runs the chaos scenarios (kill, pause, partition,
   migration, jobs, reservations) on real containers and a private bridge network
   per test.
   It needs a Docker daemon (skipped otherwise), builds the image once per

@@ -15,7 +15,8 @@ import pytest
 
 ROOT = Path(__file__).resolve().parent.parent
 DOC = ROOT / "docs" / "scenarios.md"
-DOCKER_TESTS = ROOT / "tests" / "test_docker.py"
+# One file per scenario letter; the ids are checked across all of them.
+DOCKER_TESTS = sorted((ROOT / "tests" / "containers").glob("test_*.py"))
 
 #: Ids look like A1, B12, D1_D2_D3 -- a letter and a number, in a table cell.
 _DOC_ID = re.compile(r"^\|\s*([A-H]\d+)\s*\|", re.M)
@@ -28,7 +29,7 @@ def _doc_ids() -> set[str]:
 
 def _test_ids() -> set[str]:
     ids: set[str] = set()
-    for name in _TEST_ID.findall(DOCKER_TESTS.read_text()):
+    for name in _TEST_ID.findall("\n".join(p.read_text() for p in DOCKER_TESTS)):
         # `D1_D2_D3` is one test covering three rows of the table.
         ids.update(name.split("_"))
     return ids

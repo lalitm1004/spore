@@ -7,7 +7,7 @@ WHAT
     the ones already running. `down.py` tears it all down.
 
 WHERE
-    Also imported by `tests/test_docker.py`, which uses `launch()` with its
+    Also imported by `tests/containers/`, which uses `launch()` with its
     own network and name prefix so test fleets never collide with a dev fleet.
 
 WHY

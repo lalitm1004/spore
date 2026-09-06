@@ -18,7 +18,7 @@ WHERE
     for local Docker fleets; leave it off in production.
 
 WHY
-    The Docker test harness (`tests/test_docker.py`) needs to drive and
+    The container tier (`tests/containers/`) needs to inspect
     inspect bots that live in containers. Parsing logs is brittle; a typed
     RPC is not. The same surface is handy for a fleet dashboard later.
 

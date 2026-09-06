@@ -3,7 +3,7 @@
     uv run down.py               # everything
     uv run down.py --region 2    # one region only
 
-Also imported by `tests/test_docker.py`, which sweeps before it starts. Teardown
+Also imported by `tests/containers/`, which sweeps before it starts. Teardown
 is not guaranteed -- interrupt a run and the containers outlive the process that
 made them -- and a leftover fleet is not idle: every bot in it goes on
 heartbeating on a timer. A dozen strays turn a one-minute suite into three while

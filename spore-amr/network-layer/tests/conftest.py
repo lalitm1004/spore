@@ -27,7 +27,6 @@ from __future__ import annotations
 
 import os
 import sys
-import time
 from concurrent import futures
 from pathlib import Path
 
@@ -45,6 +44,7 @@ import grpc  # noqa: E402
 import pytest  # noqa: E402
 
 from bot import Bot  # noqa: E402
+from tests._wait import wait_until  # noqa: E402,F401
 from bus.policy import VirtualNetworkInterceptor, rpc_metadata  # noqa: E402
 from proto import controlplane_pb2_grpc  # noqa: E402
 from bus.heartbeat import RegionServicer  # noqa: E402
@@ -79,34 +79,6 @@ def next_port() -> int:
 def md(bot_id: int, region_id: int, role: str = "follower") -> list[tuple[str, str]]:
     """Identity metadata for hand-rolled RPCs — what a real bot attaches itself."""
     return rpc_metadata(bot_id, region_id, role)
-
-
-def wait_until(pred, timeout: float = 10.0, step: float = 0.05, what: str = "") -> bool:
-    """Poll `pred()` until true or `timeout` elapses.
-
-    `what` names the thing being waited for and is reported on failure; without
-    it a timeout reads as a bare `assert False` with nothing to go on. A gRPC
-    error while polling is not a failure -- a container still starting, paused,
-    or partitioned answers that way, and the point is to keep asking.
-
-    The one implementation. The container suite used to carry its own, which
-    shadowed this one and differed only in its poll step; it now binds that step
-    with `functools.partial`.
-    """
-    deadline = time.monotonic() + timeout
-    while time.monotonic() < deadline:
-        try:
-            if pred():
-                return True
-        except grpc.RpcError:
-            pass
-        time.sleep(step)
-    if what:
-        print("timed out after {:.0f}s waiting for {}".format(timeout, what), flush=True)
-    try:
-        return bool(pred())
-    except grpc.RpcError:
-        return False
 
 
 def make_bot(bot_id: int, port: int, region_id: int = 14, state: str = "IDLE") -> Bot:
@@ -225,4 +197,3 @@ def real_topology(real_graph):
     from planning.topology import Topology
 
     return Topology(real_graph)
-
