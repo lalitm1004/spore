@@ -80,6 +80,13 @@ from the roster, which is only as fresh as the last heartbeat.
 | B10 | the pickup is in another region | forwarded to that region's leader, which owns it from then on |
 | B11 | nobody anywhere can take it | accepted and queued, then assigned when a bot frees up. Refusing would lose the cargo |
 | B12 | the job runs to completion | `PICKUP → EN_ROUTE → DROPOFF → DELIVERED`, crossed off the ledger, bot free |
+| B13 | an order arrives from the control plane, at a follower | accepted, forwarded, and a bot is holding it — the control plane names no leader and no region |
+| B14 | the same order is sent to every bot, as a retry loop would | one job, at most one holder — `order_id` is the idempotency key |
+| B15 | two orders arrive at once, two bots are free | one each. Neither had been marked busy when the other was picked — the read-then-assign race |
+| B16 | five orders, two bots | all accepted and in the ledger; no more than two being executed. A burst is not a reason to lose cargo |
+| B17 | the leader that accepted a job is killed | the successor already holds the ledger — it rides in every `HeartbeatAck` for this |
+| B18 | the bot holding a job is killed before pickup | the job comes back and goes to another bot. The cargo is still where it was |
+| B19 | an order names a node that is not on the map | answered, whatever the answer is. The control plane retries until something replies, so a silent drop is an infinite loop |
 
 ## C. Planning
 

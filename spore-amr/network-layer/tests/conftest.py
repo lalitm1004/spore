@@ -58,7 +58,16 @@ from election.server import ElectionServicer  # noqa: E402
 from reservations.server import ReservationServicer  # noqa: E402
 from proto import fleet_pb2_grpc  # noqa: E402
 
-_next_port = 21000
+#: Each xdist worker gets its own thousand-port block. Without this the counter
+#: is a module global that every worker starts at the same value, so `-n 8`
+#: gives eight bots trying to bind one port -- which fails as a dozen unrelated
+#: assertion errors rather than as "the port was taken".
+#:
+#: The container tier is the one that wants `-n`; this tier is fast already and
+#: gains nothing. But a flag that silently breaks a suite is worse than one that
+#: does not help it, so the block makes it safe either way.
+_WORKER = os.environ.get("PYTEST_XDIST_WORKER", "gw0")
+_next_port = 21000 + 1000 * int("".join(c for c in _WORKER if c.isdigit()) or 0)
 
 
 def next_port() -> int:

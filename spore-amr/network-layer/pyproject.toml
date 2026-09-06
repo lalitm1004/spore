@@ -13,6 +13,14 @@ dependencies = [
 [dependency-groups]
 dev = [
     "pytest>=9.1.1",
+    # The container tier is almost entirely waiting: ~4.3 s per scenario, of
+    # which the work is milliseconds and the rest is Docker starting a fleet.
+    # Every fleet is already isolated -- its own network, its own container name
+    # prefix -- so the scenarios parallelise without touching one another.
+    "pytest-xdist>=3.6",
+    # For the build lock below; xdist pulls it in already, but depending on it
+    # by accident is not depending on it.
+    "filelock>=3.13",
 ]
 
 [tool.pytest.ini_options]
@@ -23,4 +31,11 @@ markers = [
 # Docker tests run last so the fast in-process tiers report first.
 # The simulator tier is opt-in: it is minutes rather than seconds, and it needs
 # images the container tier does not. `-m webots` runs it.
-addopts = "-p no:cacheprovider -m 'not webots'"
+#
+# `-n auto` because the container tier is almost entirely waiting -- 4.3 s per
+# scenario, of which the work is milliseconds and the rest is Docker starting a
+# fleet. Every fleet already has its own network and container-name prefix, so
+# they do not touch. Measured on ten cores: 4:03 -> 51 s for the container tier,
+# 17 s -> 7 s for the rest. It costs about 0.7 s of bootstrap, so `-n 0` is the
+# tight loop when iterating on one file.
+addopts = "-p no:cacheprovider -m 'not webots' -n auto"

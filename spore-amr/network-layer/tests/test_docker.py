@@ -22,14 +22,19 @@ import time
 import uuid
 from pathlib import Path
 
+from filelock import FileLock
+
 import grpc
 import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+import down
 import up
 from bus.policy import rpc_metadata
-from proto import fleet_pb2, fleet_pb2_grpc, robot_pb2, robot_pb2_grpc
+from proto import (
+    controlplane_pb2, controlplane_pb2_grpc, fleet_pb2, fleet_pb2_grpc,
+    robot_pb2, robot_pb2_grpc)
 
 pytestmark = pytest.mark.docker
 
@@ -62,10 +67,47 @@ def client():
     return c
 
 
+@pytest.fixture(scope="session", autouse=True)
+def _sweep_leaked_fleets(client):
+    """Remove fleets a previous run left behind, before this one starts.
+
+    Teardown is not guaranteed. Interrupt a run -- Ctrl-C, a killed xdist
+    worker, a laptop lid -- and the containers outlive the process that made
+    them. They are not idle: each is a bot heartbeating on a timer, and a dozen
+    of them turn a one-minute suite into three while looking like nothing at
+    all. Measured exactly that way, twice.
+
+    Safe because it filters on our own label, which only `up.py` sets. A dev
+    fleet from `up.py` carries it too and will be swept -- that is the intended
+    trade: a test run starts from a known floor.
+    """
+    down.remove_fleet(client, quiet=True)
+    yield
+
+
 @pytest.fixture(scope="session")
-def image(client):
-    if os.environ.get("AMR_DOCKER_NO_BUILD") != "1":
+def image(client, tmp_path_factory, worker_id):
+    """Build once, however many workers are running.
+
+    Session-scoped means *per worker* under xdist, so without this every worker
+    would build the same tag at the same time. The layer cache makes that cheap
+    rather than free, and two builders writing one tag is a race nobody needs.
+
+    The lock lives in xdist's shared root temp dir, which is the one directory
+    every worker agrees on.
+    """
+    if os.environ.get("AMR_DOCKER_NO_BUILD") == "1":
+        return up.IMAGE
+
+    if worker_id == "master":                      # not running under xdist
         up.build_image(client, quiet=True)
+        return up.IMAGE
+
+    done = tmp_path_factory.getbasetemp().parent / "amr-image-built"
+    with FileLock(str(done) + ".lock"):
+        if not done.exists():
+            up.build_image(client, quiet=True)
+            done.write_text(up.IMAGE)
     return up.IMAGE
 
 
@@ -284,11 +326,24 @@ class DockerFleet:
         message.fault.warning.obstacle.current_node_id = at_node if level > 0 else 0
         self.report(c, message)
 
-    def drive(self, c, nodes, region: int = PARK, **fields) -> None:
-        """Walk a robot along a route, one QR scan at a time."""
+    def drive(self, c, nodes, region: int = PARK, pace: float | None = None,
+              **fields) -> None:
+        """Walk a robot along a route, one QR scan at a time.
+
+        `pace` is how long each position is held, and it is not decoration. The
+        bot reads its robot once per tick and keeps only the newest report, so a
+        position pushed and replaced inside one tick is a position the fleet
+        never saw -- and `node_trail`, which is *distinct successive* nodes, is
+        the thing that notices: four markers 50 ms apart used to arrive as one.
+
+        One tick is the floor, and the default. Anything asserting about claims
+        needs `_hop_seconds()` instead: a claim covers a whole traversal, so two
+        positions closer together than that overlap by construction.
+        """
+        wait = pace if pace is not None else _tick_seconds()
         for node in nodes:
             self.place(c, latest_node_id=node, region_id=region, **fields)
-            time.sleep(0.05)
+            time.sleep(wait)
 
     def decisions(self, c, nodes, region: int = PARK, **fields) -> list:
         """Drive a route and collect what the bot answered at each node.
@@ -431,6 +486,15 @@ def two_bots(client, image):
 @pytest.fixture(scope="module")
 def three_bots(client, image):
     yield from _shared(client, image, 3, PARK)
+
+
+def _tick_seconds() -> float:
+    """One run-loop tick, plus a little.
+
+    The bot reads its robot once per `T_HB` and keeps only the newest report, so
+    this is the shortest a position can be held and still be seen at all.
+    """
+    return float(SHARED_TIMINGS["T_HB"]) * 1.5
 
 
 def _hop_seconds() -> float:
@@ -1363,6 +1427,158 @@ def test_B9_a_job_handed_to_a_follower_reaches_its_leader(fleet):
     assert ack.accepted, ack.note
     assert wait_until(lambda: any(j.job_id == "B9" for j in fleet.state(leader).jobs), 20,
                       what="the job to reach the leader's ledger")
+
+
+def _order_stub(fleet, c):
+    return controlplane_pb2_grpc.ControlPlaneServiceStub(
+        grpc.insecure_channel(fleet.endpoint(c)))
+
+
+def _place_order(fleet, c, order_id: str, pickup: int, dropoff: int):
+    return _order_stub(fleet, c).DispatchOrder(
+        controlplane_pb2.Order(order_id=order_id, pickup_node=pickup,
+                               dropoff_node=dropoff),
+        timeout=15, metadata=rpc_metadata(999, 0, "orders"))
+
+
+@pytest.mark.docker
+def test_B15_two_orders_at_once_go_to_two_different_bots(fleet):
+    """The dispatcher picks the nearest free bot, and *free* is the word doing
+    the work. Two orders arriving together must not both pick the same bot
+    because neither had been marked busy yet -- the classic read-then-assign
+    race, and the reason assignment happens under the ledger lock."""
+    cs, leader = _free_fleet(fleet, 2)
+    nodes = _map_nodes(PARK, 12)
+
+    for i, (pickup, dropoff) in enumerate([(nodes[4], nodes[8]), (nodes[6], nodes[10])]):
+        assert _place_order(fleet, leader, f"B15-{i}", pickup, dropoff).accepted
+
+    holders = {fleet.state(c).current_job_id for c in cs}
+    assert holders == {"B15-0", "B15-1"}, \
+        f"two orders did not reach two bots: {holders}"
+
+
+@pytest.mark.docker
+def test_B16_more_orders_than_bots_are_queued_and_drain(fleet):
+    """A burst is not a reason to lose cargo. Everything above the number of
+    free bots is accepted and held, and comes out as bots finish."""
+    cs, leader = _free_fleet(fleet, 2)
+    nodes = _map_nodes(PARK, 12)
+
+    for i in range(5):
+        assert _place_order(fleet, leader, f"B16-{i}", nodes[4], nodes[8]).accepted, \
+            f"order B16-{i} was refused; a burst must queue, not drop"
+
+    ledger = {j.job_id for j in fleet.state(leader).jobs}
+    assert {f"B16-{i}" for i in range(5)} <= ledger, \
+        f"orders vanished between accepted and the ledger: {sorted(ledger)}"
+
+    assigned = {fleet.state(c).current_job_id for c in cs} - {""}
+    assert len(assigned) <= 2, "more jobs are being executed than there are bots"
+
+
+@pytest.mark.docker
+def test_B17_a_successor_inherits_the_job_ledger(fleet):
+    """Jobs must not die with a leader. The ledger rides in every HeartbeatAck
+    for exactly this: a follower that becomes leader already holds it, and cargo
+    accepted before the failure is still cargo somebody owes."""
+    cs, leader = _free_fleet(fleet, 3)
+    nodes = _map_nodes(PARK, 12)
+    assert _place_order(fleet, leader, "B17", nodes[4], nodes[8]).accepted
+    survivors = [c for c in cs if c is not leader]
+    assert wait_until(
+        lambda: all(any(j.job_id == "B17" for j in fleet.state(c).jobs) for c in survivors),
+        20, what="the ledger to replicate to the followers")
+
+    leader.kill()
+    assert wait_until(lambda: fleet.leaders(survivors), 30, what="a successor")
+
+    successor = fleet.leaders(survivors)[0]
+    assert any(j.job_id == "B17" for j in fleet.state(successor).jobs), \
+        "the job died with the leader that accepted it"
+
+
+@pytest.mark.docker
+def test_B18_a_killed_assignee_gives_its_job_back(fleet):
+    """A bot that stops answering has not delivered anything. Before pickup the
+    cargo is still where it was, so the job has to come back and be given to
+    somebody else -- otherwise an order is silently never done."""
+    cs, leader = _free_fleet(fleet, 3)
+    nodes = _map_nodes(PARK, 12)
+    assert _place_order(fleet, leader, "B18", nodes[4], nodes[8]).accepted
+    holder = _holder_of(fleet, cs, "B18")
+    assert holder is not None and holder is not leader, "need a follower to kill"
+
+    holder.kill()
+    survivors = [c for c in cs if c is not holder]
+    assert wait_until(
+        lambda: any(fleet.state(c).current_job_id == "B18" for c in survivors),
+        40, what="the job to be given to another bot")
+
+
+@pytest.mark.docker
+def test_B19_an_order_for_a_node_off_the_map_is_still_answered(fleet):
+    """Bad orders come from outside and must not wedge anything. Whatever the
+    fleet decides -- take it, queue it, refuse it -- it has to *say so*, because
+    the control plane retries until something answers and a silent drop becomes
+    an infinite retry loop."""
+    cs, leader = _free_fleet(fleet, 2)
+
+    ack = _place_order(fleet, leader, "B19", 10**8, 10**8 + 1)
+
+    assert ack.note or ack.accepted, "an impossible order got no answer at all"
+    assert wait_until(lambda: fleet.converged(cs, PARK), 15,
+                      what="the fleet to still be healthy afterwards")
+
+
+@pytest.mark.docker
+def test_B13_an_order_from_the_control_plane_reaches_a_bot(fleet):
+    """The other door into the job system, and the one an outside world uses.
+
+    `spore-control-plane` speaks its own four-field `Order` -- an id and two
+    nodes -- and dials it at *any* bot, because it knows no leaders and no
+    regions. Everything after that is `bus.jobs`: a non-leader forwards, a
+    leader resolves the pickup's region and forwards again.
+
+    Submitted to a follower on purpose. A leader would prove the translation and
+    not the routing, and routing is the part the control plane is trusting us
+    with.
+    """
+    cs, leader = _free_fleet(fleet, 2)
+    follower = next(c for c in cs if c is not leader)
+    nodes = _map_nodes(PARK, 12)
+
+    stub = controlplane_pb2_grpc.ControlPlaneServiceStub(
+        grpc.insecure_channel(fleet.endpoint(follower)))
+    ack = stub.DispatchOrder(
+        controlplane_pb2.Order(order_id="B13", pickup_node=nodes[6],
+                               dropoff_node=nodes[10]),
+        timeout=15, metadata=rpc_metadata(999, 0, "orders"))
+
+    assert ack.accepted, ack.note
+    assert _holder_of(fleet, cs, "B13") is not None, \
+        "the order was accepted and never reached a bot"
+
+
+@pytest.mark.docker
+def test_B14_the_same_order_twice_places_one_job(fleet):
+    """`order_id` is the idempotency key, and the control plane's retry loop
+    depends on it: it re-sends the *same* order after a timeout, across
+    different bots. Without this the fleet would send two robots for one box."""
+    cs, leader = _free_fleet(fleet, 2)
+    nodes = _map_nodes(PARK, 12)
+    order = controlplane_pb2.Order(order_id="B14", pickup_node=nodes[6],
+                                   dropoff_node=nodes[10])
+
+    for container in cs:                     # as the retry loop would: any bot
+        stub = controlplane_pb2_grpc.ControlPlaneServiceStub(
+            grpc.insecure_channel(fleet.endpoint(container)))
+        assert stub.DispatchOrder(order, timeout=15,
+                                  metadata=rpc_metadata(999, 0, "orders")).accepted
+
+    holders = [c for c in cs if fleet.state(c).current_job_id == "B14"]
+    assert len(holders) <= 1, "two bots took one order"
+    assert len([j for j in fleet.state(leader).jobs if j.job_id == "B14"]) == 1
 
 
 @pytest.mark.docker
