@@ -410,6 +410,20 @@ services:
     volumes:
     - ./:/project:ro
     working_dir: /app
+  control:
+    build:
+      context: ../../spore-control-plane
+    cpus: '0.25'
+    environment:
+      BOT_ADDRESSES: bot_01-bot:50051,bot_02-bot:50051,bot_03-bot:50051,bot_04-bot:50051,bot_05-bot:50051,bot_06-bot:50051,bot_07-bot:50051,bot_08-bot:50051,bot_09-bot:50051,bot_10-bot:50051
+      WAREHOUSE_MAP: /project/config/warehouse.json
+    image: spore-control-plane:dev
+    init: true
+    mem_limit: 192m
+    ports:
+    - 8000:8000
+    volumes:
+    - ./:/project:ro
   supervisor:
     cpus: '0.25'
     depends_on:

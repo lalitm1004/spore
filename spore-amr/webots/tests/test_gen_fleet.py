@@ -119,7 +119,7 @@ def robot_services(compose):
     Not the `-bot` containers beside them, and not the sim or the supervisor.
     """
     return {n: s for n, s in compose["services"].items()
-            if n not in ("sim", "supervisor") and not n.endswith("-bot")}
+            if n not in ("sim", "supervisor", "control") and not n.endswith("-bot")}
 
 
 def test_compose_gives_every_robot_its_own_network_layer_bot():
@@ -204,6 +204,18 @@ def test_no_robot_talks_to_a_fleet_wide_network_service():
 
     for service in compose["services"].values():
         assert not any("temp-network" in v for v in (service.get("volumes") or []))
+
+
+def test_the_control_plane_can_reach_every_bot_and_nothing_else():
+    """Orders enter through the control plane, which knows no leaders: it tries
+    the bots it was told about until one accepts. Told about all of them, then,
+    and only them -- a stale or missing address is an order that waits out five
+    retries before landing, or never lands."""
+    compose = compose_source(MANIFEST)
+    control = compose["services"]["control"]
+    addresses = set(control["environment"]["BOT_ADDRESSES"].split(","))
+    assert addresses == {"{}-bot:50051".format(n) for n in robot_services(compose)}
+    assert control["environment"]["WAREHOUSE_MAP"] == "/project/config/warehouse.json"
 
 
 def test_world_and_compose_agree_on_the_robot_names():

@@ -713,6 +713,26 @@ def compose_source(manifest: dict) -> dict:
         "cpus": "0.25",
     }
 
+    # Where cargo orders come from. One for the fleet, and that is not the
+    # central authority docs/boundary.md declines: it knows no leaders and no
+    # regions, hands each order to any bot it can reach, and the fleet routes.
+    # Every bot serves ControlPlaneService, so it gets every bot's address.
+    services["control"] = {
+        "image": "spore-control-plane:dev",
+        "build": {"context": "../../spore-control-plane"},
+        "ports": ["8000:8000"],
+        "init": True,
+        "environment": {
+            "BOT_ADDRESSES": ",".join("{}-bot:50051".format(n) for n in robot_names),
+            # The same window map the robots drive, so the order form only
+            # offers nodes that exist on this floor.
+            "WAREHOUSE_MAP": "/project/config/warehouse.json",
+        },
+        "volumes": ["./:/project:ro"],
+        "mem_limit": "192m",
+        "cpus": "0.25",
+    }
+
     return {"services": services}
 
 

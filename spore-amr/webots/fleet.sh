@@ -13,6 +13,7 @@
 #   ./fleet.sh logs [svc]  follow the logs (default: every robot, no STATUS spam)
 #   ./fleet.sh where       where the fleet thinks its robots are (roster + claims)
 #   ./fleet.sh dump [n]    print the last n log lines once and exit
+#   ./fleet.sh order A B   place a cargo order: pickup node A, dropoff node B
 #   ./fleet.sh goals       what the network layer has told each robot to do
 #   ./fleet.sh robots      per-robot: distance, state, and whether it is moving
 #   ./fleet.sh fleet       leaders, jobs and claims -- the coordination layer
@@ -98,6 +99,7 @@ case "${1:-help}" in
     "${COMPOSE[@]}" up -d --remove-orphans
     say "fleet up  --  MODE=$MODE RENDERING=$RENDERING STREAM_MODE=$STREAM_MODE MISSION_DURATION=${MISSION_DURATION}s"
     say "viewer:   $VIEWER"
+    say "orders:   http://localhost:8000/   (or ./fleet.sh order <pickup> <dropoff>)"
     ;;
 
   chunk)
@@ -194,6 +196,20 @@ else:
         print('   bot-%-2d node %-6s trail %s' % (p['bot_id'], p['node'] or '-', p['trail']))
     print('claims:', state['claims'] or 'none')
 \""
+    ;;
+
+  order)
+    # Place a cargo order on the running fleet, through the control plane's own
+    # HTTP surface -- the same POST its web form makes, so there is one client.
+    shift
+    [ $# -eq 2 ] || { say "usage: ./fleet.sh order <pickup_node> <dropoff_node>"; exit 2; }
+    if curl -sf -X POST "http://localhost:8000/orders" \
+         -F "pickup_node=$1" -F "dropoff_node=$2" >/dev/null; then
+      say "order placed: node $1 -> node $2"
+    else
+      say "the control plane did not accept it -- is the fleet up, and are both nodes on this map?"
+      exit 1
+    fi
     ;;
 
   dump)
