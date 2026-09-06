@@ -454,3 +454,50 @@ def test_virtual_network_follower_denied_on_leader_exchange(fleet):
             fleet_pb2.LeaderHBRequest(region_id=2, leader_bot_id=7), timeout=2, metadata=md(7, 2, "follower"))
     assert e.value.code() == grpc.StatusCode.PERMISSION_DENIED
     assert leader.peer_table.get_leader(2) is None
+
+
+def test_migration_waits_for_the_robot_to_settle(fleet, monkeypatch):
+    """A robot passing through a region does not join it.
+
+    `region_id` comes from the QR node under the robot, so crossing the floor
+    changes it repeatedly. Migration used to fire on the first report from a
+    new region, which cost a departure and a join for a region the robot was
+    leaving seconds later -- and an election at both ends when the robot was
+    leading. Measured on a five-robot run over four regions: 1,546 migrations,
+    "became leader of region 1" logged 6,155 times, and the same job assigned
+    twice six minutes apart because a new leader inherits the ledger by
+    replication and replication never settled.
+
+    `T_REGION_DWELL` is the wait. The conftest sets it to zero so the handshake
+    tests can drive `tick()` directly; this one puts it back.
+    """
+    import config
+
+    src, dst, mover = _two_regions(fleet)
+    monkeypatch.setattr(config, "T_REGION_DWELL", 30.0)
+
+    mover.report_robot_state(RobotState(latest_node_id=77, region_id=2))
+    mover._tick_robot_state()
+    assert mover.desired_region_id == 2
+
+    mover.migrator.tick()      # first sighting: starts the clock, migrates nothing
+    mover.migrator.tick()      # still inside the dwell
+    assert mover.region_id != 2, "migrated on sight, without waiting to see if it stayed"
+    assert not mover.migrator.in_flight
+
+
+def test_a_robot_that_stays_does_migrate(fleet, monkeypatch):
+    """The other half: the dwell delays a migration, it does not prevent one."""
+    import config
+
+    src, dst, mover = _two_regions(fleet)
+    monkeypatch.setattr(config, "T_REGION_DWELL", 0.05)
+
+    mover.report_robot_state(RobotState(latest_node_id=77, region_id=2))
+    mover._tick_robot_state()
+    mover.migrator.tick()                   # starts the clock
+    time.sleep(0.1)                         # the robot stays put
+    mover.migrator.tick()                   # now it may go
+
+    assert wait_until(lambda: mover.region_id == 2, 8), \
+        "waited out the dwell and still never migrated"

@@ -89,6 +89,11 @@ class Migrator:
         self.target_region: int | None = None
         self.attempts = 0
         self._next_attempt_at = 0.0
+        #: When the robot was first seen in the region it now wants, and which
+        #: that was. A robot driving across a boundary and out again never
+        #: waits long enough here to migrate at all.
+        self._wanted_since = 0.0
+        self._wanted_region: int | None = None
         self._thread: threading.Thread | None = None
 
     # ---- Public ---------------------------------------------------------------
@@ -105,12 +110,27 @@ class Migrator:
         if desired is None or desired == self._bot.region_id:
             if self.phase == Phase.FAILED:
                 self.phase = Phase.IDLE  # target reached by other means, or QR changed back
+            self._wanted_region = None
             return
         if self.in_flight:
             return
         now = time.monotonic()
         if now < self._next_attempt_at:
             return
+
+        # Wait until the robot has actually stayed. Migration used to fire on
+        # the first report from a new region, so a robot crossing a corner of
+        # one paid a full departure and join for a region it was leaving again
+        # seconds later -- and took an election with it if it was leading. A
+        # leader that is merely passing through now keeps its section until it
+        # has genuinely gone. See `config.T_REGION_DWELL`.
+        if config.T_REGION_DWELL > 0:
+            if self._wanted_region != desired:
+                self._wanted_region = desired
+                self._wanted_since = now
+                return
+            if now - self._wanted_since < config.T_REGION_DWELL:
+                return
         if not self._bot.leader_settled():
             # PROTOCOL.md §5.7: never migrate mid-election.
             log.debug("bot-%d: want region %d but leader not settled; waiting",

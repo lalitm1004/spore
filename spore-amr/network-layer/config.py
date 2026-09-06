@@ -84,6 +84,24 @@ T_MIGRATION_BACKOFF_MAX = float(os.environ.get("T_MIGRATION_BACKOFF_MAX", "10.0"
 #: no single bot leads forever (PROTOCOL.md §5.6 "Tenure"). 0 disables.
 T_LEADER_TENURE = float(os.environ.get("T_LEADER_TENURE", "1800.0"))
 
+#: How long a bot must have been physically in a new region before it migrates
+#: there. A robot crossing the floor changes region every time it reads a QR
+#: node in one, and migration used to fire on the first such report -- so a
+#: region a robot merely drives through costs a departure, a join, and if the
+#: bot happened to be leading, an election at both ends.
+#:
+#: Measured on a five-robot run over a four-region window: 1,546 migrations and
+#: "became leader of region 1" logged 6,155 times. The cost is not the churn
+#: itself but what it does to job ownership -- a new leader inherits the ledger
+#: by heartbeat replication, replication never settles if leadership changes
+#: every few seconds, and the same job was assigned twice six minutes apart to
+#: two different robots, which then converged on one node.
+#:
+#: A dwell fixes the common case for free: a robot passing through is gone
+#: before this elapses, so it never migrates at all, while one that has genuinely
+#: arrived migrates a few seconds later than it used to and nothing else changes.
+T_REGION_DWELL = float(os.environ.get("T_REGION_DWELL", str(8 * T_HB)))
+
 # ---- Jobs -----------------------------------------------------------------------
 
 #: How long an observing leader keeps re-sending a JobEvent nobody has

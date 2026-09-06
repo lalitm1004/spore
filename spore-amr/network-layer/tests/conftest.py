@@ -3,8 +3,9 @@
 WHAT / WHY
     * Puts the project root on sys.path so `import bot` works from anywhere.
     * Pins the environment `config.py` reads at import time — identity for
-      the default Bot(), and *shorter timeouts* so migration-failure tests
-      finish in seconds rather than tens of seconds. This must run before
+      the default Bot(), *shorter timeouts* so migration-failure tests finish
+      in seconds rather than tens of seconds, and no region dwell so a
+      `tick()` migrates at once. This must run before
       any project module is imported, which is exactly when conftest runs.
     * Provides the `fleet` harness fixture: builds bots on unique ports,
       starts their servers, and — crucially — stops every sender thread and
@@ -38,6 +39,13 @@ os.environ.setdefault("GRPC_PORT", "50051")
 os.environ.setdefault("OWN_ADDRESS", "127.0.0.1:50051")
 os.environ.setdefault("PEER_LEADERS", "")
 os.environ.setdefault("T_MIGRATION_TIMEOUT", "3.0")   # keep failure paths quick
+# No dwell before migrating. In production a bot waits `T_REGION_DWELL` in a
+# new region before joining it, so a robot merely driving through one does not
+# cost a departure, a join and possibly two elections. These tests drive the
+# migrator by calling `tick()` directly and are about the handshake rather than
+# about when it starts, so the wait is only latency here. The dwell itself is
+# covered by `test_migration_waits_for_the_robot_to_settle`.
+os.environ.setdefault("T_REGION_DWELL", "0.0")
 os.environ.setdefault("T_MIGRATION_BACKOFF_MAX", "2.0")
 
 import grpc  # noqa: E402
