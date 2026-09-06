@@ -990,17 +990,17 @@ service ReservationService {
   rpc Announce(ReservationAnnounce) returns (ReservationAck);
 }
 
-// --- Admin: introspection and robot-state injection ---
+// --- Admin: introspection ---
 // For operators and the Docker test harness. Only served when ADMIN_ENABLED=1
 // (the virtual network refuses it otherwise).
 //
 // Read-only. It used to carry InjectRobotState and InjectObstruction, which put
 // a robot snapshot or a blockage straight into the bot around the QR read, the
 // companion and the wire. A robot reports over spore.network.v1.RobotNetwork
-// now, like a robot; see proto/robot.proto and §16.1.
+// now, like a robot; see proto/robot.proto.
 
 service AdminService {
-  rpc GetState(Empty)                     returns (BotState);
+  rpc GetState(Empty) returns (BotState);
 }
 
 message Empty {}

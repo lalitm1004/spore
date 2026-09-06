@@ -252,3 +252,81 @@ def test_proto_file_is_the_one_the_stubs_were_generated_from():
         f"proto declares {sorted(declared - generated)}, "
         f"stubs have {sorted(generated - declared)} -- regenerate them "
         "(see README.md)")
+
+
+# ---- The spec embeds the wire, and the wire is the file --------------------------
+
+PROTOCOL = pathlib.Path(__file__).resolve().parents[1] / "PROTOCOL.md"
+EMBEDDED = [
+    ("## 11. Proto File", "proto/fleet.proto"),
+    ("### 11.1 The robot link", "proto/robot.proto"),
+    ("### 11.2 Orders in", "proto/controlplane.proto"),
+]
+
+
+def _fenced_after(text: str, heading: str) -> str:
+    start = text.index(heading)
+    a = text.index("```protobuf\n", start) + len("```protobuf\n")
+    return text[a:text.index("\n```", a)].strip()
+
+
+@pytest.mark.parametrize(("heading", "proto"), EMBEDDED)
+def test_protocol_md_embeds_the_proto_verbatim(heading, proto):
+    """§11 calls itself "Proto File -- Complete". Complete means the file, not a
+    hand-maintained copy that was complete when it was written: the two had
+    already drifted once (the doc still had an RPC the file had lost). Now the
+    doc block is regenerated from the file, and this fails if anyone edits one
+    without the other."""
+    want = (PROTOCOL.parent / proto).read_text().strip()
+    assert _fenced_after(PROTOCOL.read_text(), heading) == want, (
+        f"{proto} and the block under {heading!r} in PROTOCOL.md differ; "
+        "paste the file into the doc (or run the re-embed in the commit that changed it)")
+
+
+# ---- The hand-written mirrors ----------------------------------------------------
+# The planner's `Query`/`Decision` and the robot side's copies are dataclasses,
+# not protos, on purpose: neither half should reason in wire types. That is
+# only safe if the mirrors stay a subset of the wire, plus fields we *say* are
+# local. This pins which.
+
+WEBOTS = pathlib.Path(__file__).resolve().parents[2] / "webots"
+
+#: Fields a mirror carries that the wire does not, each with its reason.
+LOCAL_ONLY = {
+    "Query": {"node_type"},          # the robot reads it off the tile; the fleet has the map
+    "Decision": set(),
+    "RobotState": {"state"},         # the FSM state is not on the wire, by design
+}
+
+
+def _dataclass_fields(cls) -> set[str]:
+    return set(cls.__dataclass_fields__)
+
+
+def test_the_planners_query_and_decision_are_subsets_of_the_wire():
+    from planning.decide import Decision, Query
+    up = {f.name for f in robot_pb2.RobotToNetwork.DESCRIPTOR.fields}
+    down = {f.name for f in robot_pb2.NetworkToRobot.DESCRIPTOR.fields}
+    assert _dataclass_fields(Query) - LOCAL_ONLY["Query"] <= up | {"node_id"}, \
+        "Query carries a field the wire cannot deliver"
+    assert _dataclass_fields(Decision) - LOCAL_ONLY["Decision"] <= down, \
+        "Decision carries a field the wire cannot deliver"
+
+
+def test_the_robot_sides_query_and_decision_match_the_planners():
+    """Two mirrors of one wire on two sides of it. They may differ from the
+    proto only in the ways listed above, and never from each other."""
+    import sys
+    sys.path.insert(0, str(WEBOTS))
+    from robot.network import Decision as RDecision, Query as RQuery
+    from planning.decide import Decision, Query
+    assert _dataclass_fields(RQuery) == _dataclass_fields(Query)
+    assert _dataclass_fields(RDecision) == _dataclass_fields(Decision)
+
+
+def test_robot_state_is_the_wire_flattened_plus_what_we_say_is_local():
+    from bot import RobotState
+    # What `robot_service.state_of` can fill from a RobotToNetwork.
+    reachable = {"latest_node_id", "region_id", "battery", "mission", "fault", "job_id", "cargo_state"}
+    assert _dataclass_fields(RobotState) == reachable | LOCAL_ONLY["RobotState"], \
+        "RobotState gained a field nothing on the wire can fill -- add it to LOCAL_ONLY with a reason, or to the proto"
