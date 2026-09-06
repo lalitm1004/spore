@@ -131,31 +131,41 @@ def main(argv=None):
 
     # Three phases, because that is what the rule produces: both approach, the
     # outranked one backs out while the other holds, then the one with right of
-    # way comes through. Built explicitly rather than by letting two independent
-    # walks run out -- they have different lengths, and two timelines that
-    # merely end when they end is how the first attempt finished with both
-    # robots on the same square.
-    meet = len(aisle) // 2
-    yielder_route, holder_route = (east, west) if winner_is_west else (west, east)
+    # way comes through.
+    #
+    # Indices are spelled out because getting them wrong is silent. `aisle` runs
+    # west to east, the holder walks it forwards and the yielder backwards, and
+    # the two counts have to sum to one less than the aisle so they finish a
+    # single lane apart rather than on the same node -- which is what an earlier
+    # version did, ending them 0.07 m apart and calling it a near miss.
+    n = len(aisle)
+    steps_h = (n - 2) // 2                  # holder stops here
+    steps_y = (n - 2) - steps_h             # yielder stops one lane beyond it
+    holder_at, yielder_at = steps_h, n - 1 - steps_y
+
     yielder = "bot_02" if winner_is_west else "bot_01"
     holder = "bot_01" if winner_is_west else "bot_02"
+    forward = aisle if winner_is_west else list(reversed(aisle))
+    if not winner_is_west:
+        holder_at, yielder_at = n - 1 - holder_at, n - 1 - yielder_at
 
-    # Where the loser goes: back out of the aisle and one node past its end,
-    # onto a junction, which is somewhere the other robot can actually pass.
-    beyond = [v for v in adjacency.get(yielder_route[0], ()) if v not in aisle]
-    retreat = list(reversed(yielder_route[:meet - 1])) + beyond[:1]
+    # Where the loser goes: back out the way it came and one node past the end
+    # of the aisle, onto a junction, which is somewhere the other can pass.
+    tail = forward[yielder_at:]              # from where it stopped to its end
+    beyond = [v for v in adjacency.get(tail[-1], ()) if v not in aisle]
+    retreat = tail + beyond[:1]
 
     def leg(route, label, start_t):
         rows, tt = [], start_t
         for i in range(len(route) - 1):
-            a_, b_ = position[route[i]], position[route[i + 1]]
-            span = math.hypot(b_[0] - a_[0], b_[1] - a_[1])
-            heading = math.atan2(b_[1] - a_[1], b_[0] - a_[0])
+            p0, p1 = position[route[i]], position[route[i + 1]]
+            span = math.hypot(p1[0] - p0[0], p1[1] - p0[1])
+            heading = math.atan2(p1[1] - p0[1], p1[0] - p0[0])
             steps = max(1, int(span / SPEED_MS * SAMPLE_HZ))
-            for step in range(steps):
-                f = step / steps
-                rows.append((tt, label, a_[0] + (b_[0] - a_[0]) * f,
-                             a_[1] + (b_[1] - a_[1]) * f, heading))
+            for k in range(steps):
+                f = k / steps
+                rows.append((tt, label, p0[0] + (p1[0] - p0[0]) * f,
+                             p0[1] + (p1[1] - p0[1]) * f, heading))
                 tt += 1.0 / SAMPLE_HZ
         return rows, tt
 
@@ -168,25 +178,35 @@ def main(argv=None):
 
     frames = []
 
-    # Phase 1 -- both approach, and stop about a lane apart. The near miss.
-    approach_y, ty_end = leg(yielder_route[:meet - 1], yielder, 0.0)
-    # One node further than the yielder, so they end a single lane apart --
-    # close enough that the reflex would fire, which is the point of showing it.
-    approach_h, th_end = leg(holder_route[:meet + 2], holder, 0.0)
-    frames += approach_y + approach_h
-    ly, lh = approach_y[-1], approach_h[-1]
+    # Phase 1 -- both approach and stop one lane apart. The near miss.
+    ah, th_end = leg(forward[:holder_at + 1], holder, 0.0)
+    ay, ty_end = leg(list(reversed(forward[yielder_at:])), yielder, 0.0)
+    frames += ah + ay
+    lh, ly = ah[-1], ay[-1]
     print("closest approach: {:.2f} m -- the near miss".format(
-        math.hypot(ly[2] - lh[2], ly[3] - lh[3])))
+        math.hypot(lh[2] - ly[2], lh[3] - ly[3])))
 
     # Phase 2 -- the outranked robot backs out; the other stands and waits.
-    retreat_rows, t2 = leg(retreat, yielder, ty_end)
-    hold_rows, _ = still(holder, (lh[2], lh[3]), lh[4], th_end, t2 - th_end)
-    frames += retreat_rows + hold_rows
+    back, t2 = leg(retreat, yielder, ty_end)
+    frames += back
+    frames += still(holder, (lh[2], lh[3]), lh[4], th_end, t2 - th_end)[0]
 
     # Phase 3 -- right of way comes through; the yielder waits it out.
-    through, t3 = leg(holder_route[meet - 2:], holder, t2)
-    ry = retreat_rows[-1]
-    frames += through + still(yielder, (ry[2], ry[3]), ry[4], t2, t3 - t2)[0]
+    through, t3 = leg(forward[holder_at:], holder, t2)
+    ry = back[-1]
+    frames += through
+    frames += still(yielder, (ry[2], ry[3]), ry[4], t2, t3 - t2)[0]
+
+    # Both robots in every frame. The two runs are different lengths -- the one
+    # that gave way spends its last stretch standing still -- and a robot that
+    # simply stops appearing reads as a crash rather than as a robot waiting.
+    end = max(t for t, *_ in frames)
+    for label in (holder, yielder):
+        mine = [f for f in frames if f[1] == label]
+        t, _, x, y, th = max(mine, key=lambda f: f[0])
+        while t < end - 1e-6:
+            t += 1.0 / SAMPLE_HZ
+            frames.append((t, label, x, y, th))
 
     args.out.parent.mkdir(parents=True, exist_ok=True)
     rows = sorted(frames, key=lambda r: (r[0], r[1]))
