@@ -319,8 +319,10 @@ def validate(node_spacing_cm: int | None = None) -> None:
         # to boot if the settings ever make that arithmetic wrong again.
         from planning.kinematics import DEFAULT_KINEMATICS
 
+        from reservations.claims import claim_window_ms
+
         traversal_ms = DEFAULT_KINEMATICS.cruise_ms(node_spacing_cm)
-        claim_ms = max(2 * T_ANNOUNCE * 1000, traversal_ms + PLAN_SAFETY * 1000)
+        claim_ms = claim_window_ms(node_spacing_cm, DEFAULT_KINEMATICS)
         if claim_ms <= traversal_ms:
             problems.append(
                 f"the claim window ({claim_ms:.0f}ms) must exceed one traversal "

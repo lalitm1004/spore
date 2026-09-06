@@ -147,7 +147,7 @@ class WarehouseMap:
         self.units = str(data["units"])
         self.edge_count = len(data["edges"])
 
-        self._hops_cache: OrderedDict[int, array] = OrderedDict()
+        self._hops_cache: OrderedDict[frozenset[int], array] = OrderedDict()
         self._hops_cache_size = max(1, hops_cache_size)
 
     @classmethod
@@ -223,17 +223,36 @@ class WarehouseMap:
             raise KeyError(node_id)
         return self._hops_from(i)
 
-    def _hops_from(self, src: int) -> array:
-        cached = self._hops_cache.get(src)
+    def hops_from_indices(self, sources) -> array:
+        """Exact hop distance from every node to the nearest of `sources`, by
+        dense index.
+
+        Multi-source when given several, which is how a class goal ("any
+        charger") gets an admissible heuristic from one sweep. Bounded LRU:
+        goals repeat heavily in practice, but not without limit.
+
+        This is the only BFS over the floor. `planning.graph` used to carry a
+        second copy, line for line, with its own cache -- two of everything for
+        one adjacency.
+        """
+        key = frozenset((sources,) if isinstance(sources, int) else sources)
+        cached = self._hops_cache.get(key)
         if cached is not None:
-            self._hops_cache.move_to_end(src)
+            self._hops_cache.move_to_end(key)
             return cached
+
+        if not key:
+            raise ValueError("hops_from requires at least one source")
+        for source in key:
+            if not 0 <= source < self.n:
+                raise IndexError(f"source index {source} out of range for {self.n} nodes")
 
         dist = array("H", bytes(2 * self.n))
         for i in range(self.n):
             dist[i] = UNREACHABLE
-        dist[src] = 0
-        queue = deque((src,))
+        queue = deque(sorted(key))
+        for source in key:
+            dist[source] = 0
         adj = self._adj
         while queue:
             u = queue.popleft()
@@ -243,10 +262,16 @@ class WarehouseMap:
                     dist[v] = d
                     queue.append(v)
 
-        self._hops_cache[src] = dist
+        self._hops_cache[key] = dist
         if len(self._hops_cache) > self._hops_cache_size:
             self._hops_cache.popitem(last=False)
         return dist
+
+    def clear_hops_cache(self) -> None:
+        self._hops_cache.clear()
+
+    def _hops_from(self, src: int) -> array:
+        return self.hops_from_indices(src)
 
     def distance(self, a: int, b: int) -> float:
         """Driving distance in QR hops (edges are all `node_spacing` long)."""

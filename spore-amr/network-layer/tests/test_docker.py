@@ -16,6 +16,7 @@ than refusal, so allow ~10 s. Waits below are generous on purpose.
 """
 from __future__ import annotations
 
+import functools
 import os
 import sys
 import time
@@ -32,6 +33,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import down
 import up
 from bus.policy import rpc_metadata
+from tests.conftest import wait_until as _wait_until
 from proto import (
     controlplane_pb2, controlplane_pb2_grpc, fleet_pb2, fleet_pb2_grpc,
     robot_pb2, robot_pb2_grpc)
@@ -111,24 +113,9 @@ def image(client, tmp_path_factory, worker_id):
     return up.IMAGE
 
 
-def wait_until(pred, timeout: float, step: float = 0.5, what: str = "") -> bool:
-    """Poll until true or the deadline passes.
-
-    `what` names the thing being waited for and is reported on failure. Every
-    call site already passed one; it just never reached the failure message,
-    which made a timeout read as a bare `assert False` with nothing to go on.
-    """
-    deadline = time.monotonic() + timeout
-    while time.monotonic() < deadline:
-        try:
-            if pred():
-                return True
-        except grpc.RpcError:
-            pass  # container not up / paused / partitioned — keep polling
-        time.sleep(step)
-    if what:
-        print("timed out after {:.0f}s waiting for {}".format(timeout, what), flush=True)
-    return False
+# Containers answer slowly, so poll them at a gentler cadence than the
+# in-process fleet. Same function; one bound argument.
+wait_until = functools.partial(_wait_until, step=0.5)
 
 
 class DockerFleet:

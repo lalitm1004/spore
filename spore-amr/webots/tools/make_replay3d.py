@@ -29,7 +29,6 @@ Usage:
 
 import argparse
 import base64
-import csv
 import json
 import pathlib
 import struct
@@ -56,42 +55,7 @@ def f32(values):
     return base64.b64encode(raw).decode("ascii")
 
 
-def load_poses(path, stride=1):
-    """Frames of {robot: (x, y, theta)}, in recorded order.
-
-    Rows arrive grouped by sample time; anything out of order lands in the frame
-    nearest its own timestamp, so a truncated recording still plays.
-    """
-    frames = {}
-    with path.open() as handle:
-        for row in csv.DictReader(handle):
-            t = round(float(row["t"]), 3)
-            frames.setdefault(t, {})[row["robot"]] = (
-                float(row["x"]), float(row["y"]), float(row["theta"]))
-    times = sorted(frames)[::stride]
-    return times, [frames[t] for t in times]
-
-
-def load_graph(path):
-    """Nodes and lanes in world metres, sharing the poses' frame.
-
-    `warehouse.json` is in centimetres with the origin at a corner; the
-    supervisor reports metres about the centre, so the map is shifted to match
-    rather than the poses -- the poses are the ground truth.
-    """
-    document = json.loads(path.read_text())
-    width = float(document["dimensions"]["width"])
-    height = float(document["dimensions"]["height"])
-    nodes = {
-        int(n["id"]): {
-            "x": round(float(n["position"]["x"]) / 100.0 - width / 200.0, 4),
-            "y": round(float(n["position"]["y"]) / 100.0 - height / 200.0, 4),
-            "kind": n.get("node_type", "PT"),
-        }
-        for n in document["nodes"]
-    }
-    edges = [(int(e["a"]), int(e["b"])) for e in document["edges"]]
-    return nodes, edges
+from tools.replay_data import load_graph, load_poses  # noqa: E402
 
 
 PAGE = r"""<title>Fleet replay 3D</title>

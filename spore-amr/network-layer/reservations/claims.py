@@ -32,6 +32,26 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+import config
+
+
+def claim_window_ms(node_spacing_cm: int, kinematics) -> int:
+    """How long a stationary robot holds the node it is standing on.
+
+    Two quantities have to be covered and they answer different questions:
+    two announce periods, so the claim outlives the gap between announcements;
+    and one traversal plus the planner's safety margin, so a neighbour that
+    decides *right now* to drive in here still finds the node taken when it
+    arrives. The claim takes the larger.
+
+    One function because `config.validate()` and `ReservationSender` both need
+    it, and for a while each had its own copy of the arithmetic -- which is how
+    an invariant ends up guarding a number nobody uses.
+    """
+    announced = 2 * int(config.T_ANNOUNCE * 1000)
+    arriving = int(kinematics.cruise_ms(node_spacing_cm) + config.PLAN_SAFETY * 1000)
+    return max(announced, arriving)
+
 
 @dataclass(frozen=True)
 class Claim:

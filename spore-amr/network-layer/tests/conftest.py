@@ -81,14 +81,32 @@ def md(bot_id: int, region_id: int, role: str = "follower") -> list[tuple[str, s
     return rpc_metadata(bot_id, region_id, role)
 
 
-def wait_until(pred, timeout: float = 10.0, step: float = 0.05) -> bool:
-    """Poll `pred()` until true or `timeout` elapses. Returns the final value."""
+def wait_until(pred, timeout: float = 10.0, step: float = 0.05, what: str = "") -> bool:
+    """Poll `pred()` until true or `timeout` elapses.
+
+    `what` names the thing being waited for and is reported on failure; without
+    it a timeout reads as a bare `assert False` with nothing to go on. A gRPC
+    error while polling is not a failure -- a container still starting, paused,
+    or partitioned answers that way, and the point is to keep asking.
+
+    The one implementation. The container suite used to carry its own, which
+    shadowed this one and differed only in its poll step; it now binds that step
+    with `functools.partial`.
+    """
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
-        if pred():
-            return True
+        try:
+            if pred():
+                return True
+        except grpc.RpcError:
+            pass
         time.sleep(step)
-    return bool(pred())
+    if what:
+        print("timed out after {:.0f}s waiting for {}".format(timeout, what), flush=True)
+    try:
+        return bool(pred())
+    except grpc.RpcError:
+        return False
 
 
 def make_bot(bot_id: int, port: int, region_id: int = 14, state: str = "IDLE") -> Bot:

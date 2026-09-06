@@ -40,6 +40,7 @@ from bus.rpc import pool
 from election import priority as prio
 from proto import fleet_pb2_grpc
 from reservations import now_ms
+from reservations.claims import claim_window_ms
 from reservations.server import to_proto
 from reservations.vicinity import in_claim_range
 
@@ -117,15 +118,10 @@ class ReservationSender:
         can plan a route here anyway, so the announce window is the whole
         answer.
         """
-        announced = 2 * int(config.T_ANNOUNCE * 1000)
         bot = self._bot
         if bot.graph is None or bot.planner is None:
-            return announced
-        arriving = int(
-            bot.planner.kinematics.cruise_ms(bot.graph.node_spacing)
-            + config.PLAN_SAFETY * 1000
-        )
-        return max(announced, arriving)
+            return 2 * int(config.T_ANNOUNCE * 1000)
+        return claim_window_ms(bot.graph.node_spacing, bot.planner.kinematics)
 
     def _rank(self) -> int:
         bot = self._bot

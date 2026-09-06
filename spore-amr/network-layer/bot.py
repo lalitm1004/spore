@@ -254,7 +254,7 @@ class Bot:
         self.pending_incoming = Ledger()             # leader: bot_id → source region
 
         # ---- Jobs (PROTOCOL.md §14) ----
-        self.map = WarehouseMap.load(config.WAREHOUSE_MAP)
+        self.map = WarehouseMap.load(config.WAREHOUSE_MAP, hops_cache_size=config.HOPS_CACHE_SIZE)
         self.jobs = JobLedger()                      # leader: owned jobs; follower: replica from acks
         self.current_job: Job | None = None          # the job *this* bot is executing
         self.cargo_state: str = ""                   # PICKUP → EN_ROUTE → DROPOFF → DELIVERED
@@ -294,7 +294,7 @@ class Bot:
         self.topology: Topology | None = None
         self.planner: Planner | None = None
         if getattr(self.map, "n", 0):
-            self.graph = Graph(self.map, hops_cache_size=config.HOPS_CACHE_SIZE)
+            self.graph = Graph(self.map)
             self.topology = Topology(self.graph)
             self.planner = Planner(self.graph, bot_id=self.bot_id, config=self.planning)
 

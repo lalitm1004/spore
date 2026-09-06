@@ -45,7 +45,7 @@ from warehouse.map import UNREACHABLE, WarehouseMap
 class Graph:
     """Adjacency, per-node attributes and cached hop distances for one map."""
 
-    def __init__(self, wmap: WarehouseMap, hops_cache_size: int = 32) -> None:
+    def __init__(self, wmap: WarehouseMap) -> None:
         self.map = wmap
         self.n = wmap.n
         self.ids = wmap.ids
@@ -84,8 +84,6 @@ class Graph:
             by_type[node_type].append(i)
         self._by_type = {t: tuple(members) for t, members in by_type.items()}
 
-        self._dist_cache: OrderedDict[frozenset[int], array] = OrderedDict()
-        self._dist_cache_size = max(1, hops_cache_size)
 
     # ---- Identity -----------------------------------------------------------
 
@@ -127,44 +125,14 @@ class Graph:
     def hops_from(self, sources: int | Iterable[int]) -> array:
         """Exact hop distance from every node to the nearest of `sources`.
 
-        Multi-source when given several, which is how a class goal ("any
-        charger") gets an admissible heuristic from one sweep. Bounded LRU:
-        goals repeat heavily in practice, but not without limit.
+        The map owns the BFS and its cache (`WarehouseMap.hops_from_indices`);
+        this graph is built from that map's adjacency in the same dense order,
+        so the answer is the same array.
         """
-        key = frozenset((sources,) if isinstance(sources, int) else sources)
-        cached = self._dist_cache.get(key)
-        if cached is not None:
-            self._dist_cache.move_to_end(key)
-            return cached
-
-        if not key:
-            raise ValueError("hops_from requires at least one source")
-        for source in key:
-            if not 0 <= source < self.n:
-                raise IndexError(f"source index {source} out of range for {self.n} nodes")
-
-        dist = array("H", bytes(2 * self.n))
-        for i in range(self.n):
-            dist[i] = UNREACHABLE
-        queue = deque(sorted(key))
-        for source in key:
-            dist[source] = 0
-        adj = self._adj
-        while queue:
-            u = queue.popleft()
-            d = dist[u] + 1
-            for v, _ in adj[u]:
-                if dist[v] == UNREACHABLE:
-                    dist[v] = d
-                    queue.append(v)
-
-        self._dist_cache[key] = dist
-        if len(self._dist_cache) > self._dist_cache_size:
-            self._dist_cache.popitem(last=False)
-        return dist
+        return self.map.hops_from_indices(sources)
 
     def clear_distance_cache(self) -> None:
-        self._dist_cache.clear()
+        self.map.clear_hops_cache()
 
     def bfs_within(self, sources: Iterable[int], max_depth: int) -> dict[int, int]:
         """Hop distance to the nearest source, out to `max_depth` only.
