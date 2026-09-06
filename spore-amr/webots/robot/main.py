@@ -399,6 +399,12 @@ def main(argv=None):
     log = TelemetryLog(telemetry_path, build_columns(len(sensors)))
 
     base_speed = control.base_speed
+    # What the wheels are actually being asked for, as opposed to what the
+    # companion has set as cruise. Ramped toward `base_speed` rather than
+    # stepped, and reset to rest whenever something else takes the motors, so
+    # the robot always leaves a turn or a reflex slowly enough for the line
+    # follower to find the lane before speed makes the error unrecoverable.
+    commanded_base = 0.0
     # Sequential start: sit on the bay until this robot's slot comes up. The
     # timer is local on purpose. The companion attaches some time after the
     # firmware boots, so a robot waiting to be told to hold would already have
@@ -827,7 +833,17 @@ def main(argv=None):
             steering_average += (steering - steering_average) * STEERING_AVERAGE_ALPHA
             base = base_speed
 
-        left, right = differential_speeds(base, steering, control.max_speed)
+        # Accelerate on a ramp; slow instantly. `turner.active` and the
+        # obstacle reflex both drive the motors themselves, so whatever they
+        # leave behind, line following restarts from rest.
+        if turner.active:
+            commanded_base = 0.0
+        elif base <= commanded_base:
+            commanded_base = base
+        else:
+            commanded_base = min(base, commanded_base + control.accel_rad_s2 * dt)
+
+        left, right = differential_speeds(commanded_base, steering, control.max_speed)
         motors["left"].setVelocity(left)
         motors["right"].setVelocity(right)
 

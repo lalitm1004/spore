@@ -91,7 +91,41 @@ defaults:
     latency_s: 0.0
     adc: {bits: 10, full_scale: 1000.0}
   control:
-    base_speed: 6.0          # rad/s at the wheels (~0.12 m/s)
+    # Unladen cruise. 18 rad/s on 20 mm wheels is 0.36 m/s -- 3x what this
+    # ran at for most of its life, and the reason to care is wall clock: a job
+    # that takes a third of the simulated seconds takes a third of the ticks,
+    # and ticks are the only thing the simulator actually spends.
+    #
+    # The ceiling is the QR read, not the motors. The code sits inside the
+    # camera's footprint for 42 mm of travel, so at 62.5 Hz:
+    #
+    #     6 rad/s   1.92 mm/tick   21.9 frames over the code
+    #    18 rad/s   5.76 mm/tick    7.3 frames over the code
+    #    20 rad/s   6.40 mm/tick    6.6 frames over the code
+    #
+    # and the colour trigger has to catch a 20 mm orange band on the way in,
+    # which is 3.5 ticks at 18. Both still have margin; neither does at 20+.
+    #
+    # But the QR read is not what set this number. 18 was tried and measured:
+    # the robots that kept the line covered 61 m where 6 rad/s managed 14, and
+    # two of eight lost it immediately after a turn and halted. Coming out of a
+    # turn the robot carries a few degrees of heading error -- the 500 mm deck
+    # coasts through the turn controller's 2 deg band -- and lateral drift is
+    # v*sin(e) against 10 mm of line:
+    #
+    #     6 rad/s   8.4 mm/s   1.19 s before the array is off the line
+    #    12 rad/s  16.7 mm/s   0.60 s
+    #    18 rad/s  25.1 mm/s   0.40 s
+    #
+    # The PID does not get a third of the time to correct and still win. 12 is
+    # the speed that keeps a margin after a turn; getting back to 18 means
+    # ramping up *after* a turn rather than resuming at cruise, which is a
+    # change to the firmware and not to this number.
+    base_speed: 12.0         # rad/s at the wheels (~0.24 m/s), unladen
+    # Loaded, back to the speed the line follower was tuned at. Inert today:
+    # the network layer never sends `set_mission`, so nothing ever tells a
+    # robot it is carrying anything and every robot runs unladen.
+    laden_speed: 6.0
     max_speed: 20.0
     steering_limit: 8.0
     lost_line_timeout_s: 2.0
@@ -126,7 +160,7 @@ defaults:
 # of a shift. Poses come from the track itself, so changing the window cannot
 # leave stale coordinates behind.
 robots:
-  count: 10
+  count: 8
   spawn: charging
   # Released one at a time rather than all on tick zero. Bays are degree-1
   # spurs pairing onto a shared junction, and a simultaneous start puts both

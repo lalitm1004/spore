@@ -38,7 +38,23 @@ class SensorConfig:
 @dataclass(frozen=True)
 class ControlConfig:
     base_speed: float = 4.0
+    # What the robot does when it is carrying something. An empty robot runs at
+    # `base_speed`; a loaded one drops to this. Defaults to `base_speed`, so a
+    # config that says nothing behaves exactly as it did before.
+    laden_speed: float = None
     max_speed: float = 20.0
+    # How hard the robot may accelerate, in rad/s per second at the wheels.
+    # Deceleration is never limited -- stopping is a safety action and waiting
+    # on a ramp to stop is the wrong trade.
+    #
+    # This exists because speed and turn accuracy are coupled. Coming out of a
+    # turn the robot carries a few degrees of heading error, and lateral drift
+    # is v*sin(e) against 10 mm of line: at 0.12 m/s the PID has 1.19 s to pull
+    # it back, at 0.36 m/s only 0.40 s. Measured at 18 rad/s with no ramp, two
+    # of eight robots lost the line immediately after a turn and halted.
+    # Starting from rest after every turn gives the loop its second back
+    # without giving up speed on the straight.
+    accel_rad_s2: float = 12.0
     steering_limit: float = 6.0
     lost_line_timeout_s: float = 2.0
     # How long the line must actually be gone before the firmware reports it.

@@ -131,6 +131,8 @@ def main(argv=None):
     control = document.get("control") or {}
     defaults = ControlConfig()
     cruise = float(control.get("base_speed", defaults.base_speed))
+    laden = control.get("laden_speed", defaults.laden_speed)
+    laden = cruise if laden is None else float(laden)
     # The uplink gives up at the same moment the firmware does. Any longer and
     # the companion is still waiting on a question the robot has already
     # answered by driving off; any shorter and it abandons replies that would
@@ -139,9 +141,17 @@ def main(argv=None):
 
     policy = CompanionPolicy(
         cruise_speed=cruise,
+        laden_speed=laden,
         min_speed=max(1.0, cruise * 0.25),
         slowdown=0.6,
         mission_duration_s=args.mission_duration,
+        # Configured since the ratchet was found and never passed in, so the
+        # way back up was dead code: a robot that lost the line once stayed
+        # slow for the rest of the run. `speed_recover_after_s` is in every
+        # generated config already.
+        recover_after_s=float(control.get(
+            "speed_recover_after_s", defaults.speed_recover_after_s)),
+        speedup=1.5,
     )
     reader = LineReader()
 
