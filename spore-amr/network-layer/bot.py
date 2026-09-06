@@ -1070,6 +1070,19 @@ class Bot:
         elif update.mission != "CARGO" and self.cargo_state == CS_DROPOFF:
             self.cargo_state = CS_DELIVERED
             log.info("bot-%d: job %s delivered", self.bot_id, job.job_id)
+            # And let go of the goal. It still names the delivery node, which
+            # is where the robot is standing, so the planner answers
+            # ALREADY_THERE and `decide` turns that into "at the goal" -- for
+            # ever, on a transfer node in the middle of the floor, holding a
+            # claim everybody else routes through. `nav_goal` was cleared when
+            # a job was *abandoned* and never when one was finished, so a robot
+            # that did its job correctly was the one that got stuck.
+            #
+            # Cleared rather than pointed somewhere: the jobless branch in
+            # `_route` already sends an idle robot out of the lane, and it only
+            # runs when there is no goal at all.
+            self.nav_goal = None
+            self._last_target = None
 
         # 2. Then decide whether we can still finish. Before pickup the owner
         #    re-queues the job to someone else, so we must drop it — otherwise

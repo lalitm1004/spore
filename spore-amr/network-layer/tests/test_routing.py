@@ -290,3 +290,24 @@ def test_a_declared_claim_carries_the_peers_direction(router):
     dirs = [r.dir for r in seen[0].reservations]
     assert dirs and all(d is not None for d in dirs), \
         "a declared claim carries no direction, so no head-on can ever be seen"
+
+
+def test_finishing_a_job_lets_go_of_the_goal(router):
+    """`nav_goal` was cleared when a job was abandoned and never when one was
+    finished. So a robot that delivered kept a goal naming the node it was
+    standing on, the planner answered ALREADY_THERE, and `decide` turned that
+    into "at the goal" for the rest of the run -- parked on a transfer node
+    holding a claim the rest of the fleet routes through. Doing the job
+    correctly was what got a robot stuck."""
+    from bus.jobs import Job
+    node, _ = _junction(router)
+    router.current_job = Job(job_id="c-1", pickup_node=node, dropoff_node=node)
+    router.cargo_state = "DROPOFF"
+    router.nav_goal = Goal.node(node)
+
+    router._advance_job(botmod.RobotState(
+        latest_node_id=node, region_id=router.region_id, battery=90.0,
+        state="IDLE", mission="IDLE", fault="", job_id="c-1", cargo_state=""))
+
+    assert router.cargo_state == "DELIVERED"
+    assert router.nav_goal is None, "kept a goal naming where it already stands"
