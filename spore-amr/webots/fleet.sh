@@ -96,7 +96,13 @@ case "${1:-help}" in
     # leaves containers attached to a world that no longer has them, and a
     # synchronized robot whose controller never attaches freezes the simulator
     # for everyone else.
-    "${COMPOSE[@]}" up -d --remove-orphans
+    # --force-recreate, because `up` means a fresh run: the artefacts were just
+    # deleted, and a container that survives from the last run keeps writing
+    # into the unlinked files -- the supervisor's replay.csv and every robot's
+    # telemetry simply stop existing on disk. Seen after `chunk`, whose regen
+    # changes the mounted files but not the compose services, so nothing was
+    # recreated and there was no recording to bake.
+    "${COMPOSE[@]}" up -d --remove-orphans --force-recreate
     say "fleet up  --  MODE=$MODE RENDERING=$RENDERING STREAM_MODE=$STREAM_MODE MISSION_DURATION=${MISSION_DURATION}s"
     say "viewer:   $VIEWER"
     say "orders:   http://localhost:8000/   (or ./fleet.sh order <pickup> <dropoff>)"

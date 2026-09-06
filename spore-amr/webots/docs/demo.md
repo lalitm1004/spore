@@ -241,6 +241,17 @@ camera frames under `--no-rendering`, what the ground sensors actually see,
 where marker solids really are. Each was written to answer one question that
 guessing had failed to settle, and each found a real bug.
 
+## Watching it without a GPU
+
+`./fleet.sh view` turns rendering on so the whole map can be streamed as
+MJPEG. That needs a real GPU handed to the container (`compose.gpu.yml`,
+included only where `/dev/dri` exists). Without one Webots falls back to Mesa
+software GL, and on the full 881-node world it **segfaults within minutes** --
+seen on a Mac, exit 139, after every controller had connected. Use
+`./fleet.sh chunk` there instead: a 32 x 16 m window of the same map, rendering
+off server-side, small enough for the browser to draw itself in W3D mode.
+`./fleet.sh gen` restores the full world afterwards.
+
 ## Placing orders
 
 The fleet does nothing useful until it has cargo to move. Orders come in
