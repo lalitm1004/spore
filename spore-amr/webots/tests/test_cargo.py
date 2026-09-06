@@ -116,3 +116,22 @@ def test_an_answer_with_no_mission_leaves_the_job_alone():
     assert network.mission == "CARGO"
     assert network.cargo_state == "PICKUP"
     assert network.cargo_id == "c-1"
+
+
+def test_the_at_the_goal_wait_is_an_arrival():
+    """The planner answers ALREADY_THERE with a WAIT carrying no target at all,
+    so a robot that only watched `target_node_id` never noticed it had arrived
+    and was held on its pickup for the rest of the shift."""
+    class AtGoal(CargoNetwork):
+        def ask(self, query):
+            return Decision(query_id=query.query_id, kind="WAIT", hold_ms=2000,
+                            because="at the goal", mission="CARGO",
+                            cargo_id="c-1", cargo_state="PICKUP")
+
+    navigator = navigator_on_a_lattice()
+    navigator.arrived(3)
+    network = AtGoal(pickup=4, dropoff=0)
+
+    answer_junction(navigator, network, marker_at(4))
+
+    assert network.cargo_state == "EN_ROUTE", "an at-the-goal wait was not read as arriving"

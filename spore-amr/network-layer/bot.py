@@ -1024,6 +1024,9 @@ class Bot:
             obstruct=self.report_obstacle,
             state_factory=RobotState,
             bot_id=self.bot_id,
+            # The robot's stream is the only channel that reaches it, so the
+            # job travels on the answers rather than through RobotSink.
+            job=lambda: (self.current_job, self.cargo_state),
         )
         robot_pb2_grpc.add_RobotNetworkServicer_to_server(self._robot_service, self._grpc_server)
 

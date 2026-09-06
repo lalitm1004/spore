@@ -100,8 +100,15 @@ def answer_junction(navigator, network, event):
         network.cargo_id = decision.cargo_id
         network.cargo_state = decision.cargo_state
 
-    if carries_cargo and network.mission == "CARGO" \
-            and decision.target_node_id == node_id:
+    # Arriving is the network telling us we are there. A PROCEED naming this
+    # node would say so, but the planner does not send one: `ALREADY_THERE`
+    # becomes a WAIT with `because="at the goal"` and no target at all, so
+    # keying on `target_node_id` alone matched nothing and every robot sat on
+    # its pickup being told to hold. Both forms are accepted.
+    arrived = decision.target_node_id == node_id or (
+        decision.is_wait and "at the goal" in decision.because)
+
+    if carries_cargo and network.mission == "CARGO" and arrived:
         # Standing on the node the job named. There is no manipulator to
         # simulate, so collecting and delivering are the reports themselves.
         if network.cargo_state == "PICKUP":

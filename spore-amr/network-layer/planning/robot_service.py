@@ -111,15 +111,39 @@ def query_of(message: robot_pb2.RobotToNetwork) -> Query:
     )
 
 
-def reply_of(decision: Decision) -> robot_pb2.NetworkToRobot:
-    """The planner's answer, on the wire."""
-    return robot_pb2.NetworkToRobot(
+#: Our cargo-state name -> the wire enum. The inverse of `_CARGO`.
+_CARGO_WIRE = {
+    "PICKUP": robot_pb2.CARGO_STATE_PICKUP,
+    "DROPOFF": robot_pb2.CARGO_STATE_DROPOFF,
+    "EN_ROUTE": robot_pb2.CARGO_STATE_EN_ROUTE,
+}
+
+
+def reply_of(decision: Decision, job=None, cargo_state: str = "") -> robot_pb2.NetworkToRobot:
+    """The planner's answer, on the wire.
+
+    `set_mission` rides along because this stream is the only channel that
+    actually reaches the robot. `Bot.handle_assign_job` sends the job through
+    `RobotSink`, whose default implementation is a queue nothing drains -- so
+    the robot was never told it had a job at all. It drove to the pickup node
+    because the *goal* reached it, arrived, and was answered "at the goal" for
+    the rest of the shift, because a job only advances when the robot reports
+    CARGO/EN_ROUTE and it had no idea it was carrying anything.
+
+    Sent on every answer rather than once: a robot that reconnects mid-job has
+    to learn its job again, and there is no other message that would tell it.
+    """
+    reply = robot_pb2.NetworkToRobot(
         target_node_id=decision.target_node_id,
         kind=_KIND.get(decision.kind, robot_pb2.KIND_UNSPECIFIED),
         hold_ms=decision.hold_ms,
         because=decision.because,
         query_id=decision.query_id,
     )
+    if job is not None and cargo_state in _CARGO_WIRE:
+        reply.set_mission.cargo.cargo_id = job.job_id
+        reply.set_mission.cargo.state = _CARGO_WIRE[cargo_state]
+    return reply
 
 
 def state_of(message: robot_pb2.RobotToNetwork, state_factory) -> RobotState:
@@ -190,10 +214,14 @@ class RobotNetworkServicer(robot_pb2_grpc.RobotNetworkServicer):
         obstruct: Callable[[int, float], None],
         state_factory,
         bot_id: int = 0,
+        job=None,
     ) -> None:
         self._router = router
         self._report = report
         self._obstruct = obstruct
+        #: Returns (job, cargo_state) for this bot, or (None, "") when it has
+        #: no job. A callable rather than the bot itself, like the three above.
+        self._job = job or (lambda: (None, ""))
         self._state_factory = state_factory
         self._bot_id = bot_id
         #: Counters, for tests and for anyone wondering whether a robot is
@@ -230,8 +258,9 @@ class RobotNetworkServicer(robot_pb2_grpc.RobotNetworkServicer):
             return None  # telemetry: position noted, nothing asked
 
         query = query_of(message)
+        job, cargo_state = self._job()
         try:
-            return reply_of(self._router(query))
+            return reply_of(self._router(query), job, cargo_state)
         except Exception:
             # Whatever went wrong upstream, the robot is still standing at a
             # node waiting. Hold it briefly and let it ask again rather than
@@ -243,4 +272,4 @@ class RobotNetworkServicer(robot_pb2_grpc.RobotNetworkServicer):
                 kind=DecisionKind.WAIT,
                 hold_ms=int(config.T_BLOCKED_HOLD * 1000),
                 because="planner error",
-            ))
+            ), job, cargo_state)
