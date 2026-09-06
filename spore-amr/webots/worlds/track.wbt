@@ -14622,8 +14622,8 @@ DEF BOT_01 LineBot {
   sensorCount 3
   sensorSpacing 0.02
   sensorHeight 0.015
-  bodyLength 0.5
-  bodyWidth 0.5
+  bodyLength 0.25
+  bodyWidth 0.25
   bodyHeight 0.1
 }
 DEF BOT_02 LineBot {
@@ -14634,8 +14634,8 @@ DEF BOT_02 LineBot {
   sensorCount 3
   sensorSpacing 0.02
   sensorHeight 0.015
-  bodyLength 0.5
-  bodyWidth 0.5
+  bodyLength 0.25
+  bodyWidth 0.25
   bodyHeight 0.1
 }
 DEF BOT_03 LineBot {
@@ -14646,8 +14646,8 @@ DEF BOT_03 LineBot {
   sensorCount 3
   sensorSpacing 0.02
   sensorHeight 0.015
-  bodyLength 0.5
-  bodyWidth 0.5
+  bodyLength 0.25
+  bodyWidth 0.25
   bodyHeight 0.1
 }
 DEF BOT_04 LineBot {
@@ -14658,8 +14658,8 @@ DEF BOT_04 LineBot {
   sensorCount 3
   sensorSpacing 0.02
   sensorHeight 0.015
-  bodyLength 0.5
-  bodyWidth 0.5
+  bodyLength 0.25
+  bodyWidth 0.25
   bodyHeight 0.1
 }
 DEF BOT_05 LineBot {
@@ -14670,44 +14670,8 @@ DEF BOT_05 LineBot {
   sensorCount 3
   sensorSpacing 0.02
   sensorHeight 0.015
-  bodyLength 0.5
-  bodyWidth 0.5
-  bodyHeight 0.1
-}
-DEF BOT_06 LineBot {
-  translation -10.0 -21.0 0.02
-  rotation 0 0 1 -1.5708
-  name "bot_06"
-  controller "<extern>"
-  sensorCount 3
-  sensorSpacing 0.02
-  sensorHeight 0.015
-  bodyLength 0.5
-  bodyWidth 0.5
-  bodyHeight 0.1
-}
-DEF BOT_07 LineBot {
-  translation -4.0 -21.0 0.02
-  rotation 0 0 1 -1.5708
-  name "bot_07"
-  controller "<extern>"
-  sensorCount 3
-  sensorSpacing 0.02
-  sensorHeight 0.015
-  bodyLength 0.5
-  bodyWidth 0.5
-  bodyHeight 0.1
-}
-DEF BOT_08 LineBot {
-  translation 2.0 -21.0 0.02
-  rotation 0 0 1 -1.5708
-  name "bot_08"
-  controller "<extern>"
-  sensorCount 3
-  sensorSpacing 0.02
-  sensorHeight 0.015
-  bodyLength 0.5
-  bodyWidth 0.5
+  bodyLength 0.25
+  bodyWidth 0.25
   bodyHeight 0.1
 }
 DEF SUPERVISOR Robot {

@@ -32,7 +32,7 @@ services:
       GRPC_HOST: 0.0.0.0
       GRPC_PORT: '50051'
       OWN_ADDRESS: bot_01-bot:50051
-      PEER_LEADERS: bot_02-bot:50051,bot_03-bot:50051,bot_04-bot:50051,bot_05-bot:50051,bot_06-bot:50051,bot_07-bot:50051,bot_08-bot:50051
+      PEER_LEADERS: bot_02-bot:50051,bot_03-bot:50051,bot_04-bot:50051,bot_05-bot:50051
       REGION_ID: '3'
       ROBOT_PATIENCE: '6.0'
       WAREHOUSE_MAP: /project/config/warehouse.json
@@ -74,7 +74,7 @@ services:
       GRPC_HOST: 0.0.0.0
       GRPC_PORT: '50051'
       OWN_ADDRESS: bot_02-bot:50051
-      PEER_LEADERS: bot_01-bot:50051,bot_03-bot:50051,bot_04-bot:50051,bot_05-bot:50051,bot_06-bot:50051,bot_07-bot:50051,bot_08-bot:50051
+      PEER_LEADERS: bot_01-bot:50051,bot_03-bot:50051,bot_04-bot:50051,bot_05-bot:50051
       REGION_ID: '3'
       ROBOT_PATIENCE: '6.0'
       WAREHOUSE_MAP: /project/config/warehouse.json
@@ -116,7 +116,7 @@ services:
       GRPC_HOST: 0.0.0.0
       GRPC_PORT: '50051'
       OWN_ADDRESS: bot_03-bot:50051
-      PEER_LEADERS: bot_01-bot:50051,bot_02-bot:50051,bot_04-bot:50051,bot_05-bot:50051,bot_06-bot:50051,bot_07-bot:50051,bot_08-bot:50051
+      PEER_LEADERS: bot_01-bot:50051,bot_02-bot:50051,bot_04-bot:50051,bot_05-bot:50051
       REGION_ID: '3'
       ROBOT_PATIENCE: '6.0'
       WAREHOUSE_MAP: /project/config/warehouse.json
@@ -158,7 +158,7 @@ services:
       GRPC_HOST: 0.0.0.0
       GRPC_PORT: '50051'
       OWN_ADDRESS: bot_04-bot:50051
-      PEER_LEADERS: bot_01-bot:50051,bot_02-bot:50051,bot_03-bot:50051,bot_05-bot:50051,bot_06-bot:50051,bot_07-bot:50051,bot_08-bot:50051
+      PEER_LEADERS: bot_01-bot:50051,bot_02-bot:50051,bot_03-bot:50051,bot_05-bot:50051
       REGION_ID: '3'
       ROBOT_PATIENCE: '6.0'
       WAREHOUSE_MAP: /project/config/warehouse.json
@@ -200,133 +200,7 @@ services:
       GRPC_HOST: 0.0.0.0
       GRPC_PORT: '50051'
       OWN_ADDRESS: bot_05-bot:50051
-      PEER_LEADERS: bot_01-bot:50051,bot_02-bot:50051,bot_03-bot:50051,bot_04-bot:50051,bot_06-bot:50051,bot_07-bot:50051,bot_08-bot:50051
-      REGION_ID: '3'
-      ROBOT_PATIENCE: '6.0'
-      WAREHOUSE_MAP: /project/config/warehouse.json
-    image: amr-bot:dev
-    init: true
-    mem_limit: 192m
-    volumes:
-    - ./:/project:ro
-    working_dir: /app
-  bot_06:
-    cpus: '1.0'
-    depends_on:
-    - sim
-    - bot_06-bot
-    environment:
-      CONFIG: /project/config/bot_06.yaml
-      MISSION_DURATION: ${MISSION_DURATION:-120}
-      NETWORK_ADDRESS: bot_06-bot:50051
-      PYTHONPATH: /network-layer
-      ROBOT_NAME: bot_06
-      SIM_HOST: sim
-      TELEMETRY: /project/out/bot_06.csv
-      WAREHOUSE_MAP: /project/config/warehouse.json
-    image: sih2026/controller:dev
-    init: true
-    mem_limit: 256m
-    user: ${DOCKER_USER:-1000:1000}
-    volumes:
-    - ./:/project
-    - ../network-layer:/network-layer:ro
-    working_dir: /project
-  bot_06-bot:
-    build:
-      context: ../network-layer
-    cpus: '0.5'
-    environment:
-      ADMIN_ENABLED: '1'
-      BOT_ID: '5'
-      GRPC_HOST: 0.0.0.0
-      GRPC_PORT: '50051'
-      OWN_ADDRESS: bot_06-bot:50051
-      PEER_LEADERS: bot_01-bot:50051,bot_02-bot:50051,bot_03-bot:50051,bot_04-bot:50051,bot_05-bot:50051,bot_07-bot:50051,bot_08-bot:50051
-      REGION_ID: '3'
-      ROBOT_PATIENCE: '6.0'
-      WAREHOUSE_MAP: /project/config/warehouse.json
-    image: amr-bot:dev
-    init: true
-    mem_limit: 192m
-    volumes:
-    - ./:/project:ro
-    working_dir: /app
-  bot_07:
-    cpus: '1.0'
-    depends_on:
-    - sim
-    - bot_07-bot
-    environment:
-      CONFIG: /project/config/bot_07.yaml
-      MISSION_DURATION: ${MISSION_DURATION:-120}
-      NETWORK_ADDRESS: bot_07-bot:50051
-      PYTHONPATH: /network-layer
-      ROBOT_NAME: bot_07
-      SIM_HOST: sim
-      TELEMETRY: /project/out/bot_07.csv
-      WAREHOUSE_MAP: /project/config/warehouse.json
-    image: sih2026/controller:dev
-    init: true
-    mem_limit: 256m
-    user: ${DOCKER_USER:-1000:1000}
-    volumes:
-    - ./:/project
-    - ../network-layer:/network-layer:ro
-    working_dir: /project
-  bot_07-bot:
-    build:
-      context: ../network-layer
-    cpus: '0.5'
-    environment:
-      ADMIN_ENABLED: '1'
-      BOT_ID: '6'
-      GRPC_HOST: 0.0.0.0
-      GRPC_PORT: '50051'
-      OWN_ADDRESS: bot_07-bot:50051
-      PEER_LEADERS: bot_01-bot:50051,bot_02-bot:50051,bot_03-bot:50051,bot_04-bot:50051,bot_05-bot:50051,bot_06-bot:50051,bot_08-bot:50051
-      REGION_ID: '3'
-      ROBOT_PATIENCE: '6.0'
-      WAREHOUSE_MAP: /project/config/warehouse.json
-    image: amr-bot:dev
-    init: true
-    mem_limit: 192m
-    volumes:
-    - ./:/project:ro
-    working_dir: /app
-  bot_08:
-    cpus: '1.0'
-    depends_on:
-    - sim
-    - bot_08-bot
-    environment:
-      CONFIG: /project/config/bot_08.yaml
-      MISSION_DURATION: ${MISSION_DURATION:-120}
-      NETWORK_ADDRESS: bot_08-bot:50051
-      PYTHONPATH: /network-layer
-      ROBOT_NAME: bot_08
-      SIM_HOST: sim
-      TELEMETRY: /project/out/bot_08.csv
-      WAREHOUSE_MAP: /project/config/warehouse.json
-    image: sih2026/controller:dev
-    init: true
-    mem_limit: 256m
-    user: ${DOCKER_USER:-1000:1000}
-    volumes:
-    - ./:/project
-    - ../network-layer:/network-layer:ro
-    working_dir: /project
-  bot_08-bot:
-    build:
-      context: ../network-layer
-    cpus: '0.5'
-    environment:
-      ADMIN_ENABLED: '1'
-      BOT_ID: '7'
-      GRPC_HOST: 0.0.0.0
-      GRPC_PORT: '50051'
-      OWN_ADDRESS: bot_08-bot:50051
-      PEER_LEADERS: bot_01-bot:50051,bot_02-bot:50051,bot_03-bot:50051,bot_04-bot:50051,bot_05-bot:50051,bot_06-bot:50051,bot_07-bot:50051
+      PEER_LEADERS: bot_01-bot:50051,bot_02-bot:50051,bot_03-bot:50051,bot_04-bot:50051
       REGION_ID: '3'
       ROBOT_PATIENCE: '6.0'
       WAREHOUSE_MAP: /project/config/warehouse.json
@@ -341,7 +215,7 @@ services:
       context: ../../spore-control-plane
     cpus: '0.25'
     environment:
-      BOT_ADDRESSES: bot_01-bot:50051,bot_02-bot:50051,bot_03-bot:50051,bot_04-bot:50051,bot_05-bot:50051,bot_06-bot:50051,bot_07-bot:50051,bot_08-bot:50051
+      BOT_ADDRESSES: bot_01-bot:50051,bot_02-bot:50051,bot_03-bot:50051,bot_04-bot:50051,bot_05-bot:50051
       WAREHOUSE_MAP: /project/config/warehouse.json
     image: spore-control-plane:dev
     init: true

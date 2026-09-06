@@ -39,9 +39,23 @@ robot:
   # 20 mm and the tiles are 100 mm, so the IR spacing and the camera footprint
   # stay matched to those and ride a boom ahead of the deck instead of scaling
   # with it. See the note at the top of protos/LineBot.proto.
-  body_length: 0.50
-  body_width: 0.50
+  body_length: 0.25
+  body_width: 0.25
   body_height: 0.10
+  # 250 mm, not the 500 it was briefly. 500 is a realistic warehouse AMR and it
+  # drove fine, but it is a quarter of a 2 m lane, and two robots plus any
+  # following distance no longer fit in one. That made the obstacle reflex the
+  # normal case rather than the exception: four of eight robots sat in BACKING
+  # at the end of a run. 250 mm is still five times the original breadboard and
+  # leaves the lane usable.
+  #
+  # It does NOT fix a head-on. Lanes are a single painted line and there is no
+  # passing, so two robots meeting nose to nose in one deadlock at any size --
+  # see network-layer/TODO.md E3, which is unticked. Reservations are per NODE
+  # (PROTOCOL.md 15, "two robots, one node"), so two robots each holding a
+  # different legitimate node while filling the lane between them violate
+  # nothing. Fewer robots makes the meeting rarer, not impossible.
+  #
   # Measured cost of the change, against the 120 x 90 chassis it replaced:
   # median fix error 4 -> 6 mm and median heading 0.2 -> 0.1 deg, which is a
   # wash, but worst-case heading went from 1.5 deg to 4 deg typical and has
@@ -160,7 +174,7 @@ defaults:
 # of a shift. Poses come from the track itself, so changing the window cannot
 # leave stale coordinates behind.
 robots:
-  count: 8
+  count: 5
   spawn: charging
   # Released one at a time rather than all on tick zero. Bays are degree-1
   # spurs pairing onto a shared junction, and a simultaneous start puts both
