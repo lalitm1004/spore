@@ -210,3 +210,33 @@ def test_no_robot_is_left_with_nowhere_to_go(fleet):
     """
     assert "nowhere to go from here" not in logs(), \
         "a robot was offered no exit; see Graph.exits_from"
+
+
+def test_an_order_placed_on_the_live_fleet_is_taken_and_driven(fleet):
+    """The thing this fleet is for, end to end: cargo in through the control
+    plane, a bot assigned by the leader, and a robot that actually sets off for
+    the pickup — reading QR tiles and claiming nodes as it goes.
+
+    Nodes are chosen from the window map the robots drive, two pass-through
+    nodes far apart, so the pickup is somewhere a robot has to travel to.
+    """
+    window = json.loads((FLEET / "config" / "warehouse.json").read_text())
+    passthrough = [int(n["id"]) for n in window["nodes"] if n.get("node_type") == "PT"]
+    assert len(passthrough) >= 2, "the window has no lanes to drive"
+    pickup, dropoff = passthrough[0], passthrough[-1]
+
+    placed = fleet_sh("order", str(pickup), str(dropoff), timeout=120)
+    assert placed.returncode == 0, placed.stderr or placed.stdout
+
+    def held():
+        state = fleet_state()
+        return [j for j in state.get("jobs", []) if j.get("assignee") is not None]
+    jobs = wait_for(held, "the order to be assigned to a bot")
+    assignee = jobs[0]["assignee"]
+
+    def assignee_moved():
+        state = fleet_state()
+        me = [p for p in state.get("roster", []) if p["bot_id"] == assignee]
+        return me and len(me[0]["trail"]) >= 2 and me[0]
+    robot = wait_for(assignee_moved, f"bot-{assignee} to leave its bay for the pickup")
+    assert robot["trail"][0] != robot["trail"][1], "it is holding the job and standing still"

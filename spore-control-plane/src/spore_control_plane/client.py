@@ -7,7 +7,7 @@ WHAT
       so we don't pay a TCP + HTTP/2 handshake per RPC.
 
 WHERE
-    Imported by `discovery` and `submitter`.
+    Imported by `submitter`.
 
 WHY
     gRPC channels reconnect on their own; keeping one alive per bot is cheaper

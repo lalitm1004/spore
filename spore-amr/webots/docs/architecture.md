@@ -72,10 +72,11 @@ stops at the next junction with nothing to tell it where to go.
 
 ## 3. Pure core, thin adapter
 
-Only `robot/main.py` and `robot/supervisor.py` import the Webots API.
-Everything else is pure: no I/O, no simulator, host-testable. That is what made
-the firmware/companion split cheap — the control modules moved across
-untouched — and it is why 167 tests run in about a second.
+The invariant is `CLAUDE.md`'s ("Only `robot/main.py` and `robot/supervisor.py`
+import the Webots API"); this section is what it bought. Everything else is
+pure: no I/O, no simulator, host-testable. That is what made the
+firmware/companion split cheap — the control modules moved across untouched —
+and it is why the suite runs in about a second.
 
 ```
 robot/
@@ -397,8 +398,9 @@ using the two message schemas, and that gap is worth closing deliberately:
 
 Collected because each one cost an hour and none is guessable from the code.
 
-- Ten robots on random routes **jam**, and that is the result rather than a
-  bug. It is the argument for coordination in one measurement.
+- Ten robots with no coordination **jam** -- measured before the network layer
+  ran here. It is the argument for coordination in one measurement, and the
+  baseline the fleet is scored against.
 - `optics.enabled` was derived from the manifest's marker list, which a graph
   track leaves empty — so every graph world silently ran with its cameras off.
 - Turning read as a line loss, so the companion throttled after every turn.

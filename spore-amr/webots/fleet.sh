@@ -187,6 +187,9 @@ state = {
     'roster': [{'bot_id': p.bot_id, 'node': p.latest_node_id,
                 'trail': list(p.node_trail)} for p in st.roster],
     'claims': [[c.bot_id, c.node_id] for c in st.reservations],
+    'jobs': [{'job_id': j.job_id, 'status': j.status,
+              'assignee': j.assignee if j.HasField('assignee') else None} for j in st.jobs],
+    'holding': {p.bot_id: p.job_id for p in st.roster if p.job_id},
 }
 if '${fmt}' == 'json':
     print(json.dumps(state))
@@ -195,6 +198,8 @@ else:
     for p in sorted(state['roster'], key=lambda p: p['bot_id']):
         print('   bot-%-2d node %-6s trail %s' % (p['bot_id'], p['node'] or '-', p['trail']))
     print('claims:', state['claims'] or 'none')
+    for j in state['jobs']:
+        print('job %-10s %-10s bot %s' % (j['job_id'], j['status'], j['assignee'] if j['assignee'] is not None else '-'))
 \""
     ;;
 

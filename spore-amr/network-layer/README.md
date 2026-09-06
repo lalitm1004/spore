@@ -29,7 +29,8 @@ bus/
   jobs.py            job ledger, dispatcher, forwarding, observation
   policy.py          the "virtual network": who may call which service
   rpc.py             persistent gRPC channels
-  admin.py           AdminService: inspect a bot / inject robot state (ADMIN_ENABLED only)
+  admin.py           AdminService.GetState: inspect a bot, read-only (ADMIN_ENABLED only)
+  control_plane.py   ControlPlaneService: where cargo orders enter, served by every bot
 election/
   bully.py           bully election + abdication
   priority.py        priority formula (health, battery buckets, hysteresis)
@@ -54,7 +55,7 @@ reservations/
 peers/table.py       roster, other-region leaders, migration ledgers
 warehouse/map.py     warehouse-layout.json → node→region, hop distances
 proto/fleet.proto    the wire schema (+ generated fleet_pb2*.py)
-up.py / down.py      local Docker orchestration
+up.py / down.py      local Docker orchestration; down.py also sweeps fleets a killed test run left behind
 tests/               pytest: test_unit.py, test_protocol.py, test_jobs.py, containers/ (the scenario tier)
 ```
 
@@ -121,8 +122,12 @@ The bot talks to the robot through two small interfaces in `bot.py`:
 | `cargo_state` | when `mission == CARGO`: `PICKUP` (heading there), `EN_ROUTE` (cargo on board), `DROPOFF` (at destination). The bot infers **delivered** when the mission leaves `CARGO` after `DROPOFF` |
 | `fault` | flatten the schema's fault object to a string: the error/warning type, e.g. `"MOTOR_ERROR"`, `"LOW_BATTERY:12"`; empty when healthy |
 
-The defaults (`QueueRobotSource` / `QueueRobotSink`) are queues — push
-states in, pop commands out — which is also how the tests simulate a robot.
+The default source is `LatestRobotState`, a slot holding the newest report --
+not a queue, on purpose: the loop reads once per tick and a robot on a stream
+reports every marker, so a FIFO would feed it positions the robot left long ago
+(`docs/location.md`). In practice nothing constructs one by hand: the robot's
+companion speaks `RobotNetwork.Session` and `planning/robot_service.py` fills it.
+`QueueRobotSink` is still a queue -- commands out are rare.
 
 `Bot.control_plane` is a callable that receives `NEEDS_ATTENTION` job
 escalations (cargo stuck on a broken bot). Replace it with your client; the

@@ -1,8 +1,9 @@
 # Running the fleet demo
 
 Ten robots on the whole 114 x 60 m warehouse layout — 881 nodes — parked on
-charging bays and released one at a time, each with its own network layer
-handing it random turns at every junction. Every command runs from the repo root — the volume
+charging bays and released one at a time, each with its own network-layer bot
+in the container beside it: elections, reservations, cargo jobs, and a planned
+answer at every junction. Every command runs from the repo root — the volume
 mount is `./:/project`, so `./` is your shell's directory, not the compose
 file's.
 
@@ -169,7 +170,8 @@ the crossing state, the obstacle state, lidar range, and the node last read.
 
 ## The thing worth pointing at
 
-**Ten robots on random routes will jam, and that is the result, not a bug.**
+**Ten robots with no coordination jam -- measured, before the network layer
+ran here -- and that is the baseline this fleet is judged against.**
 
 On the real layout this is sharper than on a lattice: charging bays are
 degree-1 spurs and they pair onto a single junction, so two robots leaving
@@ -189,9 +191,8 @@ added: one robot spent **69% of a run** parked behind another.
 
 That is the argument for the real network layer in one picture. Coordination is
 not a nicety on top of a working fleet — without it, ten robots spend most of
-their time waiting for each other. The random router is the floor
-any allocation algorithm has to beat, and it is deliberately the dumbest thing
-that still exercises the whole path.
+their time waiting for each other. That uncoordinated run is the floor the
+network layer has to beat; `./fleet.sh score` is how you check it did.
 
 The reflex now gives up holding after 8 seconds and retries. That does not
 resolve the conflict — resolving it is the network layer's job and the reflex
@@ -239,3 +240,26 @@ Single-purpose diagnostics live in `tools/spike_*.py` — device inventory,
 camera frames under `--no-rendering`, what the ground sensors actually see,
 where marker solids really are. Each was written to answer one question that
 guessing had failed to settle, and each found a real bug.
+
+## Placing orders
+
+The fleet does nothing useful until it has cargo to move. Orders come in
+through the control plane, which `fleet.sh up` starts beside the robots:
+
+```bash
+./fleet.sh order 113 129          # pickup node 113, dropoff node 129
+open http://localhost:8000/       # or the same thing through a form
+```
+
+The control plane hands the order to any bot it can reach and the fleet routes
+it -- a non-leader forwards to its leader, the leader assigns the nearest free
+bot. Watch it land:
+
+```bash
+./fleet.sh where     # roster, claims, and who holds which job
+./fleet.sh fleet     # the coordination log: leaders, assignments, yields
+./fleet.sh robots    # the driving: distance, obstacles, who is stuck
+```
+
+Node ids are those of the window in `config/warehouse.json`; the form only
+offers ones that exist.

@@ -15,10 +15,11 @@ Covers the full gRPC communication design: topology, message schemas, RPC contra
 | Migration state machine + destination join | `bus/migration.py` | `Migrator` (bot side, retries, reconcile) + `MigrationJoinServicer` |
 | Jobs: ledger, dispatch, forwarding, observation | `bus/jobs.py` | `Dispatcher` (leader side) + `JobServicer` / `BotServicer`; §14 |
 | Warehouse graph: node → region, hop distance | `warehouse/map.py` | Loaded from `warehouse-layout.json`; §14 |
-| Pathfinding: the search, traffic, routes, and the robot link | `planning/` | `sipp.py` + `cost.py` + `traffic.py` (the search), `decide.py` + `server.py` (the robot); §16 |
+| Pathfinding: the search, traffic, routes, and the robot link | `planning/` | `sipp.py` + `cost.py` + `traffic.py` (the search), `decide.py` + `robot_service.py` (the robot link); §16 |
 | Reservations: claims, who gives way, who to tell | `reservations/` | `claims.py` + `ledger.py` + `vicinity.py` (rules), `sender.py` + `server.py` (wire); §15 |
 | Virtual network (who may call what) | `bus/policy.py` | gRPC server interceptor; §12 |
-| Admin: introspection + robot-state injection | `bus/admin.py` | `ADMIN_ENABLED` only; used by the Docker harness; §13 |
+| Admin: introspection, read-only | `bus/admin.py` | `ADMIN_ENABLED` only; the container tier and `fleet.sh where` inspect bots through it; §13 |
+| Orders in | `bus/control_plane.py` | `ControlPlaneService.DispatchOrder`, served by every bot; §11.2, §14.5 |
 | Persistent gRPC channels | `bus/rpc.py` | One channel per peer, low reconnect backoff |
 | Bully election + abdication | `election/bully.py` | §5 |
 | Priority formula + hysteresis | `election/priority.py` | §5.6 |
@@ -790,7 +791,7 @@ early; a successful `MigrationJoin` clears `pending_incoming` early.
 | `ROUTE_ALTERNATES` | 3 | Alternative routes kept per job, stored as diffs (§16) |
 | `HOPS_CACHE_SIZE` | 64 | Distance tables cached per source node; bounded on purpose (§16) |
 | `BATTERY_CRITICAL` | 15% | Below this the planner weights charge over speed (§16) |
-| `ADMIN_ENABLED` | 0 | Serve `AdminService` (introspection, robot-state injection); `up.py` sets 1 |
+| `ADMIN_ENABLED` | 0 | Serve `AdminService` (`GetState`, read-only); `up.py` and the demo fleet set 1 |
 | `GRPC_PORT` | 50051 | Port each bot listens on |
 
 ---
@@ -1698,7 +1699,8 @@ extra messages from the bot.
 
 | Piece | Where | Notes |
 |---|---|---|
-| `JobService.SubmitJob` | every bot | any authenticated caller (§12) |
+| `ControlPlaneService.DispatchOrder` | every bot | how orders arrive from outside: the control plane's own proto, translated to a `Job` by `bus/control_plane.py` (§11.2) |
+| `JobService.SubmitJob` | every bot | the same door in the fleet's own shape; any authenticated caller (§12) |
 | `BotService.AssignJob` | every bot | leaders only (§12) |
 | `LeaderExchangeService.ForwardJob` / `JobEvent` | leaders | leaders only |
 | `HeartbeatRequest.job_id / cargo_state`, `PeerRecord.{job_id, cargo_state, mission, fault}` | heartbeats / acks | the job travels with the bot; region-mates see who is busy or broken |

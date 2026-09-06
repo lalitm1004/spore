@@ -139,112 +139,23 @@ role = "control"
 
 ---
 
-## Integration: exact edits to the network layer
+## Integration: done, and where it lives
 
-The fleet must implement `ControlPlaneService`. Because the routing already
-exists (`bus/jobs.py: Dispatcher.submit` forwards follower→leader and
-leader→pickup-region-leader), this is a thin adapter — three small edits, no
-changes to the fleet's protocol logic.
+This section used to be a copy-pasteable edit list for the network layer. The
+edits are made, so the list is replaced by the map of where they landed:
 
-### 1. Copy the proto and regenerate stubs
+| edit | where |
+|---|---|
+| the proto, vendored | `network-layer/proto/controlplane.proto` — byte-identical to this project's; `tests/test_control_plane.py` fails on drift |
+| the servicer | `network-layer/bus/control_plane.py` — `Order` → `Job` → `Dispatcher.submit`; nothing else |
+| registered on every bot | `bot.py:_start_grpc_server` |
+| admitted by the virtual network | `bus/policy.py:_allowed`, alongside `JobService` |
+| in the demo fleet | `webots/tools/gen_fleet.py` emits a `control` service with every bot's address; `fleet.sh order` places one |
 
-Copy `proto/controlplane.proto` into `network-layer/proto/`, then (mirroring
-`network-layer/README.md`):
-
-```bash
-uv run python -m grpc_tools.protoc -I proto --python_out=proto --grpc_python_out=proto proto/controlplane.proto
-sed -i 's/^import controlplane_pb2/from proto import controlplane_pb2/' proto/controlplane_pb2_grpc.py
-```
-
-This produces `proto/controlplane_pb2.py` and `proto/controlplane_pb2_grpc.py`
-with the service name `controlplane.ControlPlaneService` (what the policy check
-below must match).
-
-### 2. Add a servicer (`network-layer/bus/controlplane.py`)
-
-```python
-"""ControlPlaneService — the control plane's own contract (see spore-control-plane).
-
-Thin adapter: DispatchOrder maps an Order onto the existing job dispatcher,
-which already routes (follower -> its leader; leader -> pickup region's leader).
-"""
-from __future__ import annotations
-
-from typing import TYPE_CHECKING
-
-from proto import controlplane_pb2, controlplane_pb2_grpc
-from bus.jobs import Job
-
-if TYPE_CHECKING:
-    from bot import Bot
-
-
-class ControlPlaneServicer(controlplane_pb2_grpc.ControlPlaneServiceServicer):
-    def __init__(self, bot: Bot) -> None:
-        self._bot = bot
-
-    def DispatchOrder(self, request, context):
-        if not request.order_id:
-            return controlplane_pb2.DispatchAck(accepted=False, note="order_id required")
-        job = Job(
-            job_id=request.order_id,
-            pickup_node=request.pickup_node,
-            dropoff_node=request.dropoff_node,
-        )
-        # Dispatcher.submit already routes: follower -> its leader; leader ->
-        # pickup node's region leader. Idempotent on job_id == order_id.
-        ack = self._bot.dispatcher.submit(job)
-        resp = controlplane_pb2.DispatchAck(
-            accepted=ack.accepted, owner_region=ack.owner_region, note=ack.note
-        )
-        if ack.HasField("assignee"):
-            resp.assignee = ack.assignee
-        return resp
-```
-
-### 3. Register it on every bot (`network-layer/bot.py`)
-
-In `Bot._start_grpc_server` (next to the other `add_*_Servicer_to_server`
-calls), add:
-
-```python
-from proto import controlplane_pb2_grpc  # top of file
-from bus.controlplane import ControlPlaneServicer  # top of file
-# ...inside _start_grpc_server:
-controlplane_pb2_grpc.add_ControlPlaneServiceServicer_to_server(
-    ControlPlaneServicer(self), self._grpc_server
-)
-```
-
-### 4. Admit it in the virtual network (`network-layer/bus/policy.py`)
-
-```python
-if service == "controlplane.ControlPlaneService":
-    return True  # any authenticated caller; see reserved identity note
-```
-
-(The metadata parser above already requires `bot-id`/`region-id`/`role` to be
-present, so an unauthenticated caller is still refused. For stricter isolation,
-gate on `caller_id == 9000`.)
-
-### Integration notes
-
-- **No `ADMIN_ENABLED` needed** — this is a dedicated service, not
-  `AdminService`.
-- **No bot-to-bot delegation needed** — a follower that receives `DispatchOrder`
-  forwards internally via `Dispatcher.submit` (using `JobService`, not
-  `ControlPlaneService`), so the policy only has to admit the control plane's
-  own identity.
-- **Same network required** — the control plane's `BOT_ADDRESSES` must reach the
-  bots (same Docker bridge locally, same cluster/DNS in K8s). For a local dev
-  fleet, that's `amr-region-14-bot-0:50051`, … as `up.py` names them.
-- **Reserved id must stay out of the fleet's id space** (`BOT_ID < 100`). Keep
-  `CONTROL_BOT_ID` at a value that never collides.
-- **Idempotency is inherited** — `Dispatcher.take` already dedupes on `job_id`,
-  and `order_id` becomes `job_id`, so the control plane's retries are safe with
-  zero extra work on the fleet side.
-
----
+The one design point worth keeping from the old list: `Order` maps onto the
+dispatcher's existing entry, not onto a second path. Idempotency, forwarding,
+queueing and retry all live in `bus/jobs.py`, and a second implementation of
+any of them would be a second thing to keep right.
 
 ## Acceptance checklist for integration
 

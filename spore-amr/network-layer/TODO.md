@@ -71,7 +71,7 @@ refer to `PROTOCOL.md`.
 
 - [x] `up.py` on the Docker SDK: labels, per-network isolation, `PEER_LEADERS`, unique ids, map bind-mount, `ADMIN_ENABLED`
 - [x] `down.py` removes only fleet containers, then the network
-- [x] `AdminService`: `GetState`, `InjectRobotState` (gated by `ADMIN_ENABLED`)
+- [x] `AdminService`: `GetState` only, read-only (gated by `ADMIN_ENABLED`). The injection RPCs are gone -- a robot reports over its own stream
 
 ## Reservations (§15)
 
@@ -147,3 +147,12 @@ test has no row, so the contract cannot quietly stop being true.
       that robot down. `InjectObstruction` is gone
 
 ---
+
+## Cleanliness pass (September 2026)
+
+- [x] Every timeout, sleep and hold reads from `config.py`; a test fails on a bare number outside it
+- [x] One implementation per helper within a project (BFS, claim window, `wait_until`, replay loaders); cross-project twins name each other
+- [x] `PROTOCOL.md` §11 embeds each proto verbatim, guarded; the hand-written mirrors are pinned to the wire
+- [x] The container tier is a package, one file per scenario letter, parallel by default, and sweeps what an interrupted run left behind
+- [x] Orders can be placed on the live simulator fleet (`fleet.sh order`), and a simulator scenario proves one is taken and driven
+- [ ] `PeerTable.region_locations()` is collected on every leader beat and read by nobody -- a design question, not a bug

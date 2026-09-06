@@ -80,18 +80,16 @@ sed -i 's/^import controlplane_pb2/from spore_control_plane.proto import control
   src/spore_control_plane/proto/controlplane_pb2_grpc.py
 ```
 
-## What the network layer must implement
+## The network layer's side
 
-The full, copy-pasteable edit list is in
-[`DOCUMENTATION.md`](DOCUMENTATION.md#integration-exact-edits-to-the-network-layer).
-In short — four edits, no changes to the fleet's protocol logic:
-
-1. Copy `proto/controlplane.proto` and regenerate its stubs.
-2. Add a `ControlPlaneServicer` (`DispatchOrder` → maps `Order` to the existing
-   `Dispatcher.submit`, which already routes to the right leader).
-3. Register it on every bot in `bot.py:_start_grpc_server`.
-4. Add a policy entry in `bus/policy.py:_allowed` for
-   `controlplane.ControlPlaneService`.
+Implemented: `spore-amr/network-layer/bus/control_plane.py` serves
+`ControlPlaneService.DispatchOrder` on every bot, translating an `Order` to the
+fleet's own `Job` and handing it to the existing dispatcher, which already
+routes follower → leader → pickup region's leader. The proto is vendored into
+`network-layer/proto/` with a test that fails if the copy drifts from this one.
+Proven on real containers by scenarios B13–B19 in
+`network-layer/docs/scenarios.md`, and placed on the live simulator fleet with
+`spore-amr/webots/fleet.sh order <pickup> <dropoff>`.
 
 ## Tests
 
