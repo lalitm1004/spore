@@ -460,6 +460,18 @@ def main(argv=None):
                     running = False
                 elif command.name == "START":
                     running = True
+                elif command.name == "HOLD":
+                    # The network layer has answered "not yet": the lane ahead
+                    # is taken, or there is no job to go anywhere for. Stay on
+                    # the node and ask again when the hold is up -- the wait
+                    # clock restarts from then, so a held robot never times
+                    # out into "carrying on", which off the end of a bay is a
+                    # drive into nothing and a lost-line spin.
+                    hold_until = now + float(command.fields.get("ms", 0)) / 1000.0
+                    awaiting_since = hold_until
+                    pending_bearing = None
+                    print("{}: holding {:.0f} ms".format(
+                        config.name, float(command.fields.get("ms", 0))), flush=True)
                 elif command.name == "TURN":
                     # The network layer has answered. Rotate in place to the
                     # absolute heading it named, then pick the line back up.
