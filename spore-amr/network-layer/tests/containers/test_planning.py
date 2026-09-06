@@ -162,5 +162,12 @@ def test_C8_an_unreachable_goal_is_said_out_loud(fleet):
 
     reply = fleet.ask(cs[0], _query(node, _neighbours(node)))
     assert reply is not None
-    assert _kind(reply) == "WAIT"
-    assert reply.because, "a wait with no reason is a wait nobody can debug"
+    # Note this bot is placed with no job rather than with a goal it cannot
+    # reach, so what it exercises is the jobless path. That path now sends the
+    # robot out of the lane instead of parking it in one; either way the
+    # guarantee this test exists for is the same -- an answer, with a reason.
+    if _kind(reply) == "WAIT":
+        assert reply.because, "a wait with no reason is a wait nobody can debug"
+        assert reply.hold_ms > 0
+    else:
+        assert reply.target_node_id, "sent somewhere without saying where"

@@ -633,11 +633,28 @@ class Bot:
         # exactly that -- and the planner would then be handed no goal at all.
         goal = self.nav_goal
         if goal is None:
-            return Decision(
-                query_id=query.query_id, kind=DecisionKind.WAIT,
-                hold_ms=int(config.T_ARRIVED_HOLD * 1000),
-                because="no job",
-            )
+            # Get out of the lane. A robot that has just delivered is standing
+            # on a transfer node in the middle of the floor with nothing to do,
+            # and telling it to wait there leaves it holding a claim on a node
+            # everybody else routes through. Measured: four of five robots
+            # finished their jobs and parked exactly where they finished, and
+            # the fleet spent the rest of the run queueing behind robots that
+            # were done.
+            #
+            # So an idle robot goes somewhere it is not in the way: a yield bay
+            # if the map has one nearby, else a junction, else parking or a
+            # charger. `choose_yield_spot` already runs that exact cascade for
+            # the robot that loses a contest, and standing aside with no job is
+            # the same problem with a longer fuse.
+            spot = self._somewhere_out_of_the_way(query.node_id)
+            if spot is not None and spot != query.node_id:
+                goal = Goal.node(spot)
+            else:
+                return Decision(
+                    query_id=query.query_id, kind=DecisionKind.WAIT,
+                    hold_ms=int(config.T_ARRIVED_HOLD * 1000),
+                    because="no job, nowhere better to stand",
+                )
 
         now = now_ms()
         observations = self._observations()
@@ -803,6 +820,31 @@ class Bot:
             for peer in self.peer_table.all_peers()
             if peer.bot_id != self.bot_id
         )
+
+    def _somewhere_out_of_the_way(self, node_id: int) -> int | None:
+        """Where an idle robot should go so it is not blocking a lane.
+
+        A yield bay first, then a junction, then parking or a charger -- the
+        cascade `decide.choose_yield_spot` already implements, and the reason it
+        cascades is that real yield bays are scarce. Nodes another robot has
+        claimed are avoided, so standing aside does not simply move the problem.
+        """
+        if self.graph is None or self.topology is None:
+            return None
+        try:
+            here = self.graph.index(node_id)
+        except (KeyError, ValueError):
+            return None
+        occupied = frozenset(
+            self.graph.index(claim.node_id)
+            for claim in self.ledger.peer_claims()
+            if self.graph.has_id(claim.node_id)
+        )
+        spot = decide_module.choose_yield_spot(
+            self.graph, self.topology, here,
+            radius=self.planning.yield_search_hops, avoid=occupied,
+        )
+        return self.graph.id_of(spot) if spot is not None else None
 
     def _congestion(self) -> tuple:
         """Where the other robots are, as a per-node load the search can price.

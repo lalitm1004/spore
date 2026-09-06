@@ -38,8 +38,15 @@ def test_A1_a_bot_with_no_job_still_answers(one_bot):
 
     reply = fleet.ask(cs[0], _query(node, _neighbours(node)))
     assert reply is not None, "the bot said nothing at all"
-    assert _kind(reply) == "WAIT"
-    assert reply.hold_ms > 0, "a zero hold would have it ask in a tight loop"
+    # It used to be told to wait where it stood. A jobless robot is now sent
+    # somewhere it is not blocking a lane, and only told to wait when there is
+    # nowhere better -- so the guarantee is that it answers, and that the answer
+    # is actionable either way.
+    if _kind(reply) == "WAIT":
+        assert reply.hold_ms > 0, "a zero hold would have it ask in a tight loop"
+    else:
+        assert _kind(reply) in ("PROCEED", "REROUTE")
+        assert reply.target_node_id, "sent somewhere without saying where"
 
 
 @pytest.mark.docker

@@ -63,17 +63,42 @@ def _far_goal(bot, start: int) -> int:
     return best
 
 
-def test_a_bot_with_no_job_waits_rather_than_going_silent(router):
-    """The precondition every other test here depends on, stated once.
+def test_a_bot_with_no_job_is_sent_out_of_the_lane(router):
+    """The precondition every other test here depends on, stated once: a robot
+    is never answered with silence.
 
-    It is also the guarantee itself: a robot is never answered with silence.
+    What it is answered *with* changed. A jobless robot used to be told to wait
+    where it stood -- which, just after a delivery, is a transfer node in the
+    middle of the floor that everybody else routes through. Measured: four of
+    five robots finished their jobs, parked exactly where they finished, and
+    the fleet queued behind robots that were done. Now it is sent somewhere it
+    is not in the way, and only told to wait if there is nowhere better.
     """
     router.nav_goal = None
     node, lanes = _junction(router)
     reply = router._route(Query(query_id=1, node_id=node, available=lanes))
-    assert reply.kind.value == "WAIT"
-    assert reply.because == "no job"
-    assert reply.hold_ms > 0
+    assert reply.kind.value in ("PROCEED", "REROUTE", "WAIT"), "answered with silence"
+    if reply.kind.value == "WAIT":
+        assert reply.hold_ms > 0
+        assert "no job" in reply.because
+    else:
+        assert reply.target_node_id, "sent somewhere without saying where"
+
+
+def test_an_idle_robot_prefers_a_spot_that_is_not_a_through_lane(router):
+    """Where it goes, not just that it moves. Yield bay, else junction, else
+    parking or a charger -- the same cascade a robot losing a contest uses,
+    because real yield bays are scarce."""
+    from planning.geometry import NodeType
+    node, lanes = _junction(router)
+    spot = router._somewhere_out_of_the_way(node)
+    if spot is None:
+        pytest.skip("nowhere to stand aside from here")
+    index = router.graph.index(spot)
+    assert (router.graph.node_type[index] in
+            (NodeType.YI, NodeType.PK, NodeType.CH)
+            or router.topology.is_junction(index)), \
+        "stood aside into an ordinary through lane"
 
 
 def test_the_query_id_comes_back_untouched(router):
