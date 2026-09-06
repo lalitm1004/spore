@@ -70,6 +70,10 @@ class Uplink:
         self.mission = ""
         self.cargo_id = ""
         self.cargo_state = ""
+        #: The last cargo put down. The bot goes on offering a job until it has
+        #: read the delivery, so this is what stops the robot delivering the
+        #: same cargo once per answer in that window.
+        self.delivered_cargo_id = ""
         self._outbound: "queue.Queue" = queue.Queue()
         self._replies = None
         self._channel = None

@@ -135,3 +135,25 @@ def test_the_at_the_goal_wait_is_an_arrival():
     answer_junction(navigator, network, marker_at(4))
 
     assert network.cargo_state == "EN_ROUTE", "an at-the-goal wait was not read as arriving"
+
+
+def test_cargo_is_not_delivered_twice():
+    """The bot keeps offering the job until it has read the delivery, and
+    several of its answers are in flight when the cargo goes down. Measured
+    before this guard: 5 collections against 58 deliveries."""
+    class Insistent(CargoNetwork):
+        def ask(self, query):
+            return Decision(query_id=query.query_id, kind="WAIT", hold_ms=2000,
+                            because="at the goal", mission="CARGO",
+                            cargo_id="c-1", cargo_state="EN_ROUTE")
+
+    navigator = navigator_on_a_lattice()
+    navigator.arrived(3)
+    network = Insistent(pickup=0, dropoff=4)
+    network.mission, network.cargo_state, network.cargo_id = "CARGO", "EN_ROUTE", "c-1"
+
+    for _ in range(4):
+        answer_junction(navigator, network, marker_at(4))
+
+    dropoffs = [r for r in network.reports if r[2] == "DROPOFF"]
+    assert len(dropoffs) == 1, "delivered the same cargo {} times".format(len(dropoffs))

@@ -96,9 +96,19 @@ def answer_junction(navigator, network, event):
     carries_cargo = network is not None and hasattr(network, "cargo_state")
 
     if carries_cargo and decision.mission:
-        network.mission = decision.mission
-        network.cargo_id = decision.cargo_id
-        network.cargo_state = decision.cargo_state
+        # Ignore a mission for cargo already delivered. The bot keeps sending
+        # `set_mission` from its own job until it has read the delivery, and
+        # several of its answers are already in flight when we put the cargo
+        # down -- so without this the robot is handed the finished job back and
+        # delivers it again, once per answer. Measured: 5 collections, 58
+        # deliveries.
+        if decision.cargo_id and decision.cargo_id == getattr(
+                network, "delivered_cargo_id", ""):
+            pass
+        else:
+            network.mission = decision.mission
+            network.cargo_id = decision.cargo_id
+            network.cargo_state = decision.cargo_state
 
     # Arriving is the network telling us we are there. A PROCEED naming this
     # node would say so, but the planner does not send one: `ALREADY_THERE`
@@ -122,6 +132,7 @@ def answer_junction(navigator, network, event):
             # Report the delivery once, then go idle: the network layer reads
             # "was DROPOFF, now not carrying" as the job being done.
             network.report(node_id, query.region_id)
+            network.delivered_cargo_id = network.cargo_id
             network.mission = ""
             network.cargo_id = ""
             network.cargo_state = ""
