@@ -149,6 +149,13 @@ defaults:
     # "every hold stays under the robot's patience" invariant guards the number
     # the robot really uses. Three copies of this once disagreed (5.0/6.0/5.0).
     junction_timeout_s: 6.0
+    # How long a robot stands still to load or unload. Collecting and
+    # delivering were instantaneous -- the reports *were* the handling, since
+    # there is no manipulator to simulate -- so a robot reached a transfer node
+    # and left in the same breath. Nothing was wrong about it and it looks
+    # wrong: a real AMR takes time at a station, and warehouse throughput is
+    # mostly a question of how long.
+    cargo_handling_s: 10.0
     # Error is in metres and steering is in rad/s, so kp is large by design.
     #
     # Left at 150 through the move to a 500 mm deck, having measured that

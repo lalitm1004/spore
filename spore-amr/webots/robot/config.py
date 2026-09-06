@@ -69,6 +69,16 @@ class ControlConfig:
     # up and carrying straight on. A robot that is never answered must not
     # block a lane for the rest of the run.
     junction_timeout_s: float = 6.0
+    # How long the robot stands still to load or unload cargo. Collecting and
+    # delivering were instantaneous -- the reports *were* the handling, because
+    # there is no manipulator to simulate -- so a robot arrived at a transfer
+    # node and left in the same breath. Nothing in the fleet was wrong about it
+    # and it looks wrong, because a real AMR takes time at a station and a
+    # warehouse's throughput depends on how long.
+    #
+    # Well under `junction_timeout_s`: the robot is holding, not waiting to be
+    # told anything, so nothing upstream should time out while it works.
+    cargo_handling_s: float = 10.0
     # Sim seconds to sit still before leaving the start node. The fleet is
     # released one robot at a time so bay-mates do not reach their shared
     # junction together; the firmware holds this itself rather than waiting to

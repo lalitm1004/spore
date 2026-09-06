@@ -54,7 +54,7 @@ def report_obstacle(navigator, network, event):
 _CARGO_ORDER = {"PICKUP": 0, "EN_ROUTE": 1, "DROPOFF": 2}
 
 
-def answer_junction(navigator, network, event):
+def answer_junction(navigator, network, event, handling_ms=0):
     """Turn a marker arrival into a TURN command, or into nothing.
 
     Nothing is a legitimate answer. A robot with no network layer, or one at a
@@ -150,6 +150,13 @@ def answer_junction(navigator, network, event):
             network.collected_at = node_id
             print("node {}: collected cargo {}".format(
                 node_id, network.cargo_id or "?"), flush=True)
+            network.report(node_id, query.region_id)
+            if handling_ms:
+                # Stand still while the cargo is loaded. The report above has
+                # already gone, so the network layer moves the goal to the
+                # delivery node while we work, and the ask after the hold gets
+                # the onward lane rather than "at the goal" again.
+                return [Message(kind="CMD", name="HOLD", fields={"ms": handling_ms})]
         elif network.cargo_state in ("EN_ROUTE", "DROPOFF") \
                 and node_id != getattr(network, "collected_at", None):
             network.cargo_state = "DROPOFF"
@@ -175,6 +182,8 @@ def answer_junction(navigator, network, event):
             network.mission = ""
             network.cargo_id = ""
             network.cargo_state = ""
+            if handling_ms:
+                return [Message(kind="CMD", name="HOLD", fields={"ms": handling_ms})]
             return []
         network.report(node_id, query.region_id)
 
@@ -226,6 +235,8 @@ def main(argv=None):
     control = document.get("control") or {}
     defaults = ControlConfig()
     cruise = float(control.get("base_speed", defaults.base_speed))
+    handling_ms = int(1000 * float(control.get(
+        "cargo_handling_s", defaults.cargo_handling_s)))
     laden = control.get("laden_speed", defaults.laden_speed)
     laden = cruise if laden is None else float(laden)
     # The uplink gives up at the same moment the firmware does. Any longer and
@@ -279,7 +290,8 @@ def main(argv=None):
                     report_obstacle(navigator, network, event)
 
                 if event.name == "MARKER" and navigator is not None:
-                    for command in answer_junction(navigator, network, event):
+                    for command in answer_junction(navigator, network, event,
+                                               handling_ms=handling_ms):
                         link.write(encode(command))
                         print("-> {} {}".format(command.name, command.fields),
                               flush=True)

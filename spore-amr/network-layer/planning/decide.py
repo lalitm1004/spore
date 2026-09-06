@@ -51,7 +51,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from enum import StrEnum
 
-from planning.geometry import NodeType
+from planning.geometry import NodeType, heading_between
 from planning.graph import Graph
 from planning.topology import Topology
 from planning.traffic import Observation, TrafficView
@@ -229,7 +229,29 @@ def decide(
     # higher yield priority wins, so a robot carrying cargo is never asked to
     # give way to an empty one, and the lower bot id breaks the tie. Both sides
     # compute it from the roster, so they agree by construction.
-    opposing = getattr(plan.diagnostics, "corridor_opposing_peers", ())
+    # Detected here rather than taken from the diagnostics. The planner only
+    # reports opposing peers when the first hop enters something
+    # `topology.corridor_entered_by` recognises as a corridor, and a head-on
+    # does not need a corridor -- it needs one lane, which is every lane. With
+    # the corridor test alone this fired zero times across a whole run while two
+    # robots oscillated 1.07 m apart, the reflex pushing them together and apart
+    # again: 1.07 m, 0.54 m, 1.07 m.
+    #
+    # So the question asked is the narrow one that actually matters: is anybody
+    # holding the node I am about to enter, pointed back at me?
+    opposing: tuple[int, ...] = ()
+    if graph.has_id(ahead.node_id) and graph.has_id(here.node_id):
+        ours = heading_between(graph.position[graph.index(here.node_id)],
+                               graph.position[graph.index(ahead.node_id)])
+        against = ours.opposite
+        found = set()
+        for peer in traffic.peers:
+            for claim in peer.reservations:
+                if claim.node_id == ahead.node_id and claim.dir is against:
+                    found.add(peer.bot_id)
+                    break
+        opposing = tuple(sorted(found))
+
     if opposing:
         ranks = {o.bot_id: o.rank for o in observations}
         if any(outranked_by(my_rank, my_bot_id, ranks.get(b, 0), b) for b in opposing):
