@@ -123,9 +123,17 @@ def answer_junction(navigator, network, event):
         # simulate, so collecting and delivering are the reports themselves.
         if network.cargo_state == "PICKUP":
             network.cargo_state = "EN_ROUTE"
+            # Where it was collected, because the robot does not leave the node
+            # the instant it has the cargo. The bot's goal is still the pickup
+            # until it reads this report, so the next few answers are still
+            # "at the goal" -- and by then we are EN_ROUTE, which is the
+            # delivery branch. Without this the cargo is put back down where it
+            # was picked up, one node into a two-node journey.
+            network.collected_at = node_id
             print("node {}: collected cargo {}".format(
                 node_id, network.cargo_id or "?"), flush=True)
-        elif network.cargo_state in ("EN_ROUTE", "DROPOFF"):
+        elif network.cargo_state in ("EN_ROUTE", "DROPOFF") \
+                and node_id != getattr(network, "collected_at", None):
             network.cargo_state = "DROPOFF"
             print("node {}: delivered cargo {}".format(
                 node_id, network.cargo_id or "?"), flush=True)
@@ -133,6 +141,7 @@ def answer_junction(navigator, network, event):
             # "was DROPOFF, now not carrying" as the job being done.
             network.report(node_id, query.region_id)
             network.delivered_cargo_id = network.cargo_id
+            network.collected_at = None
             network.mission = ""
             network.cargo_id = ""
             network.cargo_state = ""

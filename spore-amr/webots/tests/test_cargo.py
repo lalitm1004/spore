@@ -157,3 +157,50 @@ def test_cargo_is_not_delivered_twice():
 
     dropoffs = [r for r in network.reports if r[2] == "DROPOFF"]
     assert len(dropoffs) == 1, "delivered the same cargo {} times".format(len(dropoffs))
+
+
+def test_cargo_is_not_delivered_at_the_node_it_was_collected_from():
+    """The robot does not leave the pickup the instant it has the cargo, and
+    the bot's goal stays on the pickup until it reads the collection report --
+    so the next few answers are still "at the goal". By then the robot is
+    EN_ROUTE, which is the delivery branch, and the cargo goes back down where
+    it came from one node into a two-node journey."""
+    class AtGoal(CargoNetwork):
+        def ask(self, query):
+            return Decision(query_id=query.query_id, kind="WAIT", hold_ms=2000,
+                            because="at the goal", mission="CARGO",
+                            cargo_id="c-1", cargo_state="PICKUP")
+
+    navigator = navigator_on_a_lattice()
+    navigator.arrived(3)
+    network = AtGoal(pickup=4, dropoff=8)
+
+    answer_junction(navigator, network, marker_at(4))      # collect here
+    assert network.cargo_state == "EN_ROUTE"
+
+    answer_junction(navigator, network, marker_at(4))      # still here
+    answer_junction(navigator, network, marker_at(4))
+
+    assert not [r for r in network.reports if r[2] == "DROPOFF"], \
+        "delivered the cargo at the node it was collected from"
+    assert network.cargo_state == "EN_ROUTE", "should still be carrying"
+
+
+def test_arriving_somewhere_else_does_deliver():
+    """The other half: once the robot has actually moved, the delivery fires."""
+    class AtGoal(CargoNetwork):
+        def ask(self, query):
+            return Decision(query_id=query.query_id, kind="WAIT", hold_ms=2000,
+                            because="at the goal", mission="CARGO",
+                            cargo_id="c-1", cargo_state="EN_ROUTE")
+
+    navigator = navigator_on_a_lattice()
+    navigator.arrived(3)
+    network = AtGoal(pickup=4, dropoff=5)
+    network.mission, network.cargo_state, network.cargo_id = "CARGO", "EN_ROUTE", "c-1"
+    network.collected_at = 4
+
+    answer_junction(navigator, network, marker_at(5))
+
+    assert [r for r in network.reports if r[2] == "DROPOFF"], "never delivered"
+    assert network.mission == ""

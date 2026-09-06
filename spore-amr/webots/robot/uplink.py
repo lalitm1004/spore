@@ -74,6 +74,9 @@ class Uplink:
         #: read the delivery, so this is what stops the robot delivering the
         #: same cargo once per answer in that window.
         self.delivered_cargo_id = ""
+        #: The node the cargo was collected at, so a delivery cannot fire there
+        #: while the bot is still answering "at the goal" for the pickup.
+        self.collected_at = None
         self._outbound: "queue.Queue" = queue.Queue()
         self._replies = None
         self._channel = None
