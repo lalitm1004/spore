@@ -15,14 +15,14 @@ import threading
 
 import grpc
 
-from config import T_HB
+import config
 
 _OPTIONS = [
-    ("grpc.initial_reconnect_backoff_ms", 200),
-    ("grpc.min_reconnect_backoff_ms", 200),
-    ("grpc.max_reconnect_backoff_ms", int(T_HB * 2000)),
-    ("grpc.keepalive_time_ms", 10_000),
-    ("grpc.keepalive_timeout_ms", 3_000),
+    ("grpc.initial_reconnect_backoff_ms", int(config.T_RECONNECT_MIN * 1000)),
+    ("grpc.min_reconnect_backoff_ms", int(config.T_RECONNECT_MIN * 1000)),
+    ("grpc.max_reconnect_backoff_ms", int(config.T_RECONNECT_MAX * 1000)),
+    ("grpc.keepalive_time_ms", int(config.T_KEEPALIVE * 1000)),
+    ("grpc.keepalive_timeout_ms", int(config.T_KEEPALIVE_TIMEOUT * 1000)),
     ("grpc.keepalive_permit_without_calls", 1),
 ]
 

@@ -38,6 +38,8 @@ PEER_LEADERS = [
 #: Port our gRPC server listens on, and the interface to bind.
 GRPC_PORT = int(os.environ.get("GRPC_PORT", "50051"))
 GRPC_HOST = os.environ.get("GRPC_HOST", "0.0.0.0")
+#: Where the map sits inside the container image; `up.py` mounts it there.
+CONTAINER_MAP_PATH = os.environ.get("CONTAINER_MAP_PATH", "/app/warehouse-layout.json")
 
 #: Serve AdminService (introspection + robot-state injection). Off unless
 #: explicitly enabled; `up.py` enables it for local fleets.
@@ -177,6 +179,16 @@ PLAN_STABLE_TICKS = int(os.environ.get("PLAN_STABLE_TICKS", "3"))
 #: How much traffic beyond the reservation horizon pushes a route away, as a
 #: fraction of one straight hop.
 CONGESTION_WEIGHT = float(os.environ.get("CONGESTION_WEIGHT", "0.35"))
+#: Clock skew a peer's claim is widened by on both sides (planning/intervals.py).
+PLAN_SKEW_BOUND = float(os.environ.get("PLAN_SKEW_BOUND", "0.3"))
+#: Extra gap held behind a robot ahead in the same lane.
+PLAN_FOLLOW_GAP = float(os.environ.get("PLAN_FOLLOW_GAP", "0.0"))
+#: How much cheaper an alternative must be before hysteresis lets it win.
+PLAN_IMPROVEMENT_MARGIN = float(os.environ.get("PLAN_IMPROVEMENT_MARGIN", "0.05"))
+#: Obstruction level at or above which a node is impassable, not just costly.
+OBSTRUCTION_BLOCK_LEVEL = float(os.environ.get("OBSTRUCTION_BLOCK_LEVEL", "0.7"))
+#: How many hops a congestion source's penalty decays over.
+CONGESTION_DECAY_HOPS = float(os.environ.get("CONGESTION_DECAY_HOPS", "6.0"))
 
 #: Below this the planner weights charge over speed outright (EnergyState
 #: CRITICAL): it will wait rather than detour, and prefer routes near chargers.
@@ -215,6 +227,13 @@ T_STALL = float(os.environ.get("T_STALL", str(6 * T_HB)))
 #: also how long a bot waits after replanning before it may move. Lower it when
 #: that wait starts costing throughput.
 T_ANNOUNCE = float(os.environ.get("T_ANNOUNCE", str(T_HB)))
+
+#: Channel behaviour (bus/rpc.py). A bot that comes back after a restart must be
+#: reachable again promptly, not after gRPC's default two-minute backoff.
+T_RECONNECT_MIN = float(os.environ.get("T_RECONNECT_MIN", "0.2"))
+T_RECONNECT_MAX = float(os.environ.get("T_RECONNECT_MAX", str(T_HB * 2)))
+T_KEEPALIVE = float(os.environ.get("T_KEEPALIVE", "10.0"))
+T_KEEPALIVE_TIMEOUT = float(os.environ.get("T_KEEPALIVE_TIMEOUT", "3.0"))
 
 #: How long a neighbour's claims stay believable without a fresher announcement.
 #: Three periods, matching T_DEAD's three heartbeats: long enough to ride out a

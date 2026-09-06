@@ -12,7 +12,6 @@ testable without either.
 """
 
 import json
-import math
 import pathlib
 from typing import Optional
 
@@ -109,5 +108,3 @@ class Navigator:
         self.last_node = node_id
 
 
-def degrees(radians: float) -> float:
-    return math.degrees(radians)

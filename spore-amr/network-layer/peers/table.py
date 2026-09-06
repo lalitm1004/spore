@@ -177,19 +177,11 @@ class PeerTable:
 
     # ---- Other regions' leaders -----------------------------------------
 
-    def set_leaders(self, leaders: list[Leader]) -> None:
-        with self._lock:
-            self._other_leaders = {ld.region_id: ld for ld in leaders}
-
     def upsert_leader(self, leader: Leader) -> None:
         """Keyed by region: a new leader for a region simply replaces the old
         record, which is how other regions learn about a succession."""
         with self._lock:
             self._other_leaders[leader.region_id] = leader
-
-    def remove_leader(self, region_id: int) -> None:
-        with self._lock:
-            self._other_leaders.pop(region_id, None)
 
     def get_leader(self, region_id: int) -> Leader | None:
         with self._lock:

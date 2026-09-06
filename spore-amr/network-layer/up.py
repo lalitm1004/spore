@@ -37,10 +37,12 @@ import os
 import sys
 
 import docker
+
+import config
 from docker.errors import APIError, ImageNotFound, NotFound
 
 IMAGE = "amr-bot:dev"
-GRPC_PORT = 50051
+GRPC_PORT = config.GRPC_PORT
 LABEL_FLEET = "amr.fleet"
 LABEL_REGION = "amr.region"
 LABEL_NET = "amr.net"
@@ -50,7 +52,8 @@ LABEL_NET = "amr.net"
 # level too deep, and a missing file here silently skips the mount, so every
 # container ran geography-blind.
 MAP_HOST_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "shared", "warehouse-layout.json"))
-MAP_CONTAINER_PATH = "/app/warehouse-layout.json"
+# Where the image's WORKDIR is; the map is mounted beside the code.
+MAP_CONTAINER_PATH = config.CONTAINER_MAP_PATH
 
 
 def container_name(region_id: int, bot_id: int, prefix: str = "amr") -> str:
@@ -145,7 +148,7 @@ def launch(
             "OWN_ADDRESS": own,
             "PEER_LEADERS": peers,
             "GRPC_PORT": str(GRPC_PORT),
-            "GRPC_HOST": "0.0.0.0",
+            "GRPC_HOST": config.GRPC_HOST,
             "WAREHOUSE_MAP": MAP_CONTAINER_PATH,
             "ADMIN_ENABLED": "1",
             "PYTHONUNBUFFERED": "1",

@@ -63,11 +63,6 @@ class MarkerSpec:
     def border_mm(self) -> float:
         return (self.tile_mm - self.qr_mm) / 2.0 - self.margin_mm
 
-    def modules_per_pixel(self, module_count: int) -> float:
-        """Camera pixels per QR module, given a camera's mm/px."""
-        return self.qr_mm / module_count
-
-
 def encode_payload(
     node_id: int,
     kind: str,

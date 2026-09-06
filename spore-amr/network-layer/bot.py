@@ -1082,7 +1082,9 @@ class Bot:
 
         deadline = time.monotonic() + config.T_SETTLE
         while not self.leader_settled() and time.monotonic() < deadline:
-            time.sleep(0.2)
+            # A fraction of a tick: fine enough to leave promptly, coarse
+            # enough not to spin.
+            time.sleep(config.T_HB / 5)
 
         ls = self.leadership()
         if ls.role == Role.LEADER:

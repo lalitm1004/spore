@@ -17,7 +17,7 @@ Pure: no I/O, no Webots, no rendering.
 import math
 from collections import deque
 from dataclasses import dataclass
-from typing import Dict, Iterable, List, Optional, Sequence, Tuple
+from typing import Dict, List, Optional, Sequence, Tuple
 
 #: The whole vocabulary a robot is ever offered. It never gets the lane it
 #: arrived on, so a degree-4 node still has exactly three choices.
@@ -209,88 +209,6 @@ class Graph:
 
     # -------------------------------------------------------- ground truth --
 
-    def turns_from(self, node_id: int, heading: float,
-                   tolerance_deg: float = 45.0) -> Dict[str, int]:
-        """Which of left/straight/right lead somewhere, and to which node.
-
-        `heading` is how the robot arrived. The lane it came in on is excluded:
-        a robot that has just driven into a node has no business calling the
-        way it came a legal turn, and on a one-way lane it would be a wrong-way
-        entry.
-
-        Ambiguity is resolved by picking the closest lane to each ideal
-        bearing, so a node with two lanes 30 degrees apart does not report both
-        as "straight".
-        """
-        ideal = {"left": wrap_pi(heading + math.pi / 2),
-                 "straight": wrap_pi(heading),
-                 "right": wrap_pi(heading - math.pi / 2)}
-        back = wrap_pi(heading + math.pi)
-        tolerance = math.radians(tolerance_deg)
-
-        candidates = []
-        for neighbour in self._adjacency[node_id]:
-            lane = self.bearing(node_id, neighbour)
-            if abs(wrap_pi(lane - back)) < math.radians(1.0):
-                continue  # the lane we arrived on
-            candidates.append((neighbour, lane))
-
-        if not candidates:
-            # A dead end -- every charging bay in the real warehouse is one,
-            # a degree-1 spur off a corridor. Excluding the arrival lane leaves
-            # nothing, and a robot offered no turn sits in the bay for the rest
-            # of the run. Reversing out is the only way, so offer it.
-            candidates = [(n, self.bearing(node_id, n))
-                          for n in self._adjacency[node_id]]
-
-        result: Dict[str, int] = {}
-        for turn, target in ideal.items():
-            best, best_gap = None, tolerance
-            for neighbour, lane in candidates:
-                gap = abs(wrap_pi(lane - target))
-                if gap < best_gap:
-                    best, best_gap = neighbour, gap
-            if best is not None:
-                result[turn] = best
-
-        # A lane can be the closest match for two turns; keep the better fit so
-        # each neighbour is offered once.
-        claimed: Dict[int, str] = {}
-        for turn in TURNS:
-            neighbour = result.get(turn)
-            if neighbour is None:
-                continue
-            previous = claimed.get(neighbour)
-            if previous is None:
-                claimed[neighbour] = turn
-                continue
-            gap_now = abs(wrap_pi(self.bearing(node_id, neighbour) - ideal[turn]))
-            gap_was = abs(wrap_pi(self.bearing(node_id, neighbour) - ideal[previous]))
-            loser = turn if gap_now >= gap_was else previous
-            if loser != turn:
-                claimed[neighbour] = turn
-            result.pop(loser, None)
-
-        if not result and candidates:
-            # Nothing landed within tolerance of left, straight or right, and
-            # there is exactly one way to go: this is a dead-end spur and the
-            # only lane is the one behind. Reversing out is a 180 degree turn,
-            # which is 135 degrees outside any tolerance we would want for an
-            # ordinary junction -- so it has to be handled here rather than by
-            # widening one.
-            #
-            # Found in a real run: a robot drove into a charging bay, was
-            # offered no turn at all, and sat in it for the rest of the shift.
-            # Every bay on this floor is a degree-1 spur and the fleet *spawns*
-            # in them, so without this no robot ever leaves the one it starts
-            # in. `straight` because the robot turns to an absolute bearing and
-            # does not care what we call it.
-            result["straight"] = min(candidates, key=lambda c: c[0])[0]
-
-        return result
-
-    # -------------------------------------------------------- ground truth --
-
     def distance_to_lane(self, x: float, y: float) -> float:
         """Distance to the nearest lane, in metres.
 
@@ -366,9 +284,3 @@ _SLUGS = {"PT": "aisle", "TR": "transfer", "CH": "charging",
           "PK": "parking", "YI": "yield"}
 
 
-def lane_points(graph: Graph) -> Iterable[Tuple[Tuple[float, float],
-                                                Tuple[float, float]]]:
-    """Every lane as a pair of endpoints, for the rasteriser."""
-    for edge in graph.edges:
-        a, b = graph.nodes[edge.a], graph.nodes[edge.b]
-        yield (a.x, a.y), (b.x, b.y)

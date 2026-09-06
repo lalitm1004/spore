@@ -45,15 +45,6 @@ class CongestionField:
     def __call__(self, node: int) -> float:
         return self.penalties.get(node, 0.0)
 
-    @property
-    def busiest(self) -> tuple[int, ...]:
-        """Nodes carrying a penalty, dearest first -- for diagnostics."""
-        return tuple(
-            node
-            for node, _ in sorted(self.penalties.items(), key=lambda kv: (-kv[1], kv[0]))
-        )
-
-
 def build(
     graph: Graph,
     *,

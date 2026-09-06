@@ -54,6 +54,8 @@ from typing import TYPE_CHECKING, Callable, Iterator
 
 import grpc
 
+import config
+
 from planning.decide import Decision, DecisionKind, Query
 from proto import robot_pb2, robot_pb2_grpc
 
@@ -239,6 +241,6 @@ class RobotNetworkServicer(robot_pb2_grpc.RobotNetworkServicer):
             return reply_of(Decision(
                 query_id=query.query_id,
                 kind=DecisionKind.WAIT,
-                hold_ms=1000,
+                hold_ms=int(config.T_BLOCKED_HOLD * 1000),
                 because="planner error",
             ))

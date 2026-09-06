@@ -9,6 +9,8 @@ from __future__ import annotations
 import time
 from types import SimpleNamespace
 
+import pathlib
+import re
 import pytest
 
 from election import priority as prio
@@ -206,3 +208,25 @@ def test_a_claim_window_shorter_than_a_hop_stops_the_bot_booting(monkeypatch, re
     monkeypatch.setattr(config, "PLAN_SAFETY", -1.0)
     with pytest.raises(config.ConfigError, match="they would meet there"):
         config.validate(real_map.node_spacing)
+
+
+# ---- Constants live in config.py -------------------------------------------------
+# A timeout or a hold typed as a number where it is used is a setting the fleet
+# cannot tune and PROTOCOL.md §9 does not know about. Found three of them in an
+# audit; this is what stops the next one.
+
+_LITERAL = re.compile(r"\b(?:timeout=|sleep\(|hold_ms=)\s*[0-9]")
+
+
+def test_no_timeout_or_hold_is_a_bare_number_outside_config():
+    root = pathlib.Path(__file__).resolve().parent.parent
+    offenders = []
+    for path in root.rglob("*.py"):
+        rel = path.relative_to(root)
+        parts = rel.parts
+        if parts[0] in (".venv", "tests") or path.name == "config.py" or path.name.endswith("_pb2.py") or path.name.endswith("_pb2_grpc.py"):
+            continue
+        for n, line in enumerate(path.read_text().splitlines(), 1):
+            if _LITERAL.search(line):
+                offenders.append(f"{rel}:{n}: {line.strip()}")
+    assert not offenders, "bare numbers where config belongs:\n  " + "\n  ".join(offenders)

@@ -249,6 +249,14 @@ def from_env() -> Config:
         max_hold_ms=int(fleet.T_MAX_HOLD * 1000),
         stable_ticks=fleet.PLAN_STABLE_TICKS,
         congestion_weight=fleet.CONGESTION_WEIGHT,
+        # These five had dataclass defaults and no env name, so they could not
+        # be tuned without editing code -- the exact thing this function exists
+        # to prevent.
+        skew_bound_ms=int(fleet.PLAN_SKEW_BOUND * 1000),
+        follow_gap_ms=int(fleet.PLAN_FOLLOW_GAP * 1000),
+        improvement_margin=fleet.PLAN_IMPROVEMENT_MARGIN,
+        obstruction_block_level=fleet.OBSTRUCTION_BLOCK_LEVEL,
+        congestion_decay_hops=fleet.CONGESTION_DECAY_HOPS,
     )
 
 
