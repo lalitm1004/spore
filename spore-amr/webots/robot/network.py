@@ -32,6 +32,15 @@ from typing import Tuple
 PROCEED, REROUTE, WAIT, YIELD = "PROCEED", "REROUTE", "WAIT", "YIELD"
 KINDS = (PROCEED, REROUTE, WAIT, YIELD)
 
+# Cargo, as the shared schema names it. A job is a place to collect from, a
+# place to deliver to, and a robot saying which of those it has done: the
+# network layer sends CARGO/PICKUP with the collection node, and only moves the
+# goal to the delivery node once the robot reports EN_ROUTE. Nothing else
+# advances a job, so a robot that never reports arrives at the collection point
+# and stops there for the rest of the shift.
+IDLE, CARGO = "IDLE", "CARGO"
+PICKUP, EN_ROUTE, DROPOFF = "PICKUP", "EN_ROUTE", "DROPOFF"
+
 
 @dataclass(frozen=True)
 class Query:
@@ -67,6 +76,13 @@ class Decision:
     kind: str = PROCEED
     hold_ms: int = 0
     because: str = ""
+    # The job this robot is on, when the network layer has given it one. Empty
+    # mission means it said nothing about cargo, which is not the same as
+    # saying the robot is idle -- a WAIT carries no mission and must not clear
+    # the job the robot is halfway through.
+    mission: str = ""
+    cargo_id: str = ""
+    cargo_state: str = ""
 
     @property
     def is_wait(self) -> bool:

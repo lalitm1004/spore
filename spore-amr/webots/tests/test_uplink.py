@@ -226,3 +226,75 @@ def test_an_obstacle_before_the_first_marker_is_not_reported():
                     Event("OBSTACLE", state="HOLDING"))
 
     assert network.reports == []
+
+
+# ---- the mission on the wire -------------------------------------------------
+
+def test_an_idle_robot_reports_idle():
+    link = uplink_with()
+    link.report(node_id=4, region_id=1)
+
+    [message] = sent(link)
+    assert message.mission.WhichOneof("kind") == "idle"
+
+
+def test_a_carrying_robot_reports_its_cargo():
+    """The report that moves a job on. `mission` was hardcoded to IDLE for the
+    whole life of this file, so the network layer never saw a robot collect
+    anything: it holds the goal at the pickup node until the robot says
+    CARGO/EN_ROUTE, and every robot sat there for the rest of the shift."""
+    link = uplink_with()
+    link.mission, link.cargo_id, link.cargo_state = "CARGO", "c-1", "EN_ROUTE"
+    link.report(node_id=4, region_id=1)
+
+    [message] = sent(link)
+    assert message.mission.WhichOneof("kind") == "cargo"
+    assert message.mission.cargo.cargo_id == "c-1"
+    assert message.mission.cargo.state == robot_pb2.CARGO_STATE_EN_ROUTE
+
+
+def test_every_cargo_state_survives_the_wire():
+    for state in ("PICKUP", "EN_ROUTE", "DROPOFF"):
+        link = uplink_with()
+        link.mission, link.cargo_state = "CARGO", state
+        link.report(node_id=4, region_id=1)
+
+        [message] = sent(link)
+        assert message.mission.cargo.state == getattr(
+            robot_pb2, "CARGO_STATE_{}".format(state)), state
+
+
+def test_a_mission_we_do_not_recognise_reports_idle_rather_than_lying():
+    link = uplink_with()
+    link.mission, link.cargo_state = "CARGO", "TELEPORTING"
+    link.report(node_id=4, region_id=1)
+
+    [message] = sent(link)
+    assert message.mission.WhichOneof("kind") == "idle"
+
+
+def test_a_set_mission_on_the_answer_reaches_the_decision():
+    """The other direction: the network layer hands out the job with the
+    command, and the robot has to read it or it never knows it has one."""
+    reply = robot_pb2.NetworkToRobot(
+        query_id=7, target_node_id=9,
+        set_mission=robot_pb2.Mission(cargo=robot_pb2.Cargo(
+            cargo_id="c-9", state=robot_pb2.CARGO_STATE_PICKUP)))
+    link = uplink_with(reply)
+
+    decision = link.ask(Query(query_id=7, node_id=4, available=(9,)))
+
+    assert decision.mission == "CARGO"
+    assert decision.cargo_id == "c-9"
+    assert decision.cargo_state == "PICKUP"
+
+
+def test_an_answer_with_no_mission_says_nothing_about_cargo():
+    """Every WAIT carries no mission, and reading that as "idle" would drop the
+    job a robot is halfway through."""
+    link = uplink_with(robot_pb2.NetworkToRobot(query_id=7, target_node_id=9))
+
+    decision = link.ask(Query(query_id=7, node_id=4, available=(9,)))
+
+    assert decision.mission == ""
+    assert decision.cargo_state == ""

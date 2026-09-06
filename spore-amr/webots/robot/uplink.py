@@ -44,6 +44,15 @@ _KIND_NAMES = {
     4: "YIELD",
 }
 
+#: Same, for cargo. The schema's bare names, which the proto has to prefix
+#: because proto3 enum values share one scope.
+_CARGO_STATES = {
+    0: "",          # CARGO_STATE_UNSPECIFIED: said nothing
+    1: "PICKUP",
+    2: "DROPOFF",
+    3: "EN_ROUTE",
+}
+
 
 class Uplink:
     """Reports upward; asks when the robot is standing at a junction."""
@@ -54,6 +63,13 @@ class Uplink:
         self.timeout_s = timeout_s
         self.bot_id = bot_id
         self.battery_percent = battery_percent
+        # What this robot is carrying, as last set by the network layer and as
+        # advanced by the companion when it reaches a collection or delivery
+        # node. Reported on every message: the fleet learns a job progressed
+        # from the same stream that asks it where to go next.
+        self.mission = ""
+        self.cargo_id = ""
+        self.cargo_state = ""
         self._outbound: "queue.Queue" = queue.Queue()
         self._replies = None
         self._channel = None
@@ -135,18 +151,51 @@ class Uplink:
                 for reply in self._replies:
                     if reply.query_id and reply.query_id != query.query_id:
                         continue  # a late answer to a junction already left
+                    mission = cargo_id = cargo_state = ""
+                    if reply.HasField("set_mission"):
+                        case = reply.set_mission.WhichOneof("kind")
+                        if case == "cargo":
+                            mission = "CARGO"
+                            cargo_id = reply.set_mission.cargo.cargo_id
+                            cargo_state = _CARGO_STATES.get(
+                                reply.set_mission.cargo.state, "")
+                        elif case:
+                            mission = case.upper()
                     return Decision(
                         query_id=reply.query_id or query.query_id,
                         target_node_id=reply.target_node_id,
                         kind=_KIND_NAMES.get(reply.kind, "PROCEED"),
                         hold_ms=reply.hold_ms,
                         because=reply.because,
+                        mission=mission,
+                        cargo_id=cargo_id,
+                        cargo_state=cargo_state,
                     )
             except Exception:
                 self.close()
             return None
 
     # ---- shaping -----------------------------------------------------------
+
+    def _mission(self, robot_pb2):
+        """This robot's mission, as the schema shapes it.
+
+        Hardcoded to IDLE for the whole life of this file, which quietly capped
+        the fleet at half a job: the network layer moves a job's goal from the
+        collection node to the delivery node only when the robot reports
+        CARGO/EN_ROUTE, so every robot drove to its pickup and was told to hold
+        there for ever. Nothing logged an error -- the job simply never
+        advanced.
+        """
+        if self.mission != "CARGO" or not self.cargo_state:
+            return robot_pb2.Mission(idle=robot_pb2.Idle())
+        state = getattr(robot_pb2, "CARGO_STATE_{}".format(self.cargo_state), None)
+        if state is None:
+            return robot_pb2.Mission(idle=robot_pb2.Idle())
+        cargo = robot_pb2.Cargo(state=state)
+        if self.cargo_id:
+            cargo.cargo_id = self.cargo_id
+        return robot_pb2.Mission(cargo=cargo)
 
     def _message(self, node_id: int, region_id: int, *, available=(),
                  heading_rad: float = 0.0, query_id: int = 0,
@@ -163,7 +212,7 @@ class Uplink:
             heading_rad=heading_rad,
             query_id=query_id,
             available=list(available),
-            mission=robot_pb2.Mission(idle=robot_pb2.Idle()),
+            mission=self._mission(robot_pb2),
             telemetry=robot_pb2.Telemetry(battery=robot_pb2.Battery(
                 percentage=self.battery_percent if battery is None else battery)),
         )

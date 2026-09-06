@@ -14,7 +14,7 @@
 #   ./fleet.sh where       where the fleet thinks its robots are (roster + claims)
 #   ./fleet.sh dump [n]    print the last n log lines once and exit
 #   ./fleet.sh order A B   place a cargo order: pickup node A, dropoff node B
-#   ./fleet.sh orders N    seed N random orders (pick station -> yard); default 4
+#   ./fleet.sh orders N    seed N cargo orders between transfer nodes; default 4
 #   ./fleet.sh goals       what the network layer has told each robot to do
 #   ./fleet.sh robots      per-robot: distance, state, and whether it is moving
 #   ./fleet.sh fleet       leaders, jobs and claims -- the coordination layer
@@ -240,23 +240,44 @@ else:
     ;;
 
   orders)
-    # Seed the fleet with work: N orders, each from a random pick station (PK)
-    # to a random yard node (YI), placed one after another through `order`.
+    # Seed the fleet with work: N cargo orders between transfer nodes, placed
+    # one after another through `order`.
     #
-    # A fleet with nothing to do is answered "wait" at every junction and does
-    # nothing, which is correct and looks broken. This is the fake demand a
+    # TR is the node type that means transfer/pickup/dropoff -- it is where
+    # cargo is actually handled. This used to seed PK -> YI, which is
+    # *parking* to *yield*: robots dutifully drove from their charging bay to a
+    # parking bay and stopped, because that is what they were asked to do. The
+    # comment claimed "pick station" and "yard" and neither type means that.
+    # See PROTOCOL.md: PT pass-through, TR transfer, CH charging, PK parking,
+    # YI yield.
+    #
+    # Pairs are drawn across zones where the map has more than one, so a job is
+    # a run between storage and receiving rather than two stops on the same
+    # aisle. A fleet with nothing to do is answered "wait" at every junction and
+    # does nothing, which is correct and looks broken; this is the fake demand a
     # real order system would supply.
     shift
     n="${1:-4}"
     pairs="$(uv run python - "$n" <<'PYTHON'
-import json, random, sys
+import collections, json, random, sys
 
 nodes = json.load(open("config/warehouse.json"))["nodes"]
-by = {}
-for node in nodes:
-    by.setdefault(node["node_type"], []).append(node["id"])
+transfer = [n for n in nodes if n["node_type"] == "TR"]
+if len(transfer) < 2:
+    raise SystemExit("this map has fewer than two transfer nodes to move cargo between")
+
+# Zone is the first path segment of the node name, e.g. receiving_and_buffer.
+zones = collections.defaultdict(list)
+for node in transfer:
+    zones[node["name"].split("/")[0]].append(node["id"])
+
 for _ in range(int(sys.argv[1])):
-    print(random.choice(by["PK"]), random.choice(by["YI"]))
+    if len(zones) > 1:
+        source, sink = random.sample(sorted(zones), 2)
+        print(random.choice(zones[source]), random.choice(zones[sink]))
+    else:
+        pickup, dropoff = random.sample([n["id"] for n in transfer], 2)
+        print(pickup, dropoff)
 PYTHON
 )"
     printf '%s\n' "$pairs" | while read -r pickup dropoff; do

@@ -83,6 +83,43 @@ def answer_junction(navigator, network, event):
               flush=True)
         return []
 
+    # Handling the cargo. This is the robot's half of the job cycle and without
+    # it a job stops at its collection node: the network layer only moves the
+    # goal to the delivery node once the robot reports CARGO/EN_ROUTE, and only
+    # marks a job delivered once the robot stops reporting CARGO at all.
+    #
+    # A mission on the answer replaces what we were carrying; an answer with no
+    # mission -- every WAIT, every plain PROCEED -- says nothing about cargo and
+    # must leave it alone.
+    # A network stand-in that does not model cargo simply does not carry any:
+    # the tests use one, and so would any transport that never sends a mission.
+    carries_cargo = network is not None and hasattr(network, "cargo_state")
+
+    if carries_cargo and decision.mission:
+        network.mission = decision.mission
+        network.cargo_id = decision.cargo_id
+        network.cargo_state = decision.cargo_state
+
+    if carries_cargo and network.mission == "CARGO" \
+            and decision.target_node_id == node_id:
+        # Standing on the node the job named. There is no manipulator to
+        # simulate, so collecting and delivering are the reports themselves.
+        if network.cargo_state == "PICKUP":
+            network.cargo_state = "EN_ROUTE"
+            print("node {}: collected cargo {}".format(
+                node_id, network.cargo_id or "?"), flush=True)
+        elif network.cargo_state in ("EN_ROUTE", "DROPOFF"):
+            network.cargo_state = "DROPOFF"
+            print("node {}: delivered cargo {}".format(
+                node_id, network.cargo_id or "?"), flush=True)
+            # Report the delivery once, then go idle: the network layer reads
+            # "was DROPOFF, now not carrying" as the job being done.
+            network.report(node_id, query.region_id)
+            network.mission = ""
+            network.cargo_id = ""
+            network.cargo_state = ""
+        network.report(node_id, query.region_id)
+
     if decision.is_wait:
         # Hold, then ask the same question again. The firmware keeps the robot
         # where it is; nothing needs to be commanded to stand still.
