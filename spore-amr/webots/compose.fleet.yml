@@ -33,6 +33,7 @@ services:
       OWN_ADDRESS: bot_01-bot:50051
       PEER_LEADERS: bot_02-bot:50051,bot_03-bot:50051,bot_04-bot:50051,bot_05-bot:50051,bot_06-bot:50051,bot_07-bot:50051,bot_08-bot:50051,bot_09-bot:50051,bot_10-bot:50051
       REGION_ID: '3'
+      ROBOT_PATIENCE: '6.0'
       WAREHOUSE_MAP: /project/config/warehouse.json
     image: amr-bot:dev
     init: true
@@ -73,6 +74,7 @@ services:
       OWN_ADDRESS: bot_02-bot:50051
       PEER_LEADERS: bot_01-bot:50051,bot_03-bot:50051,bot_04-bot:50051,bot_05-bot:50051,bot_06-bot:50051,bot_07-bot:50051,bot_08-bot:50051,bot_09-bot:50051,bot_10-bot:50051
       REGION_ID: '3'
+      ROBOT_PATIENCE: '6.0'
       WAREHOUSE_MAP: /project/config/warehouse.json
     image: amr-bot:dev
     init: true
@@ -113,6 +115,7 @@ services:
       OWN_ADDRESS: bot_03-bot:50051
       PEER_LEADERS: bot_01-bot:50051,bot_02-bot:50051,bot_04-bot:50051,bot_05-bot:50051,bot_06-bot:50051,bot_07-bot:50051,bot_08-bot:50051,bot_09-bot:50051,bot_10-bot:50051
       REGION_ID: '3'
+      ROBOT_PATIENCE: '6.0'
       WAREHOUSE_MAP: /project/config/warehouse.json
     image: amr-bot:dev
     init: true
@@ -153,6 +156,7 @@ services:
       OWN_ADDRESS: bot_04-bot:50051
       PEER_LEADERS: bot_01-bot:50051,bot_02-bot:50051,bot_03-bot:50051,bot_05-bot:50051,bot_06-bot:50051,bot_07-bot:50051,bot_08-bot:50051,bot_09-bot:50051,bot_10-bot:50051
       REGION_ID: '3'
+      ROBOT_PATIENCE: '6.0'
       WAREHOUSE_MAP: /project/config/warehouse.json
     image: amr-bot:dev
     init: true
@@ -193,6 +197,7 @@ services:
       OWN_ADDRESS: bot_05-bot:50051
       PEER_LEADERS: bot_01-bot:50051,bot_02-bot:50051,bot_03-bot:50051,bot_04-bot:50051,bot_06-bot:50051,bot_07-bot:50051,bot_08-bot:50051,bot_09-bot:50051,bot_10-bot:50051
       REGION_ID: '3'
+      ROBOT_PATIENCE: '6.0'
       WAREHOUSE_MAP: /project/config/warehouse.json
     image: amr-bot:dev
     init: true
@@ -233,6 +238,7 @@ services:
       OWN_ADDRESS: bot_06-bot:50051
       PEER_LEADERS: bot_01-bot:50051,bot_02-bot:50051,bot_03-bot:50051,bot_04-bot:50051,bot_05-bot:50051,bot_07-bot:50051,bot_08-bot:50051,bot_09-bot:50051,bot_10-bot:50051
       REGION_ID: '3'
+      ROBOT_PATIENCE: '6.0'
       WAREHOUSE_MAP: /project/config/warehouse.json
     image: amr-bot:dev
     init: true
@@ -273,6 +279,7 @@ services:
       OWN_ADDRESS: bot_07-bot:50051
       PEER_LEADERS: bot_01-bot:50051,bot_02-bot:50051,bot_03-bot:50051,bot_04-bot:50051,bot_05-bot:50051,bot_06-bot:50051,bot_08-bot:50051,bot_09-bot:50051,bot_10-bot:50051
       REGION_ID: '3'
+      ROBOT_PATIENCE: '6.0'
       WAREHOUSE_MAP: /project/config/warehouse.json
     image: amr-bot:dev
     init: true
@@ -313,6 +320,7 @@ services:
       OWN_ADDRESS: bot_08-bot:50051
       PEER_LEADERS: bot_01-bot:50051,bot_02-bot:50051,bot_03-bot:50051,bot_04-bot:50051,bot_05-bot:50051,bot_06-bot:50051,bot_07-bot:50051,bot_09-bot:50051,bot_10-bot:50051
       REGION_ID: '3'
+      ROBOT_PATIENCE: '6.0'
       WAREHOUSE_MAP: /project/config/warehouse.json
     image: amr-bot:dev
     init: true
@@ -353,6 +361,7 @@ services:
       OWN_ADDRESS: bot_09-bot:50051
       PEER_LEADERS: bot_01-bot:50051,bot_02-bot:50051,bot_03-bot:50051,bot_04-bot:50051,bot_05-bot:50051,bot_06-bot:50051,bot_07-bot:50051,bot_08-bot:50051,bot_10-bot:50051
       REGION_ID: '3'
+      ROBOT_PATIENCE: '6.0'
       WAREHOUSE_MAP: /project/config/warehouse.json
     image: amr-bot:dev
     init: true
@@ -393,6 +402,7 @@ services:
       OWN_ADDRESS: bot_10-bot:50051
       PEER_LEADERS: bot_01-bot:50051,bot_02-bot:50051,bot_03-bot:50051,bot_04-bot:50051,bot_05-bot:50051,bot_06-bot:50051,bot_07-bot:50051,bot_08-bot:50051,bot_09-bot:50051
       REGION_ID: '3'
+      ROBOT_PATIENCE: '6.0'
       WAREHOUSE_MAP: /project/config/warehouse.json
     image: amr-bot:dev
     init: true

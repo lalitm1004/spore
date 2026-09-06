@@ -95,6 +95,12 @@ defaults:
     max_speed: 20.0
     steering_limit: 8.0
     lost_line_timeout_s: 2.0
+    # The robot's patience at a junction: how long it waits to be told where
+    # to go before driving on. THE one definition. gen_fleet writes it into the
+    # firmware config and into the bot's ROBOT_PATIENCE, so the network layer's
+    # "every hold stays under the robot's patience" invariant guards the number
+    # the robot really uses. Three copies of this once disagreed (5.0/6.0/5.0).
+    junction_timeout_s: 6.0
     # Error is in metres and steering is in rad/s, so kp is large by design.
     #
     # Left at 150 through the move to a 500 mm deck, having measured that

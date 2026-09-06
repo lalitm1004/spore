@@ -1,5 +1,6 @@
 import pytest
 
+from robot.config import ControlConfig
 from tools.gen_fleet import (
     CONTROLLER_IMAGE, compose_source, robot_configs, sensor_offsets, world_source)
 
@@ -148,6 +149,13 @@ def test_compose_gives_every_robot_its_own_network_layer_bot():
         assert environment["OWN_ADDRESS"] == "{}:50051".format(bot), name
         assert "REGION_ID" in environment, name
         assert environment["WAREHOUSE_MAP"], name
+
+        # One patience. The bot's hold ceiling and the firmware's junction
+        # timeout must be the same number from the same place, or the fleet's
+        # "every WAIT stays under the robot's patience" check guards a copy.
+        firmware = (robot_configs(MANIFEST)[index].get("control") or {})
+        expected = firmware.get("junction_timeout_s", ControlConfig().junction_timeout_s)
+        assert float(environment["ROBOT_PATIENCE"]) == float(expected), name
 
         # Everyone else, so a bot with no leader yet has somewhere to ask.
         peers = environment["PEER_LEADERS"].split(",")

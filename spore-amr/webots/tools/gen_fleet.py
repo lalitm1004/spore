@@ -11,6 +11,8 @@ from typing import List, Tuple
 
 import yaml
 
+from robot.config import ControlConfig
+
 from tools.manifest import MarkerConfig, TrackConfig, deep_merge
 
 # Identity orientation looks along +x with +z up. This rotation maps x -> -z and
@@ -646,6 +648,15 @@ def compose_source(manifest: dict) -> dict:
                 "WAREHOUSE_MAP": "/project/config/warehouse.json",
                 "GRPC_HOST": "0.0.0.0",
                 "GRPC_PORT": "50051",
+                # How long this robot's firmware waits at a junction before
+                # driving on by itself. The bot clamps every WAIT under it, and
+                # `config.validate()` refuses to boot if T_MAX_HOLD is not --
+                # but that guard is only real if this is the number the
+                # firmware actually reads. It is: both come from the same
+                # `control.junction_timeout_s` in fleet.yaml, and nothing else
+                # is allowed to define it.
+                "ROBOT_PATIENCE": str(float((config.get("control") or {}).get(
+                    "junction_timeout_s", ControlConfig().junction_timeout_s))),
                 # Read-only introspection, so `fleet.sh` can show what the
                 # coordination layer is actually doing -- who leads, who is
                 # where, what is claimed. This is a local demo fleet, the same

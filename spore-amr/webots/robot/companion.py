@@ -12,6 +12,7 @@ import sys
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
 
+from robot.config import ControlConfig  # noqa: E402
 from robot.navigator import Navigator, load_map  # noqa: E402
 from robot.uplink import Uplink  # noqa: E402
 from robot.policy import CompanionPolicy  # noqa: E402
@@ -91,8 +92,8 @@ def answer_junction(navigator, network, event):
 
     bearing = navigator.bearing_for(node_id, decision)
     if bearing is None:
-        print("node {}: {} -> node {} is not a lane".format(
-            node_id, decision.turn, decision.target_node_id), flush=True)
+        print("node {}: node {} is not a lane from here".format(
+            node_id, decision.target_node_id), flush=True)
         return []
 
     fields = {
@@ -128,7 +129,13 @@ def main(argv=None):
 
     document = yaml.safe_load(args.config.read_text())
     control = document.get("control") or {}
-    cruise = float(control.get("base_speed", 6.0))
+    defaults = ControlConfig()
+    cruise = float(control.get("base_speed", defaults.base_speed))
+    # The uplink gives up at the same moment the firmware does. Any longer and
+    # the companion is still waiting on a question the robot has already
+    # answered by driving off; any shorter and it abandons replies that would
+    # have arrived in time.
+    patience = float(control.get("junction_timeout_s", defaults.junction_timeout_s))
 
     policy = CompanionPolicy(
         cruise_speed=cruise,
@@ -141,7 +148,7 @@ def main(argv=None):
     # The map lives here, not in the firmware: the firmware drives and must
     # not acquire a dependency on a file or a socket.
     navigator = Navigator(load_map(args.map)) if args.map and args.map.exists() else None
-    network = Uplink(args.network) if args.network else None
+    network = Uplink(args.network, timeout_s=patience) if args.network else None
     if navigator is None:
         print("no map: junctions will not be answered", flush=True)
 

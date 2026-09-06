@@ -195,7 +195,11 @@ HOPS_CACHE_SIZE = int(os.environ.get("HOPS_CACHE_SIZE", "64"))
 #: patience, and it exists so a robot is never stranded by a network layer that
 #: died. Every WAIT we issue has to stay under it, or a hold becomes a robot
 #: that leaves halfway through one.
-ROBOT_PATIENCE = float(os.environ.get("ROBOT_PATIENCE", "5.0"))
+#: Set by `webots/tools/gen_fleet.py` from `control.junction_timeout_s` in
+#: fleet.yaml -- the same value the firmware reads -- so the invariant below
+#: guards the number the robot actually uses rather than a copy of it. The
+#: default here matches the firmware's default for a bot started by hand.
+ROBOT_PATIENCE = float(os.environ.get("ROBOT_PATIENCE", "6.0"))
 
 #: A robot commanded to move but still on the same node after this is stalled
 #: (PROTOCOL.md §16): replan, then yield, then escalate.
