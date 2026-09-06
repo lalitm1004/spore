@@ -125,7 +125,7 @@ PAGE = r"""<title>Fleet replay 3D</title>
 const NODES=__NODES__, EDGES=__EDGES__, NAMES=__NAMES__;
 const NFRAMES=__NFRAMES__, ROBOT_SCALE=__SCALE__;
 const KINDS={CH:"#1ae5e5",PK:"#b44dff",TR:"#2a80ff",YI:"#ff2a1a",PT:"#39424b"};
-const KIND_NAMES={CH:"charging",PK:"parking",TR:"transfer",YI:"yield",PT:"pass-through"};
+const KIND_NAMES={CH:"charging",PK:"parking",TR:"TRANSFER (jobs run between these)",YI:"yield",PT:"pass-through"};
 // Distinct hues, not a gradient: you are tracking individuals, and neighbouring
 // shades of one colour are exactly what you cannot tell apart.
 const COLORS=[0xff6b6b,0xffd93d,0x6aa9ff,0x51cf66,0xff9f43,
@@ -252,7 +252,12 @@ buildLanes(0.13);
 
 // ---- nodes -----------------------------------------------------------------
 {
+  // Transfer nodes are where cargo is collected and delivered -- every job
+  // runs between two of them -- so they are drawn as posts rather than as
+  // discs. At 23 among 263 they were there and invisible, which reads as the
+  // map having none.
   const disc=new THREE.CylinderGeometry(0.16,0.16,0.012,14);
+  const post=new THREE.CylinderGeometry(0.22,0.22,0.5,16);
   const mats={};
   for(const k in KINDS) mats[k]=new THREE.MeshStandardMaterial({
     color:new THREE.Color(KINDS[k]),
@@ -262,9 +267,10 @@ buildLanes(0.13);
   for(const id in NODES){ const n=NODES[id]; (byKind[n.kind]=byKind[n.kind]||[]).push(n); }
   for(const kind in byKind){
     const list=byKind[kind];
-    const mesh=new THREE.InstancedMesh(disc, mats[kind]||mats.PT, list.length);
+    const tall=kind==="TR";
+    const mesh=new THREE.InstancedMesh(tall?post:disc, mats[kind]||mats.PT, list.length);
     const m=new THREE.Matrix4();
-    list.forEach((n,i)=>{ m.makeTranslation(W(n.x), 0.010, D(n.y)); mesh.setMatrixAt(i,m); });
+    list.forEach((n,i)=>{ m.makeTranslation(W(n.x), tall?0.25:0.010, D(n.y)); mesh.setMatrixAt(i,m); });
     mesh.castShadow=false; mesh.receiveShadow=true;
     scene.add(mesh);
   }
