@@ -81,11 +81,11 @@ from peers.table import PeerTable, Peer, Leader, Ledger
 from planning import decide as decide_module
 from planning import traffic as traffic_module
 from planning.decide import Decision, DecisionKind, Query
-from planning.geometry import heading_from_radians
+from planning.geometry import Heading, heading_between, heading_from_radians
 from planning.graph import Graph
 from planning.planner import Planner
 from planning.topology import Topology
-from planning.types import Goal, Obstruction, Request, Reservation, SelfState
+from planning.types import RegionGossip, Goal, Obstruction, Request, Reservation, SelfState
 from planning.types import from_env as planning_config
 from reservations import now_ms
 from reservations.ledger import ReservationLedger
@@ -666,6 +666,20 @@ class Bot:
                 Obstruction(node_id=node, level=level)
                 for node, level in sorted(self.obstructions.items())
             ),
+            # Also tier 3, and it was never sent. `Request.gossip` is defined,
+            # the planner reads it, and nothing ever filled it in -- so every
+            # robot planned as though the warehouse were empty and every one of
+            # them picked the same shortest path. Measured: four of five robots
+            # on a single corridor at x=12, two of them 1.07 m apart facing
+            # each other.
+            #
+            # Declared claims already stop a robot taking a node at the moment
+            # someone else holds it, but that is a hard constraint evaluated at
+            # one instant; it makes a robot wait its turn on the popular lane
+            # rather than prefer an empty one. This is the soft half: where the
+            # others are, priced rather than forbidden, so an equally short
+            # route through nobody wins against a route through everybody.
+            gossip=self._congestion(),
         ))
         decision = decide_module.decide(
             self.graph, self.topology, query,
@@ -738,10 +752,42 @@ class Bot:
         peer with no claims still contributes its trail, which is what tier 2
         predicts from.
         """
+        # Which way each peer is going, from the trail the roster already
+        # carries. A declared claim says "I hold this node" and carries no
+        # direction, and `traffic.predict` -- the only thing that ever set one
+        # -- returns nothing at all for a peer that has declared anything,
+        # because tier 1 beats tier 2. So for a moving robot, which is every
+        # robot that matters, `Reservation.dir` was never set by anybody.
+        #
+        # `Diagnostics.corridor_opposing_peers` is built by matching that
+        # direction, so it was always empty and the head-on rule that reads it
+        # could never fire. Measured: four of five robots funnelled onto one
+        # corridor and two ended 1.07 m apart facing each other, with the rule
+        # in place and silent the whole time.
+        #
+        # The heading is not new information -- it is two entries of the peer's
+        # own trail, which is already in every `PeerRecord`. Stamping it on the
+        # claims makes the direction available where the claim is, without a
+        # new field on the wire or a change to any schema.
+        headings: dict[int, Heading] = {}
+        for peer in self.peer_table.all_peers():
+            trail = list(peer.node_trail)
+            if len(trail) < 2 or not self.graph:
+                continue
+            newest, previous = trail[0], trail[1]
+            if not (self.graph.has_id(newest) and self.graph.has_id(previous)):
+                continue
+            here, came_from = self.graph.index(newest), self.graph.index(previous)
+            if not self.graph.are_adjacent(came_from, here):
+                continue
+            headings[peer.bot_id] = heading_between(
+                self.graph.position[came_from], self.graph.position[here])
+
         claims: dict[int, list] = {}
         for claim in self.ledger.peer_claims():
             claims.setdefault(claim.bot_id, []).append(
-                Reservation(node_id=claim.node_id, t_in=claim.start_ms, t_out=claim.end_ms)
+                Reservation(node_id=claim.node_id, t_in=claim.start_ms,
+                            t_out=claim.end_ms, dir=headings.get(claim.bot_id))
             )
         return tuple(
             traffic_module.Observation(
@@ -757,6 +803,33 @@ class Bot:
             for peer in self.peer_table.all_peers()
             if peer.bot_id != self.bot_id
         )
+
+    def _congestion(self) -> tuple:
+        """Where the other robots are, as a per-node load the search can price.
+
+        Tier 3 of the traffic model (`planning.traffic`): soft, cost only, never
+        a refusal. A node a peer is standing on or has just come through costs
+        more to route across, so two robots with equally short options take
+        different ones instead of both taking the lane that happens to be
+        shortest.
+
+        Built from the roster, which every bot already has, and from trails
+        rather than claims on purpose: a claim covers the node a robot is on
+        now, and what makes a corridor unattractive is that somebody is *moving
+        down it*. Weights fall off along the trail because the oldest entry is
+        the one they are furthest from.
+        """
+        load: dict[int, float] = {}
+        for peer in self.peer_table.all_peers():
+            if peer.bot_id == self.bot_id:
+                continue
+            for depth, node_id in enumerate(list(peer.node_trail)[:3]):
+                weight = 1.0 / (depth + 1)
+                load[node_id] = load.get(node_id, 0.0) + weight
+        if not load:
+            return ()
+        return (RegionGossip(region_id=self.region_id, bots=len(load),
+                             edge_load=load, load=min(1.0, len(load) / 10.0)),)
 
     def _yield_rank(self) -> int:
         """Our own right of way — the same number the roster advertises."""

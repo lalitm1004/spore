@@ -226,3 +226,42 @@ def test_the_robot_with_right_of_way_keeps_going(router, monkeypatch):
 
     assert reply.kind.value in ("PROCEED", "REROUTE"), \
         "gave way when we had right of way -- both stopping is a livelock"
+
+
+def test_a_declared_claim_carries_the_peers_direction(router):
+    """The gap that made the head-on rule unreachable.
+
+    `Reservation.dir` was set in exactly one place -- `traffic.predict` -- and
+    predict returns nothing at all for a peer that has declared any claim,
+    because tier 1 beats tier 2. Every moving robot declares claims, so `dir`
+    was never set for the robots that matter, `corridor_opposing_peers` was
+    always empty, and the rule that reads it could not fire. Measured with the
+    rule in place: four of five robots funnelled onto one corridor and two
+    ended 1.07 m apart facing each other, in silence.
+
+    The heading is not new information -- it is two entries of the peer's own
+    trail, already in every `PeerRecord`.
+    """
+    from peers.table import Peer
+    graph = router.graph
+    # Two adjacent nodes give a heading; claim the one the peer is standing on.
+    here = next(i for i in range(graph.n) if graph.degree(i) >= 1)
+    onward = next(v for v, _ in graph.neighbours(here))
+    peer_id = 77
+
+    router.peer_table.upsert(Peer(
+        bot_id=peer_id, address="x:1", priority=1, state="IDLE", battery=100.0,
+        latest_node_id=graph.id_of(onward),
+        node_trail=[graph.id_of(onward), graph.id_of(here)],
+    ))
+    from reservations.claims import Announce, Window
+    router.ledger.receive(
+        Announce(bot_id=peer_id, seq=1, windows=(
+            Window(node_id=graph.id_of(onward), start_offset_ms=0, end_offset_ms=10_000),)),
+        now=0)
+
+    seen = [o for o in router._observations() if o.bot_id == peer_id]
+    assert seen, "the peer never reached the observations at all"
+    dirs = [r.dir for r in seen[0].reservations]
+    assert dirs and all(d is not None for d in dirs), \
+        "a declared claim carries no direction, so no head-on can ever be seen"
