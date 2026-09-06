@@ -204,3 +204,45 @@ def test_arriving_somewhere_else_does_deliver():
 
     assert [r for r in network.reports if r[2] == "DROPOFF"], "never delivered"
     assert network.mission == ""
+
+
+def test_a_stale_echo_cannot_walk_the_cargo_state_backwards():
+    """The bot echoes the cargo state it last read from us, and that read is
+    behind. Adopting it verbatim walked the robot back from EN_ROUTE to PICKUP,
+    and it collected the same cargo again on the next answer -- once per answer
+    still in flight. Cargo state only moves forward for a given cargo id."""
+    class Stale(CargoNetwork):
+        def ask(self, query):
+            return Decision(query_id=query.query_id, kind="WAIT", hold_ms=100,
+                            because="at the goal", mission="CARGO",
+                            cargo_id="c-1", cargo_state="PICKUP")
+
+    navigator = navigator_on_a_lattice()
+    navigator.arrived(3)
+    network = Stale(pickup=4, dropoff=8)
+
+    for _ in range(4):
+        answer_junction(navigator, network, marker_at(4))
+
+    collected = [r for r in network.reports if r[2] == "EN_ROUTE"]
+    assert network.cargo_state == "EN_ROUTE", "a stale PICKUP pulled the robot back"
+    assert len(collected) >= 1
+
+
+def test_a_different_cargo_id_is_adopted_whole():
+    """Forward-only is per job. A new job starting at PICKUP must not be
+    refused because the last one had got further."""
+    class NewJob(CargoNetwork):
+        def ask(self, query):
+            return Decision(query_id=query.query_id, target_node_id=9,
+                            mission="CARGO", cargo_id="c-2", cargo_state="PICKUP")
+
+    navigator = navigator_on_a_lattice()
+    navigator.arrived(3)
+    network = NewJob(pickup=0, dropoff=0)
+    network.mission, network.cargo_state, network.cargo_id = "CARGO", "DROPOFF", "c-1"
+
+    answer_junction(navigator, network, marker_at(4))
+
+    assert network.cargo_id == "c-2"
+    assert network.cargo_state == "PICKUP", "a new job was refused by the old one's state"

@@ -48,6 +48,12 @@ def report_obstacle(navigator, network, event):
     return []
 
 
+#: How far through a job each cargo state is. The robot's own state never goes
+#: backwards along this, so a stale echo from the network cannot undo work the
+#: robot has already done.
+_CARGO_ORDER = {"PICKUP": 0, "EN_ROUTE": 1, "DROPOFF": 2}
+
+
 def answer_junction(navigator, network, event):
     """Turn a marker arrival into a TURN command, or into nothing.
 
@@ -105,10 +111,22 @@ def answer_junction(navigator, network, event):
         if decision.cargo_id and decision.cargo_id == getattr(
                 network, "delivered_cargo_id", ""):
             pass
-        else:
+        elif decision.cargo_id != network.cargo_id:
+            # A different job: adopt it whole.
             network.mission = decision.mission
             network.cargo_id = decision.cargo_id
             network.cargo_state = decision.cargo_state
+            network.collected_at = None
+        else:
+            # The same job. Cargo state only ever moves forward, because the
+            # bot goes on echoing the state it last read from us and that read
+            # is behind. Adopting it verbatim walked the robot backwards --
+            # EN_ROUTE back to PICKUP -- and it collected the same cargo again
+            # on the next answer, once per answer still in flight.
+            network.mission = decision.mission
+            if _CARGO_ORDER.get(decision.cargo_state, -1) > \
+                    _CARGO_ORDER.get(network.cargo_state, -1):
+                network.cargo_state = decision.cargo_state
 
     # Arriving is the network telling us we are there. A PROCEED naming this
     # node would say so, but the planner does not send one: `ALREADY_THERE`
