@@ -259,8 +259,22 @@ through the control plane, which `fleet.sh up` starts beside the robots:
 
 ```bash
 ./fleet.sh order 113 129          # pickup node 113, dropoff node 129
+./fleet.sh orders 6               # or six random ones: pick station -> yard
 open http://localhost:8000/       # or the same thing through a form
 ```
+
+`orders N` is the fake demand a real order system would supply, and a run
+mostly wants it rather than a hand-picked pair: a fleet with no work is
+answered `WAIT` at every junction and does nothing at all, which looks like a
+fault and is not one. It draws each order from a random `PK` node to a random
+`YI` one -- both are degree-1 stubs, so every job is a drive out to a bay,
+which is the case worth watching.
+
+`order` waits for the control plane to actually accept, up to `ORDER_WAIT`
+seconds (90 by default). Orders placed immediately after `up` used to be
+refused: the bots' gRPC servers are not listening for a while yet, and the
+submitter's own retry is five seconds. Raise it on a slow machine --
+`ORDER_WAIT=300 ./fleet.sh orders 6`.
 
 The control plane hands the order to any bot it can reach and the fleet routes
 it -- a non-leader forwards to its leader, the leader assigns the nearest free
@@ -272,5 +286,5 @@ bot. Watch it land:
 ./fleet.sh robots    # the driving: distance, obstacles, who is stuck
 ```
 
-Node ids are those of the window in `config/warehouse.json`; the form only
-offers ones that exist.
+Node ids are those in `config/warehouse.json` -- the whole 881-node map, not
+the `chunk` window; the form only offers ones that exist.

@@ -261,6 +261,26 @@ firmware                companion                    network layer
    | (rotates, reacquires)  |                            |
 ```
 
+Six commands and four events cross that link, and this is the whole of it:
+
+| direction | message | meaning |
+|---|---|---|
+| firmware -> companion | `EVT MARKER` | a QR was read: node, kind, position, region, heading. The question and the telemetry are the same message |
+| firmware -> companion | `EVT LINE_LOST` | the array sees no line, debounced (`robot/events.py`) |
+| firmware -> companion | `EVT OBSTACLE` | the forward guard changed state: `state` and `range` |
+| firmware -> companion | `EVT STATUS` | once-a-second telemetry (`robot/events.py`); the companion ignores it |
+| companion -> firmware | `CMD TURN` | the answer: rotate to an absolute `bearing` for `node`, optionally adopting a `heading` correction first |
+| companion -> firmware | `CMD HOLD` | not yet -- stay on the node for `ms`, then ask again |
+| companion -> firmware | `CMD START` / `CMD STOP` | run or halt |
+| companion -> firmware | `CMD SET_SPEED` / `CMD SET_GAINS` | tuning, for tests |
+
+`CMD HOLD` is load-bearing and was once silently unhandled. The firmware
+bounds its wait on a node -- `junction_timeout_s`, otherwise an unanswered
+robot holds a junction for the rest of the run -- and a hold **restarts that
+clock**. Without the branch that sets it, held robots timed out into "no
+decision, carrying on", drove off the end of a degree-1 bay, lost the line and
+span on the spot in the lost-line search for the rest of the run.
+
 The robot sends **where it is**, and is told **where to go next**. It does not
 send the turns that exist and it is not answered with a direction: both fields
 are absent from `shared/schemas/`, which sets `additionalProperties: false` on

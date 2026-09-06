@@ -154,5 +154,6 @@ test has no row, so the contract cannot quietly stop being true.
 - [x] One implementation per helper within a project (BFS, claim window, `wait_until`, replay loaders); cross-project twins name each other
 - [x] `PROTOCOL.md` §11 embeds each proto verbatim, guarded; the hand-written mirrors are pinned to the wire
 - [x] The container tier is a package, one file per scenario letter, parallel by default, and sweeps what an interrupted run left behind
-- [x] Orders can be placed on the live simulator fleet (`fleet.sh order`), and a simulator scenario proves one is taken and driven
+- [x] Orders can be placed on the live simulator fleet (`fleet.sh order`, or `fleet.sh orders N`
+      for random fake demand), and a simulator scenario proves one is taken and driven
 - [ ] `PeerTable.region_locations()` is collected on every leader beat and read by nobody -- a design question, not a bug
