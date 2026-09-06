@@ -14,6 +14,7 @@
 #   ./fleet.sh where       where the fleet thinks its robots are (roster + claims)
 #   ./fleet.sh dump [n]    print the last n log lines once and exit
 #   ./fleet.sh order A B   place a cargo order: pickup node A, dropoff node B
+#   ./fleet.sh orders N    seed N random orders (pick station -> yard); default 4
 #   ./fleet.sh goals       what the network layer has told each robot to do
 #   ./fleet.sh robots      per-robot: distance, state, and whether it is moving
 #   ./fleet.sh fleet       leaders, jobs and claims -- the coordination layer
@@ -212,15 +213,56 @@ else:
   order)
     # Place a cargo order on the running fleet, through the control plane's own
     # HTTP surface -- the same POST its web form makes, so there is one client.
+    #
+    # Patient, because "the fleet is up" and "the fleet can take an order" are
+    # minutes apart under emulation: the control plane's own retry is five
+    # seconds and the bots' gRPC servers come up after that. The page answers
+    # 200 either way -- the form re-renders with an error -- so the body is
+    # what is checked, not the status. ORDER_WAIT bounds it, in seconds.
     shift
     [ $# -eq 2 ] || { say "usage: ./fleet.sh order <pickup_node> <dropoff_node>"; exit 2; }
-    if curl -sf -X POST "http://localhost:8000/orders" \
-         -F "pickup_node=$1" -F "dropoff_node=$2" >/dev/null; then
-      say "order placed: node $1 -> node $2"
-    else
-      say "the control plane did not accept it -- is the fleet up, and are both nodes on this map?"
-      exit 1
-    fi
+    deadline=$(( $(date +%s) + ${ORDER_WAIT:-90} ))
+    while :; do
+      page="$(curl -s -X POST "http://localhost:8000/orders" \
+                -F "pickup_node=$1" -F "dropoff_node=$2" || true)"
+      if printf '%s' "$page" | grep -q '<dt>accepted</dt><dd>True</dd>'; then
+        say "order placed: node $1 -> node $2"
+        exit 0
+      fi
+      if [ "$(date +%s)" -ge "$deadline" ]; then
+        reason="$(printf '%s' "$page" | grep -oE '<strong>Error:</strong> [^<]*' | sed 's/<[^>]*>//g' || true)"
+        say "the control plane did not accept it after ${ORDER_WAIT:-90}s${reason:+ -- $reason}"
+        say "is the fleet up, and are both nodes on this map?"
+        exit 1
+      fi
+      sleep 2
+    done
+    ;;
+
+  orders)
+    # Seed the fleet with work: N orders, each from a random pick station (PK)
+    # to a random yard node (YI), placed one after another through `order`.
+    #
+    # A fleet with nothing to do is answered "wait" at every junction and does
+    # nothing, which is correct and looks broken. This is the fake demand a
+    # real order system would supply.
+    shift
+    n="${1:-4}"
+    pairs="$(uv run python - "$n" <<'PYTHON'
+import json, random, sys
+
+nodes = json.load(open("config/warehouse.json"))["nodes"]
+by = {}
+for node in nodes:
+    by.setdefault(node["node_type"], []).append(node["id"])
+for _ in range(int(sys.argv[1])):
+    print(random.choice(by["PK"]), random.choice(by["YI"]))
+PYTHON
+)"
+    printf '%s\n' "$pairs" | while read -r pickup dropoff; do
+      [ -n "$pickup" ] || continue
+      "$0" order "$pickup" "$dropoff" || exit 1
+    done
     ;;
 
   dump)
